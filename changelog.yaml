@@ -19,3 +19,9 @@
     changed:
     - Making autoimpute return imputations for all models.
   date: 2025-06-23 14:45:18
+- bump: patch
+  changes:
+    changed:
+    - Default logging level.
+    - Autoimpute's output format for imputations
+  date: 2025-07-07 09:46:21

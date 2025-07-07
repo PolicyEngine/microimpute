@@ -1,5 +1,0 @@
-- bump: patch
-  changes:
-    changed:
-    - Default logging level.
-    - Autoimpute's output format for imputations
