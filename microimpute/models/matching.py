@@ -35,6 +35,7 @@ class MatchingResults(ImputerResults):
         seed: int,
         imputed_vars_dummy_info: Optional[Dict[str, Any]] = None,
         original_predictors: Optional[List[str]] = None,
+        log_level: Optional[str] = "WARNING",
         hyperparameters: Optional[Dict[str, Any]] = None,
     ) -> None:
         """Initialize the matching model.
@@ -58,6 +59,7 @@ class MatchingResults(ImputerResults):
             seed,
             imputed_vars_dummy_info,
             original_predictors,
+            log_level,
         )
         self.matching_hotdeck = matching_hotdeck
         self.donor_data = donor_data
@@ -293,6 +295,7 @@ class MatchingResults(ImputerResults):
                 )
                 imputed_df = pd.DataFrame(index=X_test_copy.index)
                 for variable in self.imputed_variables:
+                    self.logger.info(f"Imputing variable {variable}")
                     imputed_df[variable] = fused0[variable].values
                 imputations[q] = imputed_df
 
@@ -328,16 +331,19 @@ class Matching(Imputer):
     def __init__(
         self,
         matching_hotdeck: MatchingHotdeckFn = nnd_hotdeck_using_rpy2,
+        log_level: Optional[str] = "WARNING",
     ) -> None:
         """Initialize the matching model.
 
         Args:
             matching_hotdeck: Function that performs the hot deck matching.
+            log_level: Logging level for the model.
 
         Raises:
             ValueError: If matching_hotdeck is not callable
         """
-        super().__init__()
+        super().__init__(log_level=log_level)
+        self.log_level = log_level
         self.logger.debug("Initializing Matching imputer")
 
         # Validate input
@@ -419,6 +425,7 @@ class Matching(Imputer):
                     imputed_vars_dummy_info=self.imputed_vars_dummy_info,
                     original_predictors=self.original_predictors,
                     seed=self.seed,
+                    log_level=self.log_level,
                     hyperparameters=matching_kwargs,
                 )
         except Exception as e:

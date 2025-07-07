@@ -24,6 +24,7 @@ class QRFResults(ImputerResults):
         seed: int,
         imputed_vars_dummy_info: Optional[Dict[str, str]] = None,
         original_predictors: Optional[List[str]] = None,
+        log_level: Optional[str] = "WARNING",
     ) -> None:
         """Initialize the QRF results.
 
@@ -43,6 +44,7 @@ class QRFResults(ImputerResults):
             seed,
             imputed_vars_dummy_info,
             original_predictors,
+            log_level,
         )
         self.models = models
 
@@ -90,6 +92,7 @@ class QRFResults(ImputerResults):
                 )
                 imputed_df = pd.DataFrame()
                 for variable in self.imputed_variables:
+                    self.logger.info(f"Imputing variable {variable}")
                     model = self.models[variable]
                     imputed_df[variable] = model.predict(
                         X_test[self.predictors], mean_quantile=mean_quantile
@@ -116,10 +119,11 @@ class QRF(Imputer):
     The underlying QRF implementation is from utils.qrf.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, log_level: Optional[str] = "WARNING") -> None:
         """Initialize the QRF model."""
-        super().__init__()
+        super().__init__(log_level=log_level)
         self.models = {}
+        self.log_level = log_level
         self.logger.debug("Initializing QRF imputer")
 
     @validate_call(config=VALIDATE_CONFIG)
@@ -216,6 +220,7 @@ class QRF(Imputer):
                     imputed_vars_dummy_info=self.imputed_vars_dummy_info,
                     original_predictors=self.original_predictors,
                     seed=self.seed,
+                    log_level=self.log_level,
                 )
         except Exception as e:
             self.logger.error(f"Error fitting QRF model: {str(e)}")

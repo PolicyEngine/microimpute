@@ -25,6 +25,7 @@ class OLSResults(ImputerResults):
         seed: int,
         imputed_vars_dummy_info: Optional[Dict[str, str]] = None,
         original_predictors: Optional[List[str]] = None,
+        log_level: Optional[str] = "WARNING",
     ) -> None:
         """Initialize the OLS results.
 
@@ -44,6 +45,7 @@ class OLSResults(ImputerResults):
             seed,
             imputed_vars_dummy_info,
             original_predictors,
+            log_level,
         )
         self.models = models
 
@@ -98,6 +100,7 @@ class OLSResults(ImputerResults):
                 q = 0.5
                 imputed_df = pd.DataFrame()
                 for variable in self.imputed_variables:
+                    self.logger.info(f"Imputing variable {variable}")
                     model = self.models[variable]
                     mean_preds = model.predict(X_test_with_const)
                     se = np.sqrt(model.scale)
@@ -192,10 +195,11 @@ class OLS(Imputer):
     distributed residuals.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, log_level: Optional[str] = "WARNING") -> None:
         """Initialize the OLS model."""
-        super().__init__()
+        super().__init__(log_level=log_level)
         self.model = None
+        self.log_level = log_level
         self.logger.debug("Initializing OLS imputer")
 
     @validate_call(config=VALIDATE_CONFIG)
@@ -240,6 +244,7 @@ class OLS(Imputer):
                 imputed_vars_dummy_info=self.imputed_vars_dummy_info,
                 original_predictors=self.original_predictors,
                 seed=self.seed,
+                log_level=self.log_level,
             )
         except Exception as e:
             self.logger.error(f"Error fitting OLS model: {str(e)}")

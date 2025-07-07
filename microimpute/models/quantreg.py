@@ -28,6 +28,7 @@ class QuantRegResults(ImputerResults):
         seed: int,
         imputed_vars_dummy_info: Optional[Dict[str, str]] = None,
         original_predictors: Optional[List[str]] = None,
+        log_level: Optional[str] = "WARNING",
     ) -> None:
         """Initialize the QRF results.
 
@@ -47,6 +48,7 @@ class QuantRegResults(ImputerResults):
             seed,
             imputed_vars_dummy_info,
             original_predictors,
+            log_level,
         )
         self.models = models
 
@@ -179,10 +181,11 @@ class QuantReg(Imputer):
     directly predict specific quantiles.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, log_level: Optional[str] = "WARNING") -> None:
         """Initialize the Quantile Regression model."""
-        super().__init__()
+        super().__init__(log_level=log_level)
         self.models: Dict[str, Any] = {}
+        self.log_level = log_level
         self.logger.debug("Initializing QuantReg imputer")
 
     @validate_call(config=VALIDATE_CONFIG)
@@ -245,6 +248,7 @@ class QuantReg(Imputer):
                     f"Fitting quantile regression for random quantile {q:.4f}"
                 )
                 for variable in imputed_variables:
+                    self.logger.info(f"Imputing variable {variable}")
                     Y = X_train[variable]
                     self.models[variable][q] = sm.QuantReg(
                         Y, X_with_const
@@ -259,6 +263,7 @@ class QuantReg(Imputer):
                 imputed_vars_dummy_info=self.imputed_vars_dummy_info,
                 original_predictors=self.original_predictors,
                 seed=self.seed,
+                log_level=self.log_level,
             )
         except Exception as e:
             self.logger.error(f"Error fitting QuantReg model: {str(e)}")

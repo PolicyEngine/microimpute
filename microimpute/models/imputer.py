@@ -27,7 +27,11 @@ class Imputer(ABC):
     the required methods.
     """
 
-    def __init__(self, seed: Optional[int] = RANDOM_STATE) -> None:
+    def __init__(
+        self,
+        seed: Optional[int] = RANDOM_STATE,
+        log_level: Optional[str] = "WARNING",
+    ) -> None:
         """Initialize the imputer model."""
         self.predictors: Optional[List[str]] = None
         self.imputed_variables: Optional[List[str]] = None
@@ -35,6 +39,17 @@ class Imputer(ABC):
         self.original_predictors: Optional[List[str]] = None
         self.seed = seed
         self.logger = logging.getLogger(__name__)
+        if log_level == "DEBUG":
+            log_level = logging.DEBUG
+        elif log_level == "INFO":
+            log_level = logging.INFO
+        elif log_level == "WARNING":
+            log_level = logging.WARNING
+        elif log_level == "ERROR":
+            log_level = logging.ERROR
+        elif log_level == "CRITICAL":
+            log_level = logging.CRITICAL
+        self.logger.setLevel(log_level)
 
     @validate_call(config=VALIDATE_CONFIG)
     def _validate_data(self, data: pd.DataFrame, columns: List[str]) -> None:
@@ -387,6 +402,7 @@ class ImputerResults(ABC):
         seed: int,
         imputed_vars_dummy_info: Optional[Dict[str, Any]] = None,
         original_predictors: Optional[List[str]] = None,
+        log_level: Optional[str] = "WARNING",
     ):
         self.predictors = predictors
         self.imputed_variables = imputed_variables
@@ -394,6 +410,17 @@ class ImputerResults(ABC):
         self.original_predictors = original_predictors
         self.seed = seed
         self.logger = logging.getLogger(__name__)
+        if log_level == "DEBUG":
+            log_level = logging.DEBUG
+        elif log_level == "INFO":
+            log_level = logging.INFO
+        elif log_level == "WARNING":
+            log_level = logging.WARNING
+        elif log_level == "ERROR":
+            log_level = logging.ERROR
+        elif log_level == "CRITICAL":
+            log_level = logging.CRITICAL
+        self.logger.setLevel(log_level)
 
     @validate_call(config=VALIDATE_CONFIG)
     def _validate_quantiles(

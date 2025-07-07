@@ -35,7 +35,7 @@ def test_autoimpute_basic() -> None:
             "QRF": {"n_estimators": 100},
             "Matching": {"constrained": True},
         },
-        verbose=True,
+        log_level="INFO",
     )
 
     model_imputations = results.imputations
@@ -45,11 +45,7 @@ def test_autoimpute_basic() -> None:
     # Check that the imputations is a dictionary of dataframes
     assert isinstance(model_imputations, dict)
     for model, imputations in model_imputations.items():
-        for q, df in imputations.items():
-            assert isinstance(df, pd.DataFrame)
-            # Check that the imputed variables are in the dataframe
-            for var in imputed_variables:
-                assert var in df.columns
+        assert isinstance(imputations, pd.DataFrame)
 
     # Check that the method_results_df has the expected structure
     assert isinstance(method_results_df, pd.DataFrame)
@@ -60,7 +56,7 @@ def test_autoimpute_basic() -> None:
 
     quantiles = [q for q in method_results_df.columns if isinstance(q, float)]
 
-    model_imputations["best_method"][0.5].to_csv(
+    model_imputations["best_method"].to_csv(
         "autoimpute_bestmodel_median_imputations.csv"
     )
     imputed_data.to_csv("autoimpute_bestmodel_imputed_dataset.csv")

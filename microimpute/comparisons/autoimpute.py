@@ -6,7 +6,7 @@ This module integrates all steps necessary for method selection and imputation o
 import logging
 import warnings
 from functools import partial
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Type, Union
 
 import joblib
 import pandas as pd
@@ -33,9 +33,10 @@ class AutoImputeResult(BaseModel):
 
     Attributes
     ----------
-    imputations : Dict[str, Dict[float, pd.DataFrame]]
+    imputations : Dict[str, pd.DataFrame] or Dict[str, Dict[float, pd.DataFrame]]
         Mapping model name → {quantile → DataFrame of imputed cols}.
         By default this contains only the best model unless `impute_all=True`.
+        By default, the quantile is 0.5 (median).
     receiver_data : pd.DataFrame
         Copy of the receiver data with the median-quantile imputations of the best performing model attached.
     fitted_models : Dict[str, Any]
@@ -47,7 +48,9 @@ class AutoImputeResult(BaseModel):
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    imputations: Dict[str, Dict[float, pd.DataFrame]] = Field(...)
+    imputations: Union[
+        Dict[str, Dict[float, pd.DataFrame]], Dict[str, pd.DataFrame]
+    ] = Field(...)
     receiver_data: pd.DataFrame = Field(...)
     fitted_models: Dict[str, Any] = Field(...)
     cv_results: pd.DataFrame = Field(...)
@@ -61,7 +64,7 @@ def autoimpute(
     imputed_variables: List[str],
     weight_col: Optional[str] = None,
     models: Optional[List[Type]] = None,
-    quantiles: Optional[List[float]] = QUANTILES,
+    imputation_quantiles: Optional[List[float]] = None,
     hyperparameters: Optional[Dict[str, Dict[str, Any]]] = None,
     tune_hyperparameters: Optional[bool] = False,
     normalize_data: Optional[bool] = False,
@@ -69,7 +72,7 @@ def autoimpute(
     random_state: Optional[int] = RANDOM_STATE,
     train_size: Optional[float] = TRAIN_SIZE,
     k_folds: Optional[int] = 5,
-    verbose: Optional[bool] = False,
+    log_level: Optional[str] = "WARNING",
 ) -> AutoImputeResult:
     """Automatically select and apply the best imputation model.
 
@@ -89,8 +92,8 @@ def autoimpute(
         weight_col : Optional column name for sampling weights in donor data.
         models : List of imputer model classes to compare.
             If None, uses [QRF, OLS, QuantReg, Matching]
-        quantiles : List of quantiles to predict for each imputed variable.
-            Uses default QUANTILES if not passed.
+        imputation_quantiles : List of quantiles to predict for each imputed
+            variable.Will use default QUANTILES if not passed.
         hyperparameters : Dictionary of hyperparameters for specific models,
             with model names as keys. Defaults to None and uses default model hyperparameters then.
         tune_hyperparameters : Whether to tune hyperparameters for the models.
@@ -101,7 +104,7 @@ def autoimpute(
         random_state : Random seed for reproducibility
         train_size : Proportion of data to use for training in preprocessing
         k_folds : Number of folds for cross-validation. Defaults to 5.
-        verbose : Whether to print detailed logs. Defaults to False.
+        log_level : Logging level for the function. Defaults to "WARNING".
 
     Returns:
         AutoImputeResult: A structured result containing:
@@ -114,8 +117,21 @@ def autoimpute(
         ValueError: If inputs are invalid (e.g., invalid quantiles, missing columns)
         RuntimeError: For unexpected errors during imputation
     """
-    # Set up logging level based on verbose parameter
-    log_level = logging.INFO if verbose else logging.WARNING
+    # Set up logging level
+    if log_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
+        error_msg = f"Invalid log_level: {log_level}. Must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL."
+        log.error(error_msg)
+        raise ValueError(error_msg)
+    if log_level == "DEBUG":
+        log_level = logging.DEBUG
+    elif log_level == "INFO":
+        log_level = logging.INFO
+    elif log_level == "WARNING":
+        log_level = logging.WARNING
+    elif log_level == "ERROR":
+        log_level = logging.ERROR
+    elif log_level == "CRITICAL":
+        log_level = logging.CRITICAL
     log.setLevel(log_level)
     warnings.filterwarnings("ignore")
 
@@ -123,9 +139,14 @@ def autoimpute(
     n_jobs: Optional[int] = -1
 
     # Create a progress tracking system
-    if verbose:
+    if log_level == "INFO" or log_level == "DEBUG":
         main_progress = tqdm(total=4, desc="AutoImputation progress")
         main_progress.set_description("Input validation")
+
+    if imputation_quantiles is None:
+        quantiles = QUANTILES  # Use default quantiles if not provided
+    else:
+        quantiles = imputation_quantiles
 
     # Step 0: Input validation
     try:
@@ -181,7 +202,7 @@ def autoimpute(
             raise ValueError(error_msg)
 
         # Step 1: Data preparation
-        if verbose:
+        if log_level == "INFO" or log_level == "DEBUG":
             log.info("Preprocessing data...")
             main_progress.update(1)
             main_progress.set_description("Data preparation")
@@ -257,7 +278,7 @@ def autoimpute(
                 training_data[weight_col] = donor_data[weight_col]
 
         # Step 2: Imputation with each method
-        if verbose:
+        if log_level == "INFO" or log_level == "DEBUG":
             main_progress.update(1)
             main_progress.set_description("Model evaluation")
 
@@ -398,7 +419,7 @@ def autoimpute(
         # Step 3: Compare imputation methods
         log.info(f"Comparing across {model_classes} methods. ")
 
-        if verbose:
+        if log_level == "INFO" or log_level == "DEBUG":
             main_progress.update(1)
             main_progress.set_description("Model selection")
 
@@ -418,7 +439,7 @@ def autoimpute(
             f"Generating imputations using the best method: {best_method} on the receiver data. "
         )
 
-        if verbose:
+        if log_level == "INFO" or log_level == "DEBUG":
             main_progress.update(1)
             main_progress.set_description("Imputation")
 
@@ -426,7 +447,7 @@ def autoimpute(
         chosen_model = models_dict[best_method]
 
         # Initialize the model
-        model = chosen_model()
+        model = chosen_model(log_level=log_level)
         imputation_q = 0.5  # this can be an input parameter, or if unspecified will default to a random quantile
         # Fit the model
         if best_method == "QuantReg":
@@ -486,7 +507,7 @@ def autoimpute(
             f"Imputation generation completed for {len(receiver_data)} samples using the best method: {best_method} and the median quantile. "
         )
 
-        if verbose:
+        if log_level == "INFO" or log_level == "DEBUG":
             main_progress.set_description("Complete")
             main_progress.close()
 
@@ -511,7 +532,11 @@ def autoimpute(
 
         final_imputations_dict = {}
         fitted_models_dict = {}
-        final_imputations_dict["best_method"] = final_imputations
+        final_imputations_dict["best_method"] = (
+            final_imputations[0.5]
+            if imputation_quantiles is None
+            else final_imputations
+        )
         fitted_models_dict["best_method"] = best_fitted_model
 
         # Step 6: If impute_all is True, impute using the full dataset with all the remaining models
@@ -523,7 +548,7 @@ def autoimpute(
                 model_name = model_class.__name__
                 if model_name != best_method:
                     log.info(f"Generating imputations with {model_name}. ")
-                    model = model_class()
+                    model = model_class(log_level=log_level)
                     if model_name == "QuantReg":
                         # For QuantReg, we need to explicitly fit the quantile
                         fitted_model = model.fit(
@@ -570,7 +595,14 @@ def autoimpute(
                         final_imputations = unnormalized_imputations
                     else:
                         final_imputations = imputations
-                    final_imputations_dict[model_name] = final_imputations
+                    final_imputations_dict[model_name] = (
+                        final_imputations[0.5]
+                        if imputation_quantiles is None
+                        else final_imputations
+                    )
+
+                    log.warning(final_imputations)
+
                     fitted_models_dict[model_name] = fitted_model
 
         return AutoImputeResult(
