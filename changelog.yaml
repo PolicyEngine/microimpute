@@ -30,3 +30,10 @@
     changed:
     - Publishing job to run after versioning in Workflow.
   date: 2025-07-24 11:46:11
+- bump: patch
+  changes:
+    changed:
+    - Made kaleido an optional dependency (install with `pip install microimpute[images]`).
+    - Image export functionality now gracefully handles missing kaleido with informative
+      warnings.
+  date: 2025-07-24 12:42:09
