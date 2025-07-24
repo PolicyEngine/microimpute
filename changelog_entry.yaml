@@ -1,7 +1,9 @@
-- bump: minor
+- bump: major
   changes:
     added:
-    - Support for Python 3.12 and 3.13.
+    - Support for Python 3.13.
     changed:
-    - Updated CI/CD workflows to test against Python 3.11, 3.12, and 3.13.
-    - Updated Black formatter to target Python 3.11, 3.12, and 3.13.
+    - Require Python 3.13 (dropped support for Python 3.11 and 3.12).
+    - Updated CI/CD workflows to test only against Python 3.13.
+    - Updated Black formatter to target Python 3.13 only.
+    - Simplified documentation dependencies to let jupyter-book manage its own deps.
