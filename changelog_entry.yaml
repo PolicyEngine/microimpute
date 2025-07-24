@@ -8,6 +8,7 @@
     - Updated CI/CD workflows to test only against Python 3.13.
     - Updated Black formatter to target Python 3.13 only.
     - Simplified documentation dependencies to let jupyter-book manage its own deps.
+    - Added furo theme as explicit dependency for documentation builds.
     - Updated NumPy from 1.26.x to 2.x (major version upgrade).
     - Updated SciPy from 1.14.x to 1.16.x.
     - Updated joblib from 1.4.x to 1.5.x.
