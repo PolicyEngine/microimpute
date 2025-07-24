@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "microimpute"
-version = "0.2.3"
+version = "0.2.4"
 description = "Benchmarking imputation methods for microdata"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,7 +36,7 @@ dev = [
     "isort>=5.9.0,<6.0.0",
     "mypy>=1.0.0,<2.0.0",
     "build>=1.0.0,<2.0.0",
-    "linecheck>=0.1.0,<0.2.3",
+    "linecheck>=0.1.0,<0.2.4",
 ]
 
 matching = [

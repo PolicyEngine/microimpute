@@ -25,3 +25,8 @@
     - Default logging level.
     - Autoimpute's output format for imputations
   date: 2025-07-07 09:46:21
+- bump: patch
+  changes:
+    changed:
+    - Publishing job to run after versioning in Workflow.
+  date: 2025-07-24 11:46:11
