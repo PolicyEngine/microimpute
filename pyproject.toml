@@ -12,30 +12,30 @@ description = "Benchmarking imputation methods for microdata"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
 dependencies = [
-    "numpy>=2.0.0,<3.0.0",  # Update to NumPy 2.x
-    "pandas>=2.2.0,<3.0.0",  # Keep current (3.0 not released yet)
-    "plotly>=5.24.0,<6.0.0",  # Keep current
-    "scikit-learn>=1.6.1,<2.0.0",  # Keep current
-    "scipy>=1.16.0,<1.17.0",  # Update to latest 1.16.x
-    "requests>=2.32.0,<3.0.0",  # Keep current
-    "tqdm>=4.65.0,<5.0.0",  # Keep current
-    "statsmodels>=0.14.0,<0.16.0",  # Allow 0.15.x when released
-    "quantile-forest>=1.4.0,<1.5.0",  # Keep current
-    "pydantic>=2.8.0,<3.0.0",  # Keep current
-    "optuna>=4.3.0,<5.0.0",  # Update to allow newer versions
-    "joblib>=1.5.0,<2.0.0",  # Update to latest 1.5.x
+    "numpy>=2.0.0,<3.0.0",
+    "pandas>=2.2.0,<3.0.0",
+    "plotly>=5.24.0,<6.0.0",
+    "scikit-learn>=1.6.1,<2.0.0",
+    "scipy>=1.16.0,<1.17.0",
+    "requests>=2.32.0,<3.0.0",
+    "tqdm>=4.65.0,<5.0.0",
+    "statsmodels>=0.14.0,<0.16.0",
+    "quantile-forest>=1.4.0,<1.5.0",
+    "pydantic>=2.8.0,<3.0.0",
+    "optuna>=4.3.0,<5.0.0",
+    "joblib>=1.5.0,<2.0.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0.0,<9.0.0",  # Keep current
-    "pytest-cov>=6.0.0,<7.0.0",  # Keep current
-    "flake8>=7.0.0,<8.0.0",  # Update to 7.x
-    "black>=24.0.0",  # Update to latest
-    "isort>=5.13.0,<6.0.0",  # Update to latest 5.x
-    "mypy>=1.0.0,<2.0.0",  # Keep current
-    "build>=1.0.0,<2.0.0",  # Keep current
-    "linecheck>=0.1.0,<0.3.0",  # Allow newer versions
+    "pytest>=8.0.0,<9.0.0",
+    "pytest-cov>=6.0.0,<7.0.0",
+    "flake8>=7.0.0,<8.0.0",
+    "black>=24.0.0",
+    "isort>=5.13.0,<6.0.0",
+    "mypy>=1.0.0,<2.0.0",
+    "build>=1.0.0,<2.0.0",
+    "linecheck>=0.1.0,<0.3.0",
 ]
 
 matching = [
