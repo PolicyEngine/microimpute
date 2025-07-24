@@ -1,4 +1,5 @@
 - bump: patch
   changes:
-    fixed:
-    - Removed kaleido requirement.
+    changed:
+    - Made kaleido an optional dependency (install with `pip install microimpute[images]`).
+    - Image export functionality now gracefully handles missing kaleido with informative warnings.

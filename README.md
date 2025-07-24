@@ -5,4 +5,3 @@ MicroImpute enables variable imputation through different statistical methods. I
 To install, run pip install microimpute.
 
 For image export functionality (PNG/JPG), install with: pip install microimpute[images]
- 
