@@ -1,0 +1,4 @@
+- bump: patch
+  changes:
+    changed:
+    - Publishing job to run after versioning in Workflow.
