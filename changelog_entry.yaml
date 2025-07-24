@@ -1,0 +1,7 @@
+- bump: minor
+  changes:
+    added:
+    - Support for Python 3.12 and 3.13.
+    changed:
+    - Updated CI/CD workflows to test against Python 3.11, 3.12, and 3.13.
+    - Updated Black formatter to target Python 3.11, 3.12, and 3.13.
