@@ -60,6 +60,10 @@ docs = [
     "h5py>=3.1.0,<4.0.0",
 ]
 
+images = [
+    "kaleido>=0.2.1,<0.3.0",
+]
+
 [tool.setuptools]
 packages = ["microimpute"]
 include-package-data = true
