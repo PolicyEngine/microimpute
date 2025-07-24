@@ -145,13 +145,21 @@ class PerformanceResults:
                         logger.debug(f"Creating directory: {save_dir}")
                         os.makedirs(save_dir, exist_ok=True)
 
-                    fig.write_image(save_path)
+                    # Try to save as image if kaleido is available
+                    try:
+                        fig.write_image(save_path)
+                        logger.info(f"Plot saved as image to {save_path}")
+                    except Exception as img_error:
+                        logger.warning(
+                            f"Could not save image to {save_path}: {str(img_error)}. "
+                            "Install kaleido to enable image export."
+                        )
 
-                    # Also save HTML version for interactive viewing
+                    # Always save HTML version for interactive viewing
                     html_path = save_path.replace(".jpg", ".html")
                     fig.write_html(html_path)
 
-                    logger.info(f"Plot saved to {save_path} and {html_path}")
+                    logger.info(f"Plot saved as HTML to {html_path}")
                 except Exception as e:
                     logger.error(f"Error saving train-test plot: {str(e)}")
                     raise RuntimeError(
@@ -468,9 +476,17 @@ class MethodComparisonResults:
                         logger.debug(f"Creating directory: {save_dir}")
                         os.makedirs(save_dir, exist_ok=True)
 
-                    fig.write_image(save_path)
+                    # Try to save as image if kaleido is available
+                    try:
+                        fig.write_image(save_path)
+                        logger.info(f"Plot saved as image to {save_path}")
+                    except Exception as img_error:
+                        logger.warning(
+                            f"Could not save image to {save_path}: {str(img_error)}. "
+                            "Install kaleido to enable image export."
+                        )
 
-                    # Also save as HTML for interactive viewing
+                    # Always save as HTML for interactive viewing
                     html_path = save_path.replace(".jpg", ".html").replace(
                         ".png", ".html"
                     )
@@ -478,7 +494,7 @@ class MethodComparisonResults:
                         html_path = save_path + ".html"
                     fig.write_html(html_path)
 
-                    logger.info(f"Plot saved to {save_path} and {html_path}")
+                    logger.info(f"Plot saved as HTML to {html_path}")
                 except Exception as e:
                     logger.error(f"Error saving plot: {str(e)}")
                     raise RuntimeError(
