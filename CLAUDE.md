@@ -3,6 +3,7 @@
 ## Code Style Guidelines
 
 ### Formatting & Organization
+
 - Use 4 spaces for indentation
 - Maximum line length: 79 characters (Black default)
 - Format code with Black: `black microimpute/`
@@ -12,6 +13,7 @@
   - Run `make check-format` locally before pushing to catch these errors
 
 ### Naming & Types
+
 - Use snake_case for variables, functions, and modules
 - Use CamelCase for classes
 - Constants should be UPPERCASE
@@ -19,30 +21,41 @@
 - Document functions with ReStructuredText-style docstrings
 
 ### Imports
+
 - Group imports: standard library, third-party, local modules
 - Import specific functions/classes rather than entire modules when practical
 
 ### Error Handling
+
 - Use assertions for validation
 - Raise appropriate exceptions with informative messages
 - Add context to exceptions when re-raising
 
-## Python Version Upgrades
-When upgrading Python versions:
-1. Update `pyproject.toml`:
-   - Update `requires-python` to include new versions
-   - Update Black's `target-version` to include all supported versions
-2. Update GitHub Actions workflows:
-   - Add new Python versions to the test matrix in `.github/workflows/pr.yaml` and `.github/workflows/main.yml`
-   - Update single-version jobs to use the latest Python version
-3. Run `uv lock` to update the lockfile with new dependencies
-4. Create a changelog entry with a minor version bump
-5. Run `make check-format` locally before pushing to ensure all files have trailing newlines
-6. If CI fails on linting, run `make format` to fix formatting issues automatically
+## Development Workflow
+
+### Before Pushing Code
+
+1. **Always run formatting tools**: `make format`
+   - This runs Black, isort, and linecheck
+   - Fixes most formatting issues automatically
+2. **Check your formatting**: `make check-format`
+   - Ensures your code will pass CI linting checks
+3. **Run tests locally**: `make test`
+   - Catch test failures before CI
+4. **Check for trailing newlines**: All files must end with a newline
+   - The linecheck tool will catch this
+
+### Common CI Failures
+
+- **Linting failures**: Run `make format` to fix
+- **Missing trailing newlines**: Run `make format` or add manually
+- **Import order issues**: Run `isort microimpute/`
+- **Line length issues**: Run `black microimpute/ --line-length 79`
 
 ## Code Integrity and Test Data Handling
-- **ABSOLUTE NEVER HARDCODE LOGIC JUST TO PASS SPECIFIC TEST CASES**
-    - This is a serious dishonesty that undermines code quality and model integrity
-    - It creates technical dept and maintenance nightmares
-    - It destroys the ability to trust results and undermines the entire purpose of tests
-    - NEVER add conditional logic that returns fixed values for specific input combinations
+
+- **NEVER HARDCODE LOGIC JUST TO PASS SPECIFIC TEST CASES**
+  - This undermines code quality and model integrity
+  - It creates technical debt and maintenance nightmares
+  - It destroys the ability to trust results
+  - Never add conditional logic that returns fixed values for specific input combinations
