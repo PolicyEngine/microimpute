@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "microimpute"
-version = "1.0.0"
+version = "1.0.1"
 description = "Benchmarking imputation methods for microdata"
 readme = "README.md"
 requires-python = ">=3.13,<3.14"
@@ -33,8 +33,8 @@ dev = [
     "flake8>=7.0.0,<8.0.0",
     "black>=24.0.0",
     "isort>=5.13.0,<6.0.0",
-    "mypy>=1.0.0,<2.0.0",
-    "build>=1.0.0,<2.0.0",
+    "mypy>=1.0.1,<2.0.0",
+    "build>=1.0.1,<2.0.0",
     "linecheck>=0.1.0,<0.3.0",
 ]
 
@@ -43,7 +43,7 @@ matching = [
 ]
 
 docs = [
-    "jupyter-book>=1.0.0",
+    "jupyter-book>=1.0.1",
     "furo>=2024.0.0",  # Sphinx theme for documentation
     "ipywidgets>=8.0.0,<9.0.0",  # For notebook interactivity
     "plotly>=5.24.0,<6.0.0",      # For visualization in notebooks

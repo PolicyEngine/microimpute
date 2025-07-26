@@ -60,3 +60,8 @@
     removed:
     - kaleido is no longer a required dependency (now optional).
   date: 2025-07-24 13:57:14
+- bump: patch
+  changes:
+    fixed:
+    - PyPI deployment workflow now properly defines Python version matrix.
+  date: 2025-07-26 16:22:56

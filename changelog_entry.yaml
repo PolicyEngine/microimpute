@@ -1,4 +1,0 @@
-- bump: patch
-  changes:
-    fixed:
-    - PyPI deployment workflow now properly defines Python version matrix.
