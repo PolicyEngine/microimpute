@@ -325,7 +325,7 @@ def test_qrf_sequential_imputation(
 
     X_train, X_test = preprocess_data(data)
 
-    # Test 1: Verify that sequential predictors are correctly set during training
+    # Fit the model for sequential imputation testing
     model = QRF()
     fitted_model = model.fit(
         X_train,
@@ -334,24 +334,7 @@ def test_qrf_sequential_imputation(
         n_estimators=50,  # Smaller for faster testing
     )
 
-    # Check that each variable has the correct predictor set
-    expected_predictors = {
-        "s1": predictors,  # First variable uses only original predictors
-        "s2": predictors + ["s1"],  # Second uses original + first
-        "s3": predictors
-        + ["s1", "s2"],  # Third uses original + first + second
-    }
-
-    for idx in range(len(expected_predictors)):
-        var = list(expected_predictors.keys())[idx]
-        actual_preds = fitted_model.sequential_predictors[var]
-        if idx != 0:  # Skip first variable as it has no previous predictors
-            expected_var = list(expected_predictors.keys())[idx - 1]
-            assert set(actual_preds[-1]) == set(
-                expected_var
-            ), f"Incorrect predictors for {var}. The imputed variable preceding it was missing, the predictors found were: {actual_preds}."
-
-    # Test 2: Verify that predictions use imputed values sequentially
+    # Verify that sequential imputation produces different results than parallel imputation
 
     # Create a small test set where we can track the behavior
     small_test = X_test.head(5).copy()
@@ -389,7 +372,7 @@ def test_qrf_sequential_imputation(
         differences_found
     ), "Sequential and parallel predictions are identical - sequential imputation may not be working"
 
-    # Test 3: Verify that the order of imputation matters
+    # Verify that the order of imputation matters
 
     # Reverse the order of variables
     reversed_imputed_variables = imputed_variables[::-1]  # ["s3", "s2", "s1"]
@@ -415,7 +398,7 @@ def test_qrf_sequential_imputation(
         "sequential imputation may not be working correctly"
     )
 
-    # Test 4: Edge case - single variable imputation should work normally
+    # Edge case - single variable imputation should work normally
 
     single_var_model = QRF()
     single_var_fitted = single_var_model.fit(

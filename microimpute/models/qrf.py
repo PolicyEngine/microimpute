@@ -25,7 +25,6 @@ class QRFResults(ImputerResults):
         imputed_vars_dummy_info: Optional[Dict[str, str]] = None,
         original_predictors: Optional[List[str]] = None,
         log_level: Optional[str] = "WARNING",
-        sequential_predictors: Optional[Dict[str, List[str]]] = None,
     ) -> None:
         """Initialize the QRF results.
 
@@ -38,7 +37,6 @@ class QRFResults(ImputerResults):
                 about dummy variables for imputed variables.
             original_predictors: Optional list of original predictor variable
                 names before dummy encoding.
-            sequential_predictors: Dictionary mapping each imputed variable to its predictor set (for sequential imputation).
         """
         super().__init__(
             predictors,
@@ -49,7 +47,6 @@ class QRFResults(ImputerResults):
             log_level,
         )
         self.models = models
-        self.sequential_predictors = sequential_predictors or {}
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
@@ -86,11 +83,12 @@ class QRFResults(ImputerResults):
                     # Create a copy of X_test that we'll augment with imputed values
                     X_test_augmented = X_test.copy()
 
-                    for variable in self.imputed_variables:
+                    for i, variable in enumerate(self.imputed_variables):
                         model = self.models[variable]
-                        # Get the appropriate predictors for this variable
-                        var_predictors = self.sequential_predictors.get(
-                            variable, self.predictors
+
+                        # Build predictor set: original predictors + previously imputed variables
+                        var_predictors = (
+                            self.predictors + self.imputed_variables[:i]
                         )
 
                         # Ensure we have all needed columns in X_test_augmented
@@ -126,13 +124,13 @@ class QRFResults(ImputerResults):
                 # Create a copy of X_test that we'll augment with imputed values
                 X_test_augmented = X_test.copy()
 
-                for variable in self.imputed_variables:
+                for i, variable in enumerate(self.imputed_variables):
                     self.logger.info(f"Imputing variable {variable}")
                     model = self.models[variable]
 
-                    # Get the appropriate predictors for this variable
-                    var_predictors = self.sequential_predictors.get(
-                        variable, self.predictors
+                    # Build predictor set: original predictors + previously imputed variables
+                    var_predictors = (
+                        self.predictors + self.imputed_variables[:i]
                     )
 
                     # Ensure we have all needed columns in X_test_augmented
@@ -187,7 +185,6 @@ class QRF(Imputer):
         super().__init__(log_level=log_level)
         self.models = {}
         self.log_level = log_level
-        self.sequential_predictors = {}
         self.logger.debug("Initializing QRF imputer")
 
     @validate_call(config=VALIDATE_CONFIG)
@@ -223,15 +220,10 @@ class QRF(Imputer):
                         imputed_variables=imputed_variables,
                     )
 
-                    # Track the evolving set of predictors for sequential imputation
-                    current_predictors = predictors.copy()
-
                     # Initialize and fit a QRF model for each variable
                     for i, variable in enumerate(imputed_variables):
-                        # Store the predictor set for this variable
-                        self.sequential_predictors[variable] = (
-                            current_predictors.copy()
-                        )
+                        # Build predictor set: original predictors + previously imputed variables
+                        current_predictors = predictors + imputed_variables[:i]
 
                         model = qrf.QRF(seed=self.seed)
                         y = pd.DataFrame(X_train[variable])
@@ -245,10 +237,6 @@ class QRF(Imputer):
 
                         self.models[variable] = model
 
-                        # Add this variable to predictors for subsequent variables
-                        if variable not in current_predictors:
-                            current_predictors.append(variable)
-
                     return (
                         QRFResults(
                             models=self.models,
@@ -257,7 +245,6 @@ class QRF(Imputer):
                             imputed_vars_dummy_info=self.imputed_vars_dummy_info,
                             original_predictors=self.original_predictors,
                             seed=self.seed,
-                            sequential_predictors=self.sequential_predictors,
                         ),
                         qrf_kwargs,
                     )
@@ -276,15 +263,10 @@ class QRF(Imputer):
                     f"optional parameters: {qrf_kwargs}"
                 )
 
-                # Track the evolving set of predictors for sequential imputation
-                current_predictors = predictors.copy()
-
                 # Initialize and fit a QRF model for each variable
                 for i, variable in enumerate(imputed_variables):
-                    # Store the predictor set for this variable
-                    self.sequential_predictors[variable] = (
-                        current_predictors.copy()
-                    )
+                    # Build predictor set: original predictors + previously imputed variables
+                    current_predictors = predictors + imputed_variables[:i]
 
                     model = qrf.QRF(seed=self.seed)
                     y = pd.DataFrame(X_train[variable])
@@ -298,10 +280,6 @@ class QRF(Imputer):
 
                     self.models[variable] = model
 
-                    # Add this variable to predictors for subsequent variables
-                    if variable not in current_predictors:
-                        current_predictors.append(variable)
-
                 return QRFResults(
                     models=self.models,
                     predictors=predictors,
@@ -310,7 +288,6 @@ class QRF(Imputer):
                     original_predictors=self.original_predictors,
                     seed=self.seed,
                     log_level=self.log_level,
-                    sequential_predictors=self.sequential_predictors,
                 )
         except Exception as e:
             self.logger.error(f"Error fitting QRF model: {str(e)}")
@@ -362,15 +339,15 @@ class QRF(Imputer):
             # Track errors for all variables
             var_errors = []
 
-            # Track the evolving set of predictors for sequential imputation
-            current_predictors = predictors.copy()
-
             # Create copies for augmented data
             X_train_augmented = X_train.copy()
             X_test_augmented = X_test.copy()
 
             # For each imputed variable
-            for var in imputed_variables:
+            for i, var in enumerate(imputed_variables):
+                # Build predictor set: original predictors + previously imputed variables
+                current_predictors = predictors + imputed_variables[:i]
+
                 # Extract target variable values
                 y_test = X_test[var]
 
@@ -399,10 +376,6 @@ class QRF(Imputer):
                 normalized_mse = mse / (std**2) if std > 0 else mse
 
                 var_errors.append(normalized_mse)
-
-                # Add this variable to predictors for subsequent variables
-                if var not in current_predictors:
-                    current_predictors.append(var)
 
             # Return mean error across all variables
             return np.mean(var_errors)
