@@ -1,4 +1,0 @@
-- bump: patch
-  changes:
-    added:
-    - Made qrf impute sequentially when multiple imputed_variables are passed.

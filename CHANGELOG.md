@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), 
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2025-07-30 23:45:19
+
+### Added
+
+- Made qrf impute sequentially when multiple imputed_variables are passed.
+
 ## [1.0.1] - 2025-07-26 16:22:56
 
 ### Fixed
@@ -82,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[1.0.2]: https://github.com/PolicyEngine/microimpute/compare/1.0.1...1.0.2
 [1.0.1]: https://github.com/PolicyEngine/microimpute/compare/1.0.0...1.0.1
 [1.0.0]: https://github.com/PolicyEngine/microimpute/compare/0.2.5...1.0.0
 [0.2.5]: https://github.com/PolicyEngine/microimpute/compare/0.2.4...0.2.5
