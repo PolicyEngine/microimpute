@@ -2,7 +2,7 @@ install:
 	pip install -e ".[dev,docs]"
 
 test:
-	pytest microimpute/tests/ --cov=microimpute --cov-report=xml --maxfail=0
+	pytest tests/ --cov=microimpute --cov-report=xml --maxfail=0
 
 check-format:
 	linecheck .
