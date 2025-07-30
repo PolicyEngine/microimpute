@@ -298,3 +298,134 @@ def test_qrf_imputes_multiple_variables(
     # Check structure of predictions
     assert isinstance(predictions, dict)
     assert predictions[0.5].shape[1] == len(imputed_variables)
+
+
+def test_qrf_sequential_imputation(
+    data: pd.DataFrame = diabetes_df,
+) -> None:
+    """
+    Test that QRF performs sequential imputation correctly.
+
+    This test verifies that:
+    1. Each imputed variable uses previously imputed variables as predictors
+    2. The predictor sets are correctly tracked and used
+    3. Sequential imputation produces different results than parallel imputation
+    4. The order of imputation matters
+
+    Args:
+        data: DataFrame with the dataset to use
+    """
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = [
+        "s1",
+        "s2",
+        "s3",
+    ]  # Using 3 variables to test sequential behavior
+    data = data[predictors + imputed_variables]
+
+    X_train, X_test = preprocess_data(data)
+
+    # Test 1: Verify that sequential predictors are correctly set during training
+    model = QRF()
+    fitted_model = model.fit(
+        X_train,
+        predictors,
+        imputed_variables,
+        n_estimators=50,  # Smaller for faster testing
+    )
+
+    # Check that each variable has the correct predictor set
+    expected_predictors = {
+        "s1": predictors,  # First variable uses only original predictors
+        "s2": predictors + ["s1"],  # Second uses original + first
+        "s3": predictors
+        + ["s1", "s2"],  # Third uses original + first + second
+    }
+
+    for idx in range(len(expected_predictors)):
+        var = list(expected_predictors.keys())[idx]
+        actual_preds = fitted_model.sequential_predictors[var]
+        if idx != 0:  # Skip first variable as it has no previous predictors
+            expected_var = list(expected_predictors.keys())[idx - 1]
+            assert set(actual_preds[-1]) == set(
+                expected_var
+            ), f"Incorrect predictors for {var}. The imputed variable preceding it was missing, the predictors found were: {actual_preds}."
+
+    # Test 2: Verify that predictions use imputed values sequentially
+
+    # Create a small test set where we can track the behavior
+    small_test = X_test.head(5).copy()
+
+    # Get predictions
+    predictions = fitted_model.predict(small_test, quantiles=[0.5])
+    sequential_preds = predictions[0.5]
+
+    parallel_predictions = {}
+
+    # Fit and predict each variable independently
+    for var in imputed_variables:
+        single_model = QRF()
+        single_fitted = single_model.fit(
+            X_train,
+            predictors,
+            [var],  # Only impute this one variable
+            n_estimators=50,
+        )
+        single_pred = single_fitted.predict(small_test, quantiles=[0.5])
+        parallel_predictions[var] = single_pred[0.5][var]
+
+    # The sequential predictions should be different from parallel predictions
+    # (at least for variables after the first one)
+    differences_found = False
+    for var in imputed_variables[
+        1:
+    ]:  # Skip first variable as it should be the same
+        seq_values = sequential_preds[var].values
+        par_values = parallel_predictions[var].values
+        if not np.allclose(seq_values, par_values, rtol=1e-5):
+            differences_found = True
+
+    assert (
+        differences_found
+    ), "Sequential and parallel predictions are identical - sequential imputation may not be working"
+
+    # Test 3: Verify that the order of imputation matters
+
+    # Reverse the order of variables
+    reversed_imputed_variables = imputed_variables[::-1]  # ["s3", "s2", "s1"]
+
+    reversed_model = QRF()
+    reversed_fitted = reversed_model.fit(
+        X_train,
+        predictors,
+        reversed_imputed_variables,
+        n_estimators=50,
+    )
+
+    reversed_predictions = reversed_fitted.predict(small_test, quantiles=[0.5])
+    reversed_preds = reversed_predictions[0.5]
+
+    # Compare predictions for the middle variable (s2)
+    # It should be different when imputed in different orders
+    original_s2 = sequential_preds["s2"].values
+    reversed_s2 = reversed_preds["s2"].values
+
+    assert not np.allclose(original_s2, reversed_s2, rtol=1e-5), (
+        "Predictions for s2 are the same regardless of imputation order - "
+        "sequential imputation may not be working correctly"
+    )
+
+    # Test 4: Edge case - single variable imputation should work normally
+
+    single_var_model = QRF()
+    single_var_fitted = single_var_model.fit(
+        X_train,
+        predictors,
+        ["s1"],  # Only one variable
+        n_estimators=50,
+    )
+
+    single_var_preds = single_var_fitted.predict(small_test, quantiles=[0.5])
+
+    assert single_var_preds[0.5].shape == (len(small_test), 1)
+    assert not single_var_preds[0.5]["s1"].isna().any()
