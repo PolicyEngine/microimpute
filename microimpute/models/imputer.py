@@ -279,6 +279,7 @@ class Imputer(ABC):
         predictors: List[str],
         imputed_variables: List[str],
         weight_col: Optional[Union[str, np.ndarray, pd.Series]] = None,
+        skip_missing: bool = False,
         **kwargs: Any,
     ) -> Any:  # Returns ImputerResults
         """Fit the model to the training data.
@@ -288,6 +289,7 @@ class Imputer(ABC):
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
             weight_col: Optional name of the column or column array/series containing sampling weights. When provided, `X_train` will be sampled with replacement using this column as selection probabilities before fitting the model.
+            skip_missing: If True, skip variables missing from training data with warning. If False, raise error for missing variables.
             **kwargs: Additional model-specific parameters.
 
         Returns:
@@ -301,6 +303,12 @@ class Imputer(ABC):
         original_predictors = predictors.copy()
 
         try:
+            # Handle missing variables if skip_missing is enabled
+            if skip_missing:
+                imputed_variables = self._handle_missing_variables(
+                    X_train, imputed_variables
+                )
+
             # Validate data
             self._validate_data(X_train, predictors + imputed_variables)
 
@@ -382,6 +390,37 @@ class Imputer(ABC):
             RuntimeError: If model fitting fails.
         """
         raise NotImplementedError("Subclasses must implement `_fit`")
+
+    def _handle_missing_variables(
+        self, X_train: pd.DataFrame, imputed_variables: List[str]
+    ) -> List[str]:
+        """Handle missing variables in the training data.
+
+        Args:
+            X_train: Training data DataFrame
+            imputed_variables: List of variables to impute
+
+        Returns:
+            List of available variables to impute
+        """
+        # Identify available and missing variables
+        available_vars = [v for v in imputed_variables if v in X_train.columns]
+        missing_vars = [
+            v for v in imputed_variables if v not in X_train.columns
+        ]
+
+        # Handle missing variables
+        if missing_vars:
+            self.logger.warning(
+                f"Variables not found in X_train: {missing_vars}. "
+                f"Available variables: {available_vars}"
+            )
+
+            self.logger.warning(
+                f"Skipping missing variables and proceeding with {len(available_vars)} available variables"
+            )
+
+        return available_vars
 
 
 class ImputerResults(ABC):
