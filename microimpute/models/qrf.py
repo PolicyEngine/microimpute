@@ -31,7 +31,7 @@ def _get_sequential_predictors(
 
 class _QRFModel:
     """Internal class to handle QRF model with encoding and prediction logic."""
-    
+
     def __init__(self, seed: int, logger):
         self.seed = seed
         self.logger = logger
@@ -39,51 +39,64 @@ class _QRFModel:
         self.categorical_columns = None
         self.encoded_columns = None
         self.output_column = None
-        
+
     def fit(self, X: pd.DataFrame, y: pd.Series, **qrf_kwargs: Any) -> None:
         """Fit the QRF model with one-hot encoding."""
         # Handle categorical columns
         self.categorical_columns = X.select_dtypes(include=["object"]).columns
-        X_encoded = pd.get_dummies(X, columns=self.categorical_columns, drop_first=True)
+        X_encoded = pd.get_dummies(
+            X, columns=self.categorical_columns, drop_first=True
+        )
         self.encoded_columns = X_encoded.columns
         self.output_column = y.name
-        
+
         # Create and fit model
         self.qrf = RandomForestQuantileRegressor(
             random_state=self.seed, **qrf_kwargs
         )
         self.qrf.fit(X_encoded, y.values.ravel())
-        
-    def predict(self, X: pd.DataFrame, mean_quantile: float = 0.5, count_samples: int = 10) -> pd.Series:
+
+    def predict(
+        self,
+        X: pd.DataFrame,
+        mean_quantile: float = 0.5,
+        count_samples: int = 10,
+    ) -> pd.Series:
         """Predict using the fitted model with beta distribution sampling."""
         # Encode categorical features
-        X_encoded = pd.get_dummies(X, columns=self.categorical_columns, drop_first=True)
-        
+        X_encoded = pd.get_dummies(
+            X, columns=self.categorical_columns, drop_first=True
+        )
+
         # Add missing columns with zeros
         missing_cols = set(self.encoded_columns) - set(X_encoded.columns)
         for col in missing_cols:
             X_encoded[col] = 0
-            
+
         # Ensure columns are in the same order
         X_encoded = X_encoded[self.encoded_columns]
-        
+
         # Generate quantile grid
         eps = 1.0 / (count_samples + 1)
         quantile_grid = np.linspace(eps, 1.0 - eps, count_samples)
         pred = self.qrf.predict(X_encoded, quantiles=list(quantile_grid))
-        
+
         # Sample from beta distribution
         random_generator = np.random.default_rng(self.seed)
         a = mean_quantile / (1 - mean_quantile)
-        input_quantiles = random_generator.beta(a, 1, size=len(X)) * count_samples
-        input_quantiles = np.clip(input_quantiles.astype(int), 0, count_samples - 1)
-        
+        input_quantiles = (
+            random_generator.beta(a, 1, size=len(X)) * count_samples
+        )
+        input_quantiles = np.clip(
+            input_quantiles.astype(int), 0, count_samples - 1
+        )
+
         # Extract predictions
         if len(pred.shape) == 2:
             predictions = pred[np.arange(len(pred)), input_quantiles]
         else:
             predictions = pred[np.arange(len(pred)), :, input_quantiles]
-            
+
         return pd.Series(predictions, index=X.index, name=self.output_column)
 
 
@@ -278,7 +291,7 @@ class QRF(Imputer):
                         model.fit(
                             X_train[current_predictors],
                             X_train[variable],
-                            **qrf_kwargs
+                            **qrf_kwargs,
                         )
 
                         self.logger.info(
@@ -325,7 +338,7 @@ class QRF(Imputer):
                     model.fit(
                         X_train[current_predictors],
                         X_train[variable],
-                        **qrf_kwargs
+                        **qrf_kwargs,
                     )
 
                     self.logger.info(

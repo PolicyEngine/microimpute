@@ -1,0 +1,5 @@
+- bump: patch
+  changes:
+    changed:
+    - Removed utils.QRF wrapper to use RandomForestQuantileRegressor directly for consistency with OLS/QuantReg patterns
+
