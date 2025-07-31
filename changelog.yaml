@@ -88,3 +88,10 @@
     - Removed duplicate categorical handling from QRF model as base Imputer class
       already handles this
   date: 2025-07-31 11:22:52
+- bump: patch
+  changes:
+    added:
+    - Added memory usage logging to QRF.
+    - Enabled imputation even if there are imputed variables missing when skip_missing
+      is True.
+  date: 2025-07-31 23:56:29
