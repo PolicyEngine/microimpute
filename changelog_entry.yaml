@@ -1,8 +1,0 @@
-- bump: patch
-  changes:
-    changed:
-    - Removed utils.QRF wrapper to use RandomForestQuantileRegressor directly for consistency with OLS/QuantReg patterns
-    - Removed duplicate categorical handling from QRF model as base Imputer class already handles this
-    added:
-    - Extended test coverage for QRF model including edge cases and internal class testing
-
