@@ -30,31 +30,27 @@ def _get_sequential_predictors(
 
 
 class _QRFModel:
-    """Internal class to handle QRF model with encoding and prediction logic."""
+    """Internal class to handle QRF model with quantile prediction logic."""
 
     def __init__(self, seed: int, logger):
         self.seed = seed
         self.logger = logger
         self.qrf = None
-        self.categorical_columns = None
-        self.encoded_columns = None
         self.output_column = None
 
     def fit(self, X: pd.DataFrame, y: pd.Series, **qrf_kwargs: Any) -> None:
-        """Fit the QRF model with one-hot encoding."""
-        # Handle categorical columns
-        self.categorical_columns = X.select_dtypes(include=["object"]).columns
-        X_encoded = pd.get_dummies(
-            X, columns=self.categorical_columns, drop_first=True
-        )
-        self.encoded_columns = X_encoded.columns
+        """Fit the QRF model.
+
+        Note: Assumes X is already preprocessed with categorical encoding
+        handled by the base Imputer class.
+        """
         self.output_column = y.name
 
         # Create and fit model
         self.qrf = RandomForestQuantileRegressor(
             random_state=self.seed, **qrf_kwargs
         )
-        self.qrf.fit(X_encoded, y.values.ravel())
+        self.qrf.fit(X, y.values.ravel())
 
     def predict(
         self,
@@ -62,24 +58,15 @@ class _QRFModel:
         mean_quantile: float = 0.5,
         count_samples: int = 10,
     ) -> pd.Series:
-        """Predict using the fitted model with beta distribution sampling."""
-        # Encode categorical features
-        X_encoded = pd.get_dummies(
-            X, columns=self.categorical_columns, drop_first=True
-        )
+        """Predict using the fitted model with beta distribution sampling.
 
-        # Add missing columns with zeros
-        missing_cols = set(self.encoded_columns) - set(X_encoded.columns)
-        for col in missing_cols:
-            X_encoded[col] = 0
-
-        # Ensure columns are in the same order
-        X_encoded = X_encoded[self.encoded_columns]
-
+        Note: Assumes X is already preprocessed with categorical encoding
+        handled by the base ImputerResults class.
+        """
         # Generate quantile grid
         eps = 1.0 / (count_samples + 1)
         quantile_grid = np.linspace(eps, 1.0 - eps, count_samples)
-        pred = self.qrf.predict(X_encoded, quantiles=list(quantile_grid))
+        pred = self.qrf.predict(X, quantiles=list(quantile_grid))
 
         # Sample from beta distribution
         random_generator = np.random.default_rng(self.seed)
@@ -287,6 +274,7 @@ class QRF(Imputer):
                         )
 
                         # Create and fit model
+                        # Note: X_train is already preprocessed by base class
                         model = _QRFModel(seed=self.seed, logger=self.logger)
                         model.fit(
                             X_train[current_predictors],
@@ -334,6 +322,7 @@ class QRF(Imputer):
                     )
 
                     # Create and fit model
+                    # Note: X_train is already preprocessed by base class
                     model = _QRFModel(seed=self.seed, logger=self.logger)
                     model.fit(
                         X_train[current_predictors],
@@ -421,6 +410,7 @@ class QRF(Imputer):
                 y_test = X_test[var]
 
                 # Create and fit QRF model with trial parameters
+                # Note: X_train_augmented is already preprocessed by base class
                 model = _QRFModel(seed=self.seed, logger=self.logger)
                 model.fit(
                     X_train_augmented[current_predictors],
