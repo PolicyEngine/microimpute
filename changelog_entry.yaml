@@ -2,3 +2,4 @@
   changes:
     added:
     - Added memory usage logging to QRF.
+    - Enabled imputation even if there are imputed variables missing when skip_missing is True.

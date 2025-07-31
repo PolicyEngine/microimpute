@@ -629,3 +629,196 @@ def test_qrf_sequential_imputation_logging():
 
     # Clean up
     model.logger.removeHandler(handler)
+
+
+def test_qrf_missing_variables_handling():
+    """Test graceful handling of missing variables in imputation."""
+    # Create test data with some variables
+    np.random.seed(42)
+    n_samples = 50
+
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "x2": np.random.randn(n_samples),
+            "existing_var": np.random.randn(n_samples),
+        }
+    )
+
+    # Test with skip_missing=False (should raise error)
+    model_strict = QRF(log_level="WARNING")
+
+    with pytest.raises(ValueError) as excinfo:
+        model_strict.fit(
+            data,
+            predictors=["x1", "x2"],
+            imputed_variables=["existing_var", "missing_var1", "missing_var2"],
+            skip_missing=False,
+            n_estimators=5,
+        )
+
+    # The error message should contain information about missing columns
+    error_str = str(excinfo.value)
+    assert (
+        "Missing columns in data" in error_str
+        or "Missing variables" in error_str
+    )
+    assert "missing_var1" in error_str
+    assert "missing_var2" in error_str
+
+    # Test with skip_missing=True (should work)
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.WARNING)
+
+    model_lenient = QRF(log_level="WARNING")
+    model_lenient.logger.addHandler(handler)
+
+    fitted_model = model_lenient.fit(
+        data,
+        predictors=["x1", "x2"],
+        imputed_variables=["existing_var", "missing_var1", "missing_var2"],
+        skip_missing=True,
+        n_estimators=5,
+    )
+
+    # Check that warning was logged
+    log_output = log_stream.getvalue()
+    assert "Variables not found in X_train" in log_output
+    assert "missing_var1" in log_output
+    assert "missing_var2" in log_output
+
+    # Check that only existing variable was included
+    assert len(fitted_model.imputed_variables) == 1
+    assert "existing_var" in fitted_model.imputed_variables
+    assert "missing_var1" not in fitted_model.imputed_variables
+    assert "missing_var2" not in fitted_model.imputed_variables
+
+    # Test prediction works with available variables
+    test_data = data[["x1", "x2"]].head(10)
+    predictions = fitted_model.predict(test_data)
+
+    assert 0.5 in predictions
+    assert "existing_var" in predictions[0.5].columns
+    assert len(predictions[0.5]) == len(test_data)
+
+    # Clean up
+    model_lenient.logger.removeHandler(handler)
+
+
+def test_qrf_all_variables_missing():
+    """Test behavior when all variables are missing."""
+    # Create test data
+    np.random.seed(42)
+    n_samples = 30
+
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "x2": np.random.randn(n_samples),
+        }
+    )
+
+    # Test with skip_missing=True but all variables missing
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.WARNING)
+
+    model = QRF(log_level="WARNING")
+    model.logger.addHandler(handler)
+
+    fitted_model = model.fit(
+        data,
+        predictors=["x1", "x2"],
+        imputed_variables=["missing_var1", "missing_var2"],
+        skip_missing=True,
+        n_estimators=5,
+    )
+
+    # Check that warning was logged
+    log_output = log_stream.getvalue()
+    assert "Variables not found in X_train" in log_output
+    # The base class logs that it's skipping missing variables
+    assert "Skipping missing variables" in log_output
+
+    # Check that no variables were included
+    assert len(fitted_model.imputed_variables) == 0
+    assert fitted_model.models == {}
+
+    # Test prediction with empty model
+    test_data = data[["x1", "x2"]].head(5)
+    predictions = fitted_model.predict(test_data)
+
+    assert 0.5 in predictions
+    assert len(predictions[0.5].columns) == 0  # No variables to predict
+    # When there are no variables to impute, predictions should be empty but defined
+    assert isinstance(predictions[0.5], pd.DataFrame)
+
+    # Clean up
+    model.logger.removeHandler(handler)
+
+
+def test_qrf_partial_missing_variables():
+    """Test handling of partially missing variables."""
+    # Create test data
+    np.random.seed(42)
+    n_samples = 40
+
+    data = pd.DataFrame(
+        {
+            "predictor1": np.random.randn(n_samples),
+            "predictor2": np.random.randn(n_samples),
+            "target1": np.random.randn(n_samples),
+            "target3": np.random.randn(n_samples),
+            # Note: target2 is missing
+        }
+    )
+
+    # Test with skip_missing=True
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.INFO)
+
+    model = QRF(log_level="INFO")
+    model.logger.addHandler(handler)
+
+    fitted_model = model.fit(
+        data,
+        predictors=["predictor1", "predictor2"],
+        imputed_variables=[
+            "target1",
+            "target2",
+            "target3",
+        ],  # target2 is missing
+        skip_missing=True,
+        n_estimators=5,
+    )
+
+    log_output = log_stream.getvalue()
+
+    # Check that warning was logged for missing variable
+    assert "Variables not found in X_train: ['target2']" in log_output
+    assert "Available variables: ['target1', 'target3']" in log_output
+
+    # Check that available variables were processed
+    assert len(fitted_model.imputed_variables) == 2
+    assert "target1" in fitted_model.imputed_variables
+    assert "target3" in fitted_model.imputed_variables
+    assert "target2" not in fitted_model.imputed_variables
+
+    # Verify sequential imputation still works correctly
+    # target3 should use target1 as a predictor since it comes after target1
+    assert "target1" in fitted_model.models
+    assert "target3" in fitted_model.models
+
+    # Test prediction
+    test_data = data[["predictor1", "predictor2"]].head(8)
+    predictions = fitted_model.predict(test_data)
+
+    assert 0.5 in predictions
+    assert "target1" in predictions[0.5].columns
+    assert "target3" in predictions[0.5].columns
+    assert "target2" not in predictions[0.5].columns
+
+    # Clean up
+    model.logger.removeHandler(handler)
