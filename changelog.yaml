@@ -70,3 +70,10 @@
     added:
     - Made qrf impute sequentially when multiple imputed_variables are passed.
   date: 2025-07-30 23:45:19
+- bump: minor
+  changes:
+    added:
+    - Documentation explaining sequential imputation behavior in QRF
+    changed:
+    - Upgraded to JupyterBook 2.0 (beta) for improved documentation builds
+  date: 2025-07-31 10:14:08
