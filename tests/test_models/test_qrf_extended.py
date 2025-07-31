@@ -75,7 +75,7 @@ def test_qrf_model_internal_class():
 
     # Preprocess categorical features manually for this test
     X_encoded = pd.get_dummies(X, columns=["cat_feature"], drop_first=True)
-    
+
     # Fit the model
     internal_model.fit(X_encoded, y, n_estimators=50, min_samples_leaf=5)
 
@@ -173,8 +173,6 @@ def test_qrf_with_single_predictor():
     for i in range(len(test_data)):
         assert predictions[0.1]["y"].iloc[i] <= predictions[0.5]["y"].iloc[i]
         assert predictions[0.5]["y"].iloc[i] <= predictions[0.9]["y"].iloc[i]
-
-
 
 
 def test_qrf_beta_distribution_sampling():
