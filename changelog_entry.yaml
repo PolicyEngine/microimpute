@@ -1,4 +1,6 @@
-- bump: patch
+- bump: minor
   changes:
     added:
       - Documentation explaining sequential imputation behavior in QRF
+    changed:
+      - Upgraded to JupyterBook 2.0 (beta) for improved documentation builds
