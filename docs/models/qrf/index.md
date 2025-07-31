@@ -4,7 +4,7 @@ The `QRF` model harnesses the power of ensemble learning by utilizing multiple d
 
 ## How it works
 
-Quantile Regression Forests build upon the foundation of random forests by implementing a specialized algorithm from the utils.qrf module. The method begins by constructing an ensemble of decision trees, each trained on different bootstrapped samples of the original data. This process, known as bagging, introduces diversity among the individual trees and helps reduce overfitting.
+Quantile Regression Forests build upon the foundation of random forests by implementing a specialized algorithm from the quantile_forest package. The method begins by constructing an ensemble of decision trees, each trained on different bootstrapped samples of the original data. This process, known as bagging, introduces diversity among the individual trees and helps reduce overfitting.
 
 During training, each tree in the forest predicts the target variable using only a random subset of the available features at each split point. This feature randomization further enhances diversity within the ensemble and improves its ability to capture various aspects of the underlying data relationships.
 

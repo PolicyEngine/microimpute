@@ -5,10 +5,10 @@ from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 from pydantic import validate_call
+from quantile_forest import RandomForestQuantileRegressor
 
 from microimpute.config import VALIDATE_CONFIG
 from microimpute.models.imputer import Imputer, ImputerResults
-from microimpute.utils import qrf
 
 
 def _get_sequential_predictors(
@@ -29,6 +29,64 @@ def _get_sequential_predictors(
     return predictors + imputed_variables[:current_variable_index]
 
 
+class _QRFModel:
+    """Internal class to handle QRF model with quantile prediction logic."""
+
+    def __init__(self, seed: int, logger):
+        self.seed = seed
+        self.logger = logger
+        self.qrf = None
+        self.output_column = None
+
+    def fit(self, X: pd.DataFrame, y: pd.Series, **qrf_kwargs: Any) -> None:
+        """Fit the QRF model.
+
+        Note: Assumes X is already preprocessed with categorical encoding
+        handled by the base Imputer class.
+        """
+        self.output_column = y.name
+
+        # Create and fit model
+        self.qrf = RandomForestQuantileRegressor(
+            random_state=self.seed, **qrf_kwargs
+        )
+        self.qrf.fit(X, y.values.ravel())
+
+    def predict(
+        self,
+        X: pd.DataFrame,
+        mean_quantile: float = 0.5,
+        count_samples: int = 10,
+    ) -> pd.Series:
+        """Predict using the fitted model with beta distribution sampling.
+
+        Note: Assumes X is already preprocessed with categorical encoding
+        handled by the base ImputerResults class.
+        """
+        # Generate quantile grid
+        eps = 1.0 / (count_samples + 1)
+        quantile_grid = np.linspace(eps, 1.0 - eps, count_samples)
+        pred = self.qrf.predict(X, quantiles=list(quantile_grid))
+
+        # Sample from beta distribution
+        random_generator = np.random.default_rng(self.seed)
+        a = mean_quantile / (1 - mean_quantile)
+        input_quantiles = (
+            random_generator.beta(a, 1, size=len(X)) * count_samples
+        )
+        input_quantiles = np.clip(
+            input_quantiles.astype(int), 0, count_samples - 1
+        )
+
+        # Extract predictions
+        if len(pred.shape) == 2:
+            predictions = pred[np.arange(len(pred)), input_quantiles]
+        else:
+            predictions = pred[np.arange(len(pred)), :, input_quantiles]
+
+        return pd.Series(predictions, index=X.index, name=self.output_column)
+
+
 class QRFResults(ImputerResults):
     """
     Fitted QRF instance ready for imputation.
@@ -36,7 +94,7 @@ class QRFResults(ImputerResults):
 
     def __init__(
         self,
-        models: Dict[str, "QRF"],
+        models: Dict[str, _QRFModel],
         predictors: List[str],
         imputed_variables: List[str],
         seed: int,
@@ -47,7 +105,7 @@ class QRFResults(ImputerResults):
         """Initialize the QRF results.
 
         Args:
-            model: Fitted QRF model.
+            models: Dictionary of fitted QRF models for each variable.
             predictors: List of column names used as predictors.
             imputed_variables: List of column names to be imputed.
             seed: Random seed for reproducibility.
@@ -165,7 +223,7 @@ class QRF(Imputer):
     Quantile Regression Forest model for imputation.
 
     This model uses a Quantile Random Forest to predict quantiles.
-    The underlying QRF implementation is from utils.qrf.
+    The underlying QRF implementation is from the quantile_forest package.
     """
 
     def __init__(self, log_level: Optional[str] = "WARNING") -> None:
@@ -215,11 +273,14 @@ class QRF(Imputer):
                             predictors, imputed_variables, i
                         )
 
-                        model = qrf.QRF(seed=self.seed)
-                        y = pd.DataFrame(X_train[variable])
-
-                        # Fit the QRF model with the current predictor set
-                        model.fit(X_train[current_predictors], y, **qrf_kwargs)
+                        # Create and fit model
+                        # Note: X_train is already preprocessed by base class
+                        model = _QRFModel(seed=self.seed, logger=self.logger)
+                        model.fit(
+                            X_train[current_predictors],
+                            X_train[variable],
+                            **qrf_kwargs,
+                        )
 
                         self.logger.info(
                             f"QRF model fitted for {variable} with {len(current_predictors)} predictors"
@@ -260,11 +321,14 @@ class QRF(Imputer):
                         predictors, imputed_variables, i
                     )
 
-                    model = qrf.QRF(seed=self.seed)
-                    y = pd.DataFrame(X_train[variable])
-
-                    # Fit the QRF model with the current predictor set
-                    model.fit(X_train[current_predictors], y, **qrf_kwargs)
+                    # Create and fit model
+                    # Note: X_train is already preprocessed by base class
+                    model = _QRFModel(seed=self.seed, logger=self.logger)
+                    model.fit(
+                        X_train[current_predictors],
+                        X_train[variable],
+                        **qrf_kwargs,
+                    )
 
                     self.logger.info(
                         f"QRF model fitted for {variable} with {len(current_predictors)} predictors"
@@ -346,10 +410,11 @@ class QRF(Imputer):
                 y_test = X_test[var]
 
                 # Create and fit QRF model with trial parameters
-                model = qrf.QRF(seed=self.seed)
+                # Note: X_train_augmented is already preprocessed by base class
+                model = _QRFModel(seed=self.seed, logger=self.logger)
                 model.fit(
                     X_train_augmented[current_predictors],
-                    pd.DataFrame(X_train[var]),
+                    X_train[var],
                     **params,
                 )
 
