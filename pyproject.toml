@@ -47,7 +47,7 @@ matching = [
 ]
 
 docs = [
-    "jupyter-book>=1.0.2",
+    "jupyter-book>=2.0.0b2",  # JupyterBook 2.0 (beta)
     "furo>=2024.0.0",  # Sphinx theme for documentation
     "ipywidgets>=8.0.0,<9.0.0",  # For notebook interactivity
     "plotly>=5.24.0,<6.0.0",      # For visualization in notebooks
