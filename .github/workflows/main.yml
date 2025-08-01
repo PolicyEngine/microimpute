@@ -30,7 +30,7 @@ jobs:
           sudo Rscript -e 'install.packages("clue", repos="https://cloud.r-project.org")'
       - name: Install Python dependencies
         run: |
-          uv pip install -e ".[dev,docs,matching]" --system
+          uv pip install -e ".[dev,docs,matching,images]" --system
       - name: Run tests with coverage
         run: make test
       - name: Upload coverage to Codecov

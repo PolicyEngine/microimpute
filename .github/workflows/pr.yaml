@@ -80,7 +80,7 @@ jobs:
           sudo Rscript -e 'install.packages("clue", repos="https://cloud.r-project.org")'
       - name: Install dependencies
         run: |
-          uv pip install -e ".[dev,docs,matching]" --system
+          uv pip install -e ".[dev,docs,matching,images]" --system
       - name: Build package
         run: make build
       - name: Test documentation builds
