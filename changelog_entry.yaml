@@ -1,4 +1,0 @@
-- bump: patch
-  changes:
-    added:
-    - Updated categorical dummy encoding to restore original columns when dummies are not generated (edge case for when there is a single category).
