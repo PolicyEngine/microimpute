@@ -19,6 +19,32 @@ from pydantic import SkipValidation, validate_call
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
 
 
+def _has_equal_spacing(values: np.ndarray, variable: str) -> bool:
+    """Check if numeric values have equal spacing between consecutive values.
+
+    Args:
+        values: Array of numeric values to check
+
+    Returns:
+        bool: True if values have equal spacing, False otherwise
+    """
+    if len(values) < 2:
+        return True
+
+    unique_values = np.sort(np.unique(values[~np.isnan(values)]))
+    if len(unique_values) < 2:
+        return True
+
+    differences = np.diff(unique_values)
+
+    same_difference = np.allclose(differences, differences[0], rtol=1e-9)
+    if not same_difference:
+        logging.warning(
+            f"Values do not have equal spacing, will not convert {variable} to categorical"
+        )
+    return same_difference
+
+
 class Imputer(ABC):
     """
     Abstract base class for fitting imputation models.
@@ -161,6 +187,9 @@ class Imputer(ABC):
                 if pd.api.types.is_numeric_dtype(data[col])
                 and data[col].nunique()
                 < 10  # Parse as category if unique count < 10
+                and _has_equal_spacing(
+                    data[col].values, col
+                )  # Only convert if values have equal spacing
                 and col
                 not in bool_columns  # Exclude already processed boolean columns
             ]
@@ -626,6 +655,9 @@ class ImputerResults(ABC):
                 if pd.api.types.is_numeric_dtype(data[col])
                 and data[col].nunique()
                 < 10  # Parse as category if unique count < 10
+                and _has_equal_spacing(
+                    data[col].values, col
+                )  # Only convert if values have equal spacing
                 and col
                 not in bool_columns  # Exclude already processed boolean columns
             ]
