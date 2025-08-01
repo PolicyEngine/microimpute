@@ -246,21 +246,76 @@ class Imputer(ABC):
                 "original_categories": {},
             }
             for col, dummy_cols in dummy_info["column_mapping"].items():
-                if col in predictors:
-                    predictors.remove(col)
-                    predictors.extend(dummy_cols)
-                elif col in imputed_variables:
-                    imputed_variables.remove(col)
-                    imputed_variables.extend(dummy_cols)
-                    imputed_vars_dummy_info["column_mapping"][col] = dummy_cols
-                    imputed_vars_dummy_info["original_dtypes"][col] = (
-                        dummy_info["original_dtypes"][col][0],
-                        dummy_info["original_dtypes"][col][1],
-                    )
-                    if col in dummy_info["original_categories"]:
-                        imputed_vars_dummy_info["original_categories"][col] = (
-                            dummy_info["original_categories"][col]
+                # Only update variable lists if dummy columns were actually created and exist in data
+                if len(dummy_cols) > 0 and all(
+                    dc in data.columns for dc in dummy_cols
+                ):
+                    if col in predictors:
+                        predictors.remove(col)
+                        predictors.extend(dummy_cols)
+                    elif col in imputed_variables:
+                        imputed_variables.remove(col)
+                        imputed_variables.extend(dummy_cols)
+                        imputed_vars_dummy_info["column_mapping"][
+                            col
+                        ] = dummy_cols
+                        imputed_vars_dummy_info["original_dtypes"][col] = (
+                            dummy_info["original_dtypes"][col][0],
+                            dummy_info["original_dtypes"][col][1],
                         )
+                        if col in dummy_info["original_categories"]:
+                            imputed_vars_dummy_info["original_categories"][
+                                col
+                            ] = dummy_info["original_categories"][col]
+                else:
+                    # If no dummy columns were created, handle based on original data type
+                    self.logger.warning(
+                        f"Variable '{col}' was processed as categorical but no dummy variables "
+                        f"were created (likely due to having only one unique value)."
+                    )
+
+                    # Check if the original column was numeric
+                    dtype_info = dummy_info["original_dtypes"].get(col)
+                    is_numeric_categorical = (
+                        dtype_info and dtype_info[0] == "numeric categorical"
+                    )
+
+                    if is_numeric_categorical:
+                        # For numeric categorical, restore the original column since it can still be processed
+                        self.logger.info(
+                            f"Restoring numeric categorical variable '{col}' as numeric column."
+                        )
+                        # Get the single unique value and create a column with that value
+                        original_categories = dummy_info[
+                            "original_categories"
+                        ][col]
+                        single_value = original_categories[
+                            0
+                        ]  # There should be only one
+                        data[col] = single_value
+                        # Keep it in the variable lists as a regular numeric column
+                    else:
+                        # For non-numeric categorical (strings), encode as 1.0 and store for post-processing
+                        self.logger.info(
+                            f"Converting single-value categorical variable '{col}' to numeric encoding (1.0)."
+                        )
+                        # Create a column with value 1.0 for the single category
+                        data[col] = 1.0
+
+                        # Store info for post-processing to convert back
+                        if col in imputed_variables:
+                            imputed_vars_dummy_info["column_mapping"][col] = [
+                                col
+                            ]
+                            imputed_vars_dummy_info["original_dtypes"][col] = (
+                                dummy_info["original_dtypes"][col][0],
+                                dummy_info["original_dtypes"][col][1],
+                            )
+                            if col in dummy_info["original_categories"]:
+                                imputed_vars_dummy_info["original_categories"][
+                                    col
+                                ] = dummy_info["original_categories"][col]
+                        # Keep it in the variable lists
 
             return data, predictors, imputed_variables, imputed_vars_dummy_info
 
@@ -886,9 +941,54 @@ class ImputerResults(ABC):
                                     f"Converted dummy columns back to categorical {orig_col}"
                                 )
                             else:
-                                self.logger.warning(
-                                    f"No dummy columns found for categorical variable {orig_col}"
-                                )
+                                # Check if this is a single-value categorical variable (encoded as original column)
+                                if (
+                                    orig_col in df_processed.columns
+                                    and len(dummy_cols) == 1
+                                    and dummy_cols[0] == orig_col
+                                ):
+                                    self.logger.debug(
+                                        f"Converting single-value categorical variable {orig_col} back to original category"
+                                    )
+                                    # Get the original single category value
+                                    categories = dummy_info[
+                                        "original_categories"
+                                    ][orig_col]
+                                    single_category = categories[
+                                        0
+                                    ]  # Should be only one category
+
+                                    # Convert back to the original categorical value
+                                    df_processed[orig_col] = single_category
+
+                                    # Convert to original dtype if needed
+                                    try:
+                                        if dtype_category == "categorical":
+                                            original_pandas_dtype = dummy_info[
+                                                "original_dtypes"
+                                            ][orig_col][1]
+                                            if (
+                                                original_pandas_dtype
+                                                != "object"
+                                            ):
+                                                df_processed[orig_col] = (
+                                                    df_processed[
+                                                        orig_col
+                                                    ].astype(
+                                                        original_pandas_dtype
+                                                    )
+                                                )
+                                        self.logger.debug(
+                                            f"Converted single-value categorical {orig_col} back to original dtype"
+                                        )
+                                    except (ValueError, TypeError) as e:
+                                        self.logger.warning(
+                                            f"Could not convert {orig_col} to original dtype: {e}"
+                                        )
+                                else:
+                                    self.logger.warning(
+                                        f"No dummy columns found for categorical variable {orig_col}"
+                                    )
 
                 processed_imputations[quantile] = df_processed
                 self.logger.debug(
