@@ -1,4 +1,0 @@
-- bump: patch
-  changes:
-    changed:
-    - Add condition to not convert numeric columns to categorical if they have less than 10 unique values that are not evenly spaced.

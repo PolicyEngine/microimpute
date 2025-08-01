@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), 
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.4] - 2025-08-01 16:36:35
+
+### Changed
+
+- Add condition to not convert numeric columns to categorical if they have less than 10 unique values that are not evenly spaced.
+
 ## [1.1.3] - 2025-08-01 14:31:06
 
 ### Added
@@ -122,6 +128,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[1.1.4]: https://github.com/PolicyEngine/microimpute/compare/1.1.3...1.1.4
 [1.1.3]: https://github.com/PolicyEngine/microimpute/compare/1.1.2...1.1.3
 [1.1.2]: https://github.com/PolicyEngine/microimpute/compare/1.1.1...1.1.2
 [1.1.1]: https://github.com/PolicyEngine/microimpute/compare/1.1.0...1.1.1

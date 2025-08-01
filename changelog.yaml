@@ -101,3 +101,9 @@
     - Updated categorical dummy encoding to restore original columns when dummies
       are not generated (edge case for when there is a single category).
   date: 2025-08-01 14:31:06
+- bump: patch
+  changes:
+    changed:
+    - Add condition to not convert numeric columns to categorical if they have less
+      than 10 unique values that are not evenly spaced.
+  date: 2025-08-01 16:36:35
