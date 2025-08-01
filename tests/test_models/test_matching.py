@@ -7,7 +7,7 @@ import pandas as pd
 from sklearn.datasets import load_diabetes
 from sklearn.metrics import mean_squared_error
 
-from microimpute.comparisons.data import preprocess_data
+from microimpute.utils.data import preprocess_data
 from microimpute.config import QUANTILES
 from microimpute.evaluations import *
 

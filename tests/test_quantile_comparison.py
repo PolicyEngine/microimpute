@@ -18,6 +18,7 @@ from microimpute.comparisons import *
 from microimpute.config import RANDOM_STATE
 from microimpute.models import *
 from microimpute.visualizations.plotting import *
+from microimpute.utils.data import *
 
 
 def test_quantile_comparison_diabetes() -> None:

@@ -5,7 +5,7 @@ from typing import Dict, List
 import pandas as pd
 from sklearn.datasets import load_diabetes
 
-from microimpute.comparisons.data import preprocess_data
+from microimpute.utils.data import preprocess_data
 from microimpute.config import QUANTILES, RANDOM_STATE
 from microimpute.evaluations import *
 from microimpute.models.quantreg import QuantReg

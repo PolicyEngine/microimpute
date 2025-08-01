@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from sklearn.datasets import load_diabetes
 
-from microimpute.comparisons.data import preprocess_data
+from microimpute.utils.data import preprocess_data
 from microimpute.config import QUANTILES
 from microimpute.evaluations import *
 from microimpute.models.ols import OLS
