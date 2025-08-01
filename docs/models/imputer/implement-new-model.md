@@ -136,7 +136,7 @@ You can test the functionality of your newly implemented `NewModel` imputer mode
 
 ```python
 from sklearn.datasets import load_diabetes
-from microimpute.comparisons.data import preprocess_data
+from microimpute.utils.data import preprocess_data
 
 # Load the Diabetes dataset
 diabetes = load_diabetes()
