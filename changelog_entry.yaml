@@ -1,0 +1,4 @@
+- bump: patch
+  changes:
+    added:
+    - Moved data loading utilities into utils and removed scf downloading functionality.
