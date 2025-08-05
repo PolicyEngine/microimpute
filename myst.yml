@@ -5,10 +5,6 @@ project:
     - name: María Juaristi
   copyright: "2025"
   github: https://github.com/PolicyEngine/microimpute
-  repository:
-    url: https://github.com/PolicyEngine/microimpute
-    branch: main
-    path: docs
   toc:
     - file: index
     - title: Models

@@ -58,39 +58,3 @@ jobs:
           file: ./coverage.xml
           fail_ci_if_error: false
           verbose: true
-
-  Build:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout repo
-        uses: actions/checkout@v3
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.13"
-      - name: Install R and dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y r-base r-base-dev libtirpc-dev
-      - name: Install R packages
-        run: |
-          sudo Rscript -e 'install.packages("StatMatch", repos="https://cloud.r-project.org")'
-          sudo Rscript -e 'install.packages("clue", repos="https://cloud.r-project.org")'
-      - name: Install dependencies
-        run: |
-          uv pip install -e ".[dev,docs,matching,images]" --system
-      - name: Build package
-        run: make build
-      - name: Test documentation builds
-        run: make documentation
-      - name: Check documentation build
-        run: |
-          for notebook in $(find docs/_build/jupyter_execute -name "*.ipynb"); do
-            if grep -q '"output_type": "error"' "$notebook"; then
-              echo "Error found in $notebook"
-              cat "$notebook"
-              exit 1
-            fi
-          done

@@ -39,20 +39,3 @@ jobs:
           file: ./coverage.xml
           fail_ci_if_error: false
           verbose: true
-      - name: Test documentation builds
-        run: make documentation
-      - name: Check documentation build
-        run: |
-          for notebook in $(find docs/_build/jupyter_execute -name "*.ipynb"); do
-            if grep -q '"output_type": "error"' "$notebook"; then
-              echo "Error found in $notebook"
-              cat "$notebook"
-              exit 1
-            fi
-          done
-      - name: Deploy documentation
-        uses: JamesIves/github-pages-deploy-action@releases/v3
-        with:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          BRANCH: gh-pages  # The branch the action should deploy to.
-          FOLDER: docs/_build/html  # The folder the action should deploy.

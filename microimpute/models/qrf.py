@@ -222,11 +222,12 @@ class QRFResults(ImputerResults):
                             f"  ✓ {variable} predicted in {var_time:.2f}s ({len(imputed_values)} samples)"
                         )
 
+                    self.logger.info(
+                        f"QRF predictions completed for {variable} imputed variable"
+                    )
+
                 imputations[q] = imputed_df
 
-                self.logger.info(
-                    f"QRF predictions completed for {variable} imputed variable"
-                )
             return imputations
 
         except Exception as e:
