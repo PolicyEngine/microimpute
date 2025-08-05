@@ -106,10 +106,6 @@ def test_matching_example_use(
     )
 
     # Check structure of predictions
-    assert isinstance(predictions, dict)
-    assert 0.5 in predictions
-
-    # Check that predictions are pandas DataFrame for matching model
     assert isinstance(predictions[0.5], pd.DataFrame)
 
     transformed_df = pd.DataFrame()

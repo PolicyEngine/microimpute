@@ -140,9 +140,8 @@ def test_qrf_with_missing_categorical_columns_in_test():
     # Predict - should handle missing category gracefully
     predictions = fitted_model.predict(test_data[["numeric", "category"]])
 
-    assert 0.5 in predictions
-    assert len(predictions[0.5]) == len(test_data)
-    assert not predictions[0.5]["target"].isna().any()
+    assert len(predictions) == len(test_data)
+    assert not predictions["target"].isna().any()
 
 
 def test_qrf_with_single_predictor():
@@ -248,8 +247,8 @@ def test_qrf_reproducibility():
 
     # Results should be identical
     np.testing.assert_array_almost_equal(
-        predictions1[0.5]["y"].values,
-        predictions2[0.5]["y"].values,
+        predictions1["y"].values,
+        predictions2["y"].values,
     )
 
 
@@ -286,12 +285,12 @@ def test_qrf_with_highly_correlated_predictors():
     predictions = fitted_model.predict(test_data[["x1", "x2", "x3"]])
 
     # Model should still produce reasonable predictions despite correlation
-    assert len(predictions[0.5]) == len(test_data)
-    assert not predictions[0.5]["y"].isna().any()
+    assert len(predictions) == len(test_data)
+    assert not predictions["y"].isna().any()
 
     # Check that predictions are somewhat correlated with true values
     true_y = test_data["y"].values
-    pred_y = predictions[0.5]["y"].values
+    pred_y = predictions["y"].values
     correlation = np.corrcoef(true_y, pred_y)[0, 1]
     assert correlation > 0.5  # Should have reasonable correlation
 
@@ -507,9 +506,8 @@ def test_qrf_batch_processing():
     test_data = data[["predictor1", "predictor2"]].head(5)
     predictions = fitted_model.predict(test_data)
 
-    assert 0.5 in predictions
-    assert len(predictions[0.5]) == len(test_data)
-    assert not predictions[0.5].isna().any().any()
+    assert len(predictions) == len(test_data)
+    assert not predictions.isna().any().any()
 
     # Clean up
     model.logger.removeHandler(handler)
@@ -698,9 +696,8 @@ def test_qrf_missing_variables_handling():
     test_data = data[["x1", "x2"]].head(10)
     predictions = fitted_model.predict(test_data)
 
-    assert 0.5 in predictions
-    assert "existing_var" in predictions[0.5].columns
-    assert len(predictions[0.5]) == len(test_data)
+    assert "existing_var" in predictions.columns
+    assert len(predictions) == len(test_data)
 
     # Clean up
     model_lenient.logger.removeHandler(handler)
@@ -749,10 +746,9 @@ def test_qrf_all_variables_missing():
     test_data = data[["x1", "x2"]].head(5)
     predictions = fitted_model.predict(test_data)
 
-    assert 0.5 in predictions
-    assert len(predictions[0.5].columns) == 0  # No variables to predict
+    assert len(predictions.columns) == 0  # No variables to predict
     # When there are no variables to impute, predictions should be empty but defined
-    assert isinstance(predictions[0.5], pd.DataFrame)
+    assert isinstance(predictions, pd.DataFrame)
 
     # Clean up
     model.logger.removeHandler(handler)
@@ -815,10 +811,9 @@ def test_qrf_partial_missing_variables():
     test_data = data[["predictor1", "predictor2"]].head(8)
     predictions = fitted_model.predict(test_data)
 
-    assert 0.5 in predictions
-    assert "target1" in predictions[0.5].columns
-    assert "target3" in predictions[0.5].columns
-    assert "target2" not in predictions[0.5].columns
+    assert "target1" in predictions.columns
+    assert "target3" in predictions.columns
+    assert "target2" not in predictions.columns
 
     # Clean up
     model.logger.removeHandler(handler)

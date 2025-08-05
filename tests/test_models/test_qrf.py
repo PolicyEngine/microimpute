@@ -296,8 +296,8 @@ def test_qrf_imputes_multiple_variables(
     predictions: Dict[float, pd.DataFrame] = fitted_model.predict(X_test)
 
     # Check structure of predictions
-    assert isinstance(predictions, dict)
-    assert predictions[0.5].shape[1] == len(imputed_variables)
+    assert isinstance(predictions, pd.DataFrame)
+    assert predictions.shape[1] == len(imputed_variables)
 
 
 def test_qrf_sequential_imputation(

@@ -287,29 +287,20 @@ class MatchingResults(ImputerResults):
                         imputed_df[variable] = fused0[variable].values
 
                     imputations[q] = imputed_df
+                return imputations
             else:
                 # If no quantiles specified, use a default one
-                q = 0.5
+                q_default = 0.5
                 self.logger.info(
-                    f"Creating imputation for default quantile {q}"
+                    f"Creating imputation for default quantile {q_default}"
                 )
                 imputed_df = pd.DataFrame(index=X_test_copy.index)
                 for variable in self.imputed_variables:
                     self.logger.info(f"Imputing variable {variable}")
                     imputed_df[variable] = fused0[variable].values
-                imputations[q] = imputed_df
+                imputations[q_default] = imputed_df
 
-            # Verify output shapes
-            for q, df in imputations.items():
-                self.logger.debug(
-                    f"Imputation result for q={q}: shape={df.shape}"
-                )
-                if len(df) != len(X_test_copy):
-                    self.logger.warning(
-                        f"Result shape mismatch: expected {len(X_test_copy)} rows, got {len(df)}"
-                    )
-
-            return imputations
+                return imputations[q_default]
         except Exception as output_error:
             self.logger.error(
                 f"Error creating output imputations: {str(output_error)}"
