@@ -107,3 +107,10 @@
     - Add condition to not convert numeric columns to categorical if they have less
       than 10 unique values that are not evenly spaced.
   date: 2025-08-01 16:36:35
+- bump: patch
+  changes:
+    added:
+    - Moved data loading utilities into utils and removed scf downloading functionality.
+    - Updated documentation to reflect the new structure and created a myst.yml file
+      to deploy documentation with new jb v2.
+  date: 2025-08-05 13:58:25

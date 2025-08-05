@@ -1,5 +1,0 @@
-- bump: patch
-  changes:
-    added:
-    - Moved data loading utilities into utils and removed scf downloading functionality.
-    - Updated documentation to reflect the new structure and created a myst.yml file to deploy documentation with new jb v2.
