@@ -4,7 +4,11 @@ project:
   authors:
     - name: PolicyEngine
   copyright: "2025"
-  github: https://github.com/PolicyEngine/microimpute
+  github: https://github.com/policyengine/microimpute
+  repository:
+    url: https://github.com/policyengine/microimpute
+    branch: main
+    path: docs
   toc:
     - file: docs/index
     - title: Models
@@ -41,20 +45,20 @@ project:
           children:
             - file: docs/examples/scf_to_cps/imputing-from-scf-to-cps
 site:
-  template: book-theme
   options:
     logo: docs/logo.png
-    extensions:
-      - sphinx.ext.autodoc
-      - sphinx.ext.viewcode
-      - sphinx.ext.napoleon
-      - sphinx.ext.mathjax
-    config:
-      html_js_files:
-        - https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js
-      html_theme: furo
-      pygments_style: default
-      html_css_files:
-        - _static/style.css
-    execute:
-      execute_notebooks: force
+  template: book-theme
+  extensions:
+    - sphinx.ext.autodoc
+    - sphinx.ext.viewcode
+    - sphinx.ext.napoleon
+    - sphinx.ext.mathjax
+  config:
+    html_js_files:
+      - https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js
+    html_theme: furo
+    pygments_style: default
+    html_css_files:
+      - _static/style.css
+  execute:
+    execute_notebooks: force
