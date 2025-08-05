@@ -1,0 +1,64 @@
+version: 1
+project:
+  title: MicroImpute documentation
+  authors:
+    - name: PolicyEngine
+  copyright: "2025"
+  github: https://github.com/policyengine/microimpute
+  repository:
+    url: https://github.com/policyengine/microimpute
+    branch: main
+    path: docs
+  toc:
+    - file: index
+    - title: Models
+      children:
+        - file: models/imputer/index
+          children:
+            - file: models/imputer/implement-new-model
+        - file: models/matching/index
+          children:
+            - file: models/matching/matching-imputation
+        - file: models/ols/index
+          children:
+            - file: models/ols/ols-imputation
+        - file: models/qrf/index
+          children:
+            - file: models/qrf/qrf-imputation
+        - file: models/quantreg/index
+          children:
+            - file: models/quantreg/quantreg-imputation
+    - title: Imputation and benchmarking
+      children:
+        - file: imputation-benchmarking/index
+          children:
+            - file: imputation-benchmarking/benchmarking-methods
+            - file: imputation-benchmarking/imputing-across-surveys
+    - title: AutoImpute
+      children:
+        - file: autoimpute/index
+          children:
+            - file: autoimpute/autoimpute
+    - title: SCF to CPS example
+      children:
+        - file: examples/scf_to_cps/index
+          children:
+            - file: examples/scf_to_cps/imputing-from-scf-to-cps
+site:
+  options:
+    logo: logo.png
+  template: book-theme
+  extensions:
+    - sphinx.ext.autodoc
+    - sphinx.ext.viewcode
+    - sphinx.ext.napoleon
+    - sphinx.ext.mathjax
+  config:
+    html_js_files:
+      - https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js
+    html_theme: furo
+    pygments_style: default
+    html_css_files:
+      - style.css
+  execute:
+    execute_notebooks: force

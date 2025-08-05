@@ -26,6 +26,7 @@ from microimpute.config import (
 )
 from microimpute.comparisons import *
 from microimpute.visualizations import *
+from microimpute.utils.data import preprocess_data
 
 logger = logging.getLogger(__name__)
 ```

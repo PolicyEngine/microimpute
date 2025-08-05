@@ -1,8 +1,6 @@
 format: jb-book
 root: index
-
 parts: 
-
   - caption: Models
     chapters:
       - file: models/imputer/index

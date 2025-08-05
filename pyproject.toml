@@ -23,7 +23,7 @@ dependencies = [
     "scipy>=1.16.0,<1.17.0",
     "requests>=2.32.0,<3.0.0",
     "tqdm>=4.65.0,<5.0.0",
-    "statsmodels>=0.14.0,<0.16.0",
+    "statsmodels>=0.14.5,<0.16.0",
     "quantile-forest>=1.4.0,<1.5.0",
     "pydantic>=2.8.0,<3.0.0",
     "optuna>=4.3.0,<5.0.0",
@@ -48,11 +48,11 @@ matching = [
 ]
 
 docs = [
-    "jupyter-book>=2.0.0b2",  # JupyterBook 2.0 (beta)
+    "jupyter-book",
     "furo>=2024.0.0",  # Sphinx theme for documentation
-    "ipywidgets>=8.0.0,<9.0.0",  # For notebook interactivity
-    "plotly>=5.24.0,<6.0.0",      # For visualization in notebooks
-    "h5py>=3.1.0,<4.0.0",         # For data file support
+    "ipywidgets>=8.0.0,<9.0.0",
+    "plotly>=5.24.0,<6.0.0",
+    "h5py>=3.1.0,<4.0.0",
 ]
 
 images = [

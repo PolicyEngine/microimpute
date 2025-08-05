@@ -14,7 +14,6 @@ from pydantic import BaseModel, ConfigDict, Field, validate_call
 from tqdm.auto import tqdm
 
 from microimpute.comparisons import *
-from microimpute.comparisons.data import preprocess_data
 from microimpute.config import (
     QUANTILES,
     RANDOM_STATE,
@@ -23,6 +22,7 @@ from microimpute.config import (
 )
 from microimpute.evaluations import cross_validate_model
 from microimpute.models import *
+from microimpute.utils.data import preprocess_data
 
 log = logging.getLogger(__name__)
 

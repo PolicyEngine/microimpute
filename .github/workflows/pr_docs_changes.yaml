@@ -1,0 +1,52 @@
+# Workflow that runs on code changes to a pull request.
+
+name: Docs changes
+on:
+  pull_request:
+    branches:
+      - main
+
+    paths:
+      - docs/**
+      - .github/**
+  workflow_dispatch:
+
+jobs:
+  Test:
+      runs-on: ubuntu-latest
+      name: Test documentation builds
+      steps:
+          - name: Checkout repo
+            uses: actions/checkout@v4
+          - name: Install uv
+            uses: astral-sh/setup-uv@v5
+
+          - name: Set up Python
+            uses: actions/setup-python@v5
+            with:
+                python-version: '3.13'
+              
+          - name: Install R and dependencies
+            run: |
+              sudo apt-get update
+              sudo apt-get install -y r-base r-base-dev libtirpc-dev
+          - name: Install R packages
+            run: |
+              sudo Rscript -e 'install.packages("StatMatch", repos="https://cloud.r-project.org")'
+              sudo Rscript -e 'install.packages("clue", repos="https://cloud.r-project.org")'
+          - name: Install dependencies
+            run: |
+              uv pip install -e ".[dev,docs,matching,images]" --system
+          - name: Install JB
+            run: uv pip install "jupyter-book>=2.0.0a0" --system
+          - name: Test documentation builds
+            run: make documentation
+          - name: Check documentation build
+            run: |
+              for notebook in $(find docs/_build/jupyter_execute -name "*.ipynb"); do
+                if grep -q '"output_type": "error"' "$notebook"; then
+                  echo "Error found in $notebook"
+                  cat "$notebook"
+                  exit 1
+                fi
+              done

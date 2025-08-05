@@ -179,9 +179,7 @@ class QRFResults(ImputerResults):
                 for i, variable in enumerate(self.imputed_variables):
                     var_start_time = time.time()
 
-                    if (
-                        not quantiles
-                    ):  # Only log per-variable when not processing multiple quantiles
+                    if not quantiles:
                         self.logger.info(
                             f"[{i+1}/{len(self.imputed_variables)}] Predicting for '{variable}'"
                         )
@@ -224,11 +222,12 @@ class QRFResults(ImputerResults):
                             f"  ✓ {variable} predicted in {var_time:.2f}s ({len(imputed_values)} samples)"
                         )
 
+                    self.logger.info(
+                        f"QRF predictions completed for {variable} imputed variable"
+                    )
+
                 imputations[q] = imputed_df
 
-            self.logger.info(
-                f"QRF predictions completed for {len(X_test)} samples"
-            )
             return imputations
 
         except Exception as e:
@@ -378,9 +377,6 @@ class QRF(Imputer):
                                 f"  Features: {len(current_predictors)} predictors"
                             )
                             self.logger.info(
-                                f"  Training data shape: {X_train[current_predictors + [variable]].shape}"
-                            )
-                            self.logger.info(
                                 f"  Memory usage: {self._get_memory_usage_info()}"
                             )
 
@@ -509,14 +505,10 @@ class QRF(Imputer):
                             f"  Features: {len(current_predictors)} predictors"
                         )
                         self.logger.info(
-                            f"  Training data shape: {X_train[current_predictors + [variable]].shape}"
-                        )
-                        self.logger.info(
                             f"  Memory usage: {self._get_memory_usage_info()}"
                         )
 
                         # Create and fit model
-                        # Note: X_train is already preprocessed by base class
                         model = _QRFModel(seed=self.seed, logger=self.logger)
 
                         try:
@@ -609,9 +601,6 @@ class QRF(Imputer):
             )
             self.logger.info(
                 f"  Features: {len(current_predictors)} predictors"
-            )
-            self.logger.info(
-                f"  Training data shape: {X_train[current_predictors + [variable]].shape}"
             )
             self.logger.info(
                 f"  Memory usage: {self._get_memory_usage_info()}"

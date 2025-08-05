@@ -15,8 +15,9 @@ format:
 	black . -l 79
 
 documentation:
-	cd docs && jupyter-book build .
-	python docs/add_plotly_to_book.py docs/_build/html
+	cd docs && jupyter book clean . --all
+	cd docs && jupyter book build .
+	python docs/add_plotly_to_book.py docs/_build
 
 build:
 	pip install build
