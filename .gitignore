@@ -79,3 +79,5 @@ celerybeat.pid
 *.jpg
 *.html
 *.h5
+# MyST build outputs
+_build
