@@ -2,48 +2,48 @@ version: 1
 project:
   title: MicroImpute documentation
   authors:
-    - name: María Juaristi
+    - name: PolicyEngine
   copyright: "2025"
   github: https://github.com/PolicyEngine/microimpute
   toc:
-    - file: index
+    - file: docs/index
     - title: Models
       children:
-        - file: models/imputer/index
+        - file: docs/models/imputer/index
           children:
-            - file: models/imputer/implement-new-model
-        - file: models/matching/index
+            - file: docs/models/imputer/implement-new-model
+        - file: docs/models/matching/index
           children:
-            - file: models/matching/matching-imputation
-        - file: models/ols/index
+            - file: docs/models/matching/matching-imputation
+        - file: docs/models/ols/index
           children:
-            - file: models/ols/ols-imputation
-        - file: models/qrf/index
+            - file: docs/models/ols/ols-imputation
+        - file: docs/models/qrf/index
           children:
-            - file: models/qrf/qrf-imputation
-        - file: models/quantreg/index
+            - file: docs/models/qrf/qrf-imputation
+        - file: docs/models/quantreg/index
           children:
-            - file: models/quantreg/quantreg-imputation
+            - file: docs/models/quantreg/quantreg-imputation
     - title: Imputation and benchmarking
       children:
-        - file: imputation-benchmarking/index
+        - file: docs/imputation-benchmarking/index
           children:
-            - file: imputation-benchmarking/benchmarking-methods
-            - file: imputation-benchmarking/imputing-across-surveys
+            - file: docs/imputation-benchmarking/benchmarking-methods
+            - file: docs/imputation-benchmarking/imputing-across-surveys
     - title: AutoImpute
       children:
-        - file: autoimpute/index
+        - file: docs/autoimpute/index
           children:
-            - file: autoimpute/autoimpute
+            - file: docs/autoimpute/autoimpute
     - title: SCF to CPS example
       children:
-        - file: examples/scf_to_cps/index
+        - file: docs/examples/scf_to_cps/index
           children:
-            - file: examples/scf_to_cps/imputing-from-scf-to-cps
+            - file: docs/examples/scf_to_cps/imputing-from-scf-to-cps
 site:
   template: book-theme
   options:
-    logo: logo.png
+    logo: docs/logo.png
     extensions:
       - sphinx.ext.autodoc
       - sphinx.ext.viewcode
