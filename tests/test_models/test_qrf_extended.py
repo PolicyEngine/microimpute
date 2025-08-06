@@ -332,7 +332,9 @@ def test_qrf_error_handling():
     try:
         predictions = fitted_model.predict(test_data)
     except Exception as e:
-        assert "x" in str(e) or "column" in str(e).lower()
+        assert (
+            "preprocess data" in str(e) or "preprocess data" in str(e).lower()
+        )
 
 
 def test_qrf_detailed_logging():
