@@ -114,3 +114,8 @@
     - Updated documentation to reflect the new structure and created a myst.yml file
       to deploy documentation with new jb v2.
   date: 2025-08-05 13:58:25
+- bump: patch
+  changes:
+    added:
+    - Make models return a dataframe directly when no quantiles are specified.
+  date: 2025-08-08 08:17:09

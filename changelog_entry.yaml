@@ -1,4 +1,0 @@
-- bump: patch
-  changes:
-    added:
-    - Make models return a dataframe directly when no quantiles are specified.
