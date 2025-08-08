@@ -96,8 +96,9 @@ class OLSResults(ImputerResults):
                             random_sample=random_quantile_sample,
                         )
                     imputations[q] = pd.DataFrame(imputed_df)
+                return imputations
             else:
-                q = 0.5
+                q_default = 0.5
                 imputed_df = pd.DataFrame()
                 for variable in self.imputed_variables:
                     self.logger.info(f"Imputing variable {variable}")
@@ -107,11 +108,11 @@ class OLSResults(ImputerResults):
                     imputed_df[variable] = self._predict_quantile(
                         mean_preds=mean_preds,
                         se=se,
-                        mean_quantile=q,
+                        mean_quantile=q_default,
                         random_sample=random_quantile_sample,
                     )
-                imputations[q] = pd.DataFrame(imputed_df)
-            return imputations
+                imputations[q_default] = pd.DataFrame(imputed_df)
+                return imputations[q_default]
 
         except Exception as e:
             self.logger.error(f"Error during prediction: {str(e)}")

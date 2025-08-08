@@ -129,8 +129,8 @@ def test_fit_predict_interface(
     )
 
     default_predictions = fitted_default_model.predict(X_test)
-    assert isinstance(default_predictions, dict), (
-        f"{model_class.__name__} predict should return a dictionary even with "
+    assert isinstance(default_predictions, pd.DataFrame), (
+        f"{model_class.__name__} predict should return a DataFrame with "
         f"default quantiles"
     )
 
@@ -171,8 +171,8 @@ def test_imputation_categorical_bool_vars() -> None:
     fitted_ols = ols.fit(X_train, predictors, imputed_variables)
     ols_predictions = fitted_ols.predict(X_test)
 
-    assert ols_predictions[0.5]["categorical"].dtype == "object"
-    assert ols_predictions[0.5]["bool"].dtype == "bool"
+    assert ols_predictions["categorical"].dtype == "object"
+    assert ols_predictions["bool"].dtype == "bool"
 
 
 @pytest.mark.parametrize(

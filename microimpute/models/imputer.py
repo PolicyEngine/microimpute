@@ -750,9 +750,9 @@ class ImputerResults(ABC):
     @validate_call(config=VALIDATE_CONFIG)
     def _postprocess_imputations(
         self,
-        imputations: Dict[float, pd.DataFrame],
+        imputations: Union[Dict[float, pd.DataFrame], pd.DataFrame],
         dummy_info: Dict[str, Any],
-    ) -> Dict[float, pd.DataFrame]:
+    ) -> Union[Dict[float, pd.DataFrame], pd.DataFrame]:
         """Convert imputed bool and categorical dummy variables back to original data types.
 
         This function reverses the encoding applied by preprocess_data,
@@ -815,10 +815,10 @@ class ImputerResults(ABC):
         try:
             processed_imputations = {}
 
-            for quantile, df in imputations.items():
-                self.logger.debug(
-                    f"Processing quantile {quantile} with shape {df.shape}"
-                )
+            def process_single_quantile(
+                df: pd.DataFrame, dummy_info: Dict[str, Any]
+            ) -> pd.DataFrame:
+
                 df_processed = df.copy()
 
                 for orig_col, dummy_cols in dummy_info.get(
@@ -1021,16 +1021,22 @@ class ImputerResults(ABC):
                                     self.logger.warning(
                                         f"No dummy columns found for categorical variable {orig_col}"
                                     )
+                return df_processed
 
-                processed_imputations[quantile] = df_processed
-                self.logger.debug(
-                    f"Processed quantile {quantile}, final shape: {df_processed.shape}"
-                )
-
-            self.logger.info(
-                f"Successfully post-processed {len(processed_imputations)} quantile imputations"
-            )
-            return processed_imputations
+            if isinstance(imputations, pd.DataFrame):
+                processed_df = process_single_quantile(imputations, dummy_info)
+                return processed_df
+            else:
+                for quantile, df in imputations.items():
+                    self.logger.debug(
+                        f"Processing quantile {quantile} with shape {df.shape}"
+                    )
+                    processed_df = process_single_quantile(df, dummy_info)
+                    processed_imputations[quantile] = processed_df
+                    self.logger.debug(
+                        f"Processed quantile {quantile}, final shape: {processed_df.shape}"
+                    )
+                return processed_imputations
 
         except Exception as e:
             self.logger.error(f"Error in postprocess_imputations: {str(e)}")

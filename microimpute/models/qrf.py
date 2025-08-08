@@ -228,7 +228,11 @@ class QRFResults(ImputerResults):
 
                 imputations[q] = imputed_df
 
-            return imputations
+            qs = imputations.keys()
+            if len(qs) < 2:
+                q = list(qs)[0]
+
+            return imputations if quantiles else imputations[q]
 
         except Exception as e:
             self.logger.error(f"Error during QRF prediction: {str(e)}")

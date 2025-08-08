@@ -161,7 +161,12 @@ class QuantRegResults(ImputerResults):
             self.logger.info(
                 f"Completed predictions for {len(quantiles)} quantiles"
             )
-            return imputations
+
+            quantiles = imputations.keys()
+            if len(quantiles) < 2:
+                q = list(quantiles)[0]
+
+            return imputations if len(imputations) > 1 else imputations[q]
 
         except ValueError as e:
             # Re-raise value errors directly
