@@ -67,7 +67,12 @@ def cross_validate_model(
         RuntimeError: If cross-validation fails.
     """
     # Set up parallel processing
-    n_jobs: Optional[int] = -1
+    # Disable parallel processing for Matching (R/rpy2 doesn't work well with multiprocessing)
+    import os
+    if (Matching is not None and model_class == Matching) or os.environ.get('CI'):
+        n_jobs: Optional[int] = 1  # Sequential processing for R-based models or CI
+    else:
+        n_jobs: Optional[int] = -1  # Parallel processing for Python-only models
 
     try:
         # Validate predictor and imputed variable columns exist
