@@ -12,3 +12,4 @@
     - Issue where predict() returns DataFrame instead of Dict for single quantile in autoimpute
     - Import errors when Matching module is not available due to missing R dependencies
     - Unconditional import of rpy2-dependent modules in utils package causing test failures
+    - Parallel processing conflicts with rpy2 in CI causing worker process crashes
