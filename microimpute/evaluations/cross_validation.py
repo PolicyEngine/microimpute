@@ -71,7 +71,9 @@ def cross_validate_model(
     if Matching is not None and model_class == Matching:
         n_jobs: Optional[int] = 1  # Sequential processing for R-based models
     else:
-        n_jobs: Optional[int] = -1  # Parallel processing for Python-only models
+        n_jobs: Optional[int] = (
+            -1
+        )  # Parallel processing for Python-only models
 
     try:
         # Validate predictor and imputed variable columns exist
