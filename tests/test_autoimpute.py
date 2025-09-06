@@ -8,6 +8,13 @@ from sklearn.datasets import load_diabetes
 from microimpute.comparisons.autoimpute import autoimpute
 from microimpute.visualizations.plotting import *
 
+try:
+    from microimpute.models import Matching
+
+    HAS_MATCHING = True
+except ImportError:
+    HAS_MATCHING = False
+
 
 def test_autoimpute_basic() -> None:
     """Test that autoimpute returns expected data structures."""
@@ -26,15 +33,16 @@ def test_autoimpute_basic() -> None:
     predictors = ["age", "sex", "bmi", "bp"]
     imputed_variables = ["s1", "bool"]
 
+    hyperparams = {"QRF": {"n_estimators": 100}}
+    if HAS_MATCHING:
+        hyperparams["Matching"] = {"constrained": True}
+
     results = autoimpute(
         donor_data=diabetes_donor,
         receiver_data=diabetes_receiver,
         predictors=predictors,
         imputed_variables=imputed_variables,
-        hyperparameters={
-            "QRF": {"n_estimators": 100},
-            "Matching": {"constrained": True},
-        },
+        hyperparameters=hyperparams,
         log_level="INFO",
     )
 

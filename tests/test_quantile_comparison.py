@@ -19,7 +19,14 @@ import zipfile
 
 from microimpute.comparisons import *
 from microimpute.config import RANDOM_STATE, VALID_YEARS
-from microimpute.models import *
+from microimpute.models import Imputer, OLS, QRF, QuantReg
+
+try:
+    from microimpute.models import Matching
+
+    HAS_MATCHING = True
+except ImportError:
+    HAS_MATCHING = False
 from microimpute.visualizations.plotting import *
 from microimpute.utils.data import preprocess_data
 
@@ -41,7 +48,9 @@ def test_quantile_comparison_diabetes() -> None:
 
     Y_test: pd.DataFrame = X_test[imputed_variables]
 
-    model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg, Matching]
+    model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg]
+    if HAS_MATCHING:
+        model_classes.append(Matching)
     method_imputations = get_imputations(
         model_classes, X_train, X_test, predictors, imputed_variables
     )
@@ -96,7 +105,9 @@ def test_quantile_comparison_scf() -> None:
 
     Y_test: pd.DataFrame = X_test[IMPUTED_VARIABLES]
 
-    model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg, Matching]
+    model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg]
+    if HAS_MATCHING:
+        model_classes.append(Matching)
     method_imputations = get_imputations(
         model_classes, X_train, X_test, PREDICTORS, IMPUTED_VARIABLES
     )

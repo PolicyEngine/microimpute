@@ -21,7 +21,14 @@ from microimpute.config import (
     VALIDATE_CONFIG,
 )
 from microimpute.evaluations import cross_validate_model
-from microimpute.models import *
+from microimpute.models import OLS, QRF, Imputer, ImputerResults, QuantReg
+
+try:
+    from microimpute.models import Matching
+
+    HAS_MATCHING = True
+except ImportError:
+    HAS_MATCHING = False
 from microimpute.utils.data import preprocess_data
 
 log = logging.getLogger(__name__)
@@ -284,7 +291,9 @@ def autoimpute(
 
         if not models:
             # If no models are provided, use default models
-            model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg, Matching]
+            model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg]
+            if HAS_MATCHING:
+                model_classes.append(Matching)
         else:
             model_classes = models
 
@@ -485,6 +494,10 @@ def autoimpute(
             imputing_data, quantiles=[imputation_q]
         )
 
+        # Handle case where predict returns a DataFrame directly (single quantile)
+        if isinstance(imputations, pd.DataFrame):
+            imputations = {imputation_q: imputations}
+
         if normalize_data:
             # Unnormalize the imputations
             mean = pd.Series(
@@ -511,9 +524,7 @@ def autoimpute(
             main_progress.set_description("Complete")
             main_progress.close()
 
-        median_imputations = final_imputations[
-            0.5
-        ]  # this may not work if we change the value of imputation_q
+        median_imputations = final_imputations[imputation_q]
         # Add the imputed variables to the receiver data
         try:
             missing_imputed_vars = []
