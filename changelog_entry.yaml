@@ -1,0 +1,15 @@
+- bump: minor
+  changes:
+    added:
+    - Support for Python 3.12 alongside Python 3.13
+    - Python 3.12 to CI/CD test matrix for comprehensive testing
+    - Graceful handling of optional Matching module when R dependencies are unavailable
+    changed:
+    - Python version requirement from ">=3.13,<3.14" to ">=3.12,<3.14"
+    - Black formatter target versions to include both py312 and py313
+    - GitHub Actions workflows to test against both Python 3.12 and 3.13
+    - Python 3.12 CI tests to run minimal smoke test only (QRF basic functionality)
+    fixed:
+    - Issue where predict() returns DataFrame instead of Dict for single quantile in autoimpute
+    - Import errors when Matching module is not available due to missing R dependencies
+    - Unconditional import of rpy2-dependent modules in utils package causing test failures
