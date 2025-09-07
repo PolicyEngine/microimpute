@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), 
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-09-07 08:07:54
+
+### Added
+
+- Support for Python 3.12 alongside Python 3.13
+- Python 3.12 to CI/CD test matrix for comprehensive testing
+- Graceful handling of optional Matching module when R dependencies are unavailable
+
+### Changed
+
+- Python version requirement from ">=3.13,<3.14" to ">=3.12,<3.14"
+- Black formatter target versions to include both py312 and py313
+- GitHub Actions workflows to test against both Python 3.12 and 3.13
+- Python 3.12 CI tests to run minimal smoke test only (QRF basic functionality)
+
+### Fixed
+
+- Issue where predict() returns DataFrame instead of Dict for single quantile in autoimpute
+- Import errors when Matching module is not available due to missing R dependencies
+- Unconditional import of rpy2-dependent modules in utils package causing test failures
+
 ## [1.1.6] - 2025-08-08 08:17:09
 
 ### Added
@@ -141,6 +162,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[1.2.0]: https://github.com/PolicyEngine/microimpute/compare/1.1.6...1.2.0
 [1.1.6]: https://github.com/PolicyEngine/microimpute/compare/1.1.5...1.1.6
 [1.1.5]: https://github.com/PolicyEngine/microimpute/compare/1.1.4...1.1.5
 [1.1.4]: https://github.com/PolicyEngine/microimpute/compare/1.1.3...1.1.4
