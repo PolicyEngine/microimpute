@@ -1,195 +1,360 @@
-"""Tests for the Statistical Matching imputation model."""
+"""Comprehensive tests for the Statistical Matching imputation model."""
 
 from typing import Dict, List
 
 import numpy as np
 import pandas as pd
+import pytest
 from sklearn.datasets import load_diabetes
 from sklearn.metrics import mean_squared_error
 
-from microimpute.utils.data import preprocess_data
 from microimpute.config import QUANTILES
 from microimpute.evaluations import *
+from microimpute.utils.data import preprocess_data
+from microimpute.visualizations.plotting import *
 
 try:
     from microimpute.models.matching import Matching
+
+    MATCHING_AVAILABLE = True
 except ImportError:
-    pass
-from microimpute.visualizations.plotting import *
-
-# Test Method on diabetes dataset
-diabetes_data = load_diabetes()
-diabetes_df = pd.DataFrame(
-    diabetes_data.data, columns=diabetes_data.feature_names
-)
+    MATCHING_AVAILABLE = False
+    pytest.skip("Matching model not available", allow_module_level=True)
 
 
-def test_matching_cross_validation(
-    data: pd.DataFrame = diabetes_df,
-    quantiles: List[float] = QUANTILES,
-) -> None:
-    """
-    Test the Matching model on a specific dataset.
+# === Fixtures ===
 
-    Args:
-            data: DataFrame with the dataset of interest.
-            predictors: List of predictor variables.
-            imputed_variables: List of variables to impute.
-            quantiles: List of quantiles to predict.
-    """
+
+@pytest.fixture
+def diabetes_data() -> pd.DataFrame:
+    """Load and prepare diabetes dataset for testing."""
+    diabetes = load_diabetes()
+    df = pd.DataFrame(diabetes.data, columns=diabetes.feature_names)
     predictors = ["age", "sex", "bmi", "bp"]
     imputed_variables = ["s1", "s4"]
-    data = data[predictors + imputed_variables]
+    return df[predictors + imputed_variables]
 
-    data = preprocess_data(
-        data,
-        full_data=True,
-        normalize=False,
+
+@pytest.fixture
+def simple_data() -> pd.DataFrame:
+    """Create simple synthetic data for testing."""
+    np.random.seed(42)
+    return pd.DataFrame(
+        {
+            "x1": np.random.randn(100),
+            "x2": np.random.randn(100),
+            "y": np.random.randn(100),
+        }
     )
+
+
+@pytest.fixture
+def categorical_data() -> pd.DataFrame:
+    """Create data with categorical variables."""
+    np.random.seed(42)
+    n_samples = 100
+    return pd.DataFrame(
+        {
+            "numeric": np.random.randn(n_samples),
+            "category": np.random.choice(["A", "B", "C"], n_samples),
+            "target": np.random.randn(n_samples),
+        }
+    )
+
+
+# === Basic Functionality Tests ===
+
+
+def test_matching_basic_fit_predict(diabetes_data: pd.DataFrame) -> None:
+    """Test basic Matching model fitting and prediction."""
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1", "s4"]
+
+    X_train, X_test = preprocess_data(diabetes_data)
+
+    # Initialize and fit model
+    model = Matching()
+    fitted_model = model.fit(X_train, predictors, imputed_variables)
+
+    # Predict (matching uses same value for all quantiles)
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    # Validate predictions
+    assert isinstance(predictions, dict)
+    assert 0.5 in predictions
+    assert isinstance(predictions[0.5], pd.DataFrame)
+    assert predictions[0.5].shape == (len(X_test), len(imputed_variables))
+    assert not predictions[0.5].isna().any().any()
+
+
+def test_matching_quantile_invariance(simple_data: pd.DataFrame) -> None:
+    """Test that Matching returns same values for different quantiles."""
+    X_train, X_test = preprocess_data(simple_data)
+
+    model = Matching()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    # Get predictions at different quantiles
+    predictions = fitted_model.predict(X_test, quantiles=[0.1, 0.5, 0.9])
+
+    # Matching should return same values for all quantiles
+    # (it doesn't model uncertainty)
+    for i in range(len(X_test)):
+        val_01 = predictions[0.1]["y"].iloc[i]
+        val_05 = predictions[0.5]["y"].iloc[i]
+        val_09 = predictions[0.9]["y"].iloc[i]
+        assert (
+            val_01 == val_05 == val_09
+        ), "Matching should return same value for all quantiles"
+
+
+def test_matching_donor_preservation(simple_data: pd.DataFrame) -> None:
+    """Test that Matching preserves actual donor values."""
+    X_train, X_test = preprocess_data(simple_data)
+
+    model = Matching()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    predictions = fitted_model.predict(X_test[:1], quantiles=[0.5])
+
+    # The predicted value should be from the training set
+    predicted_value = predictions[0.5]["y"].iloc[0]
+    assert (
+        predicted_value in X_train["y"].values
+    ), "Matched value should be from donor pool"
+
+
+# === Distance Functions Tests ===
+
+
+def test_matching_different_distance_functions() -> None:
+    """Test Matching with different distance functions."""
+    np.random.seed(42)
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(100),
+            "x2": np.random.randn(100),
+            "y": np.random.randn(100),
+        }
+    )
+
+    X_train, X_test = preprocess_data(data)
+
+    distance_functions = ["Manhattan", "Euclidean"]
+
+    for dist_fun in distance_functions:
+        model = Matching()
+        fitted_model = model.fit(
+            X_train, ["x1", "x2"], ["y"], dist_fun=dist_fun
+        )
+
+        predictions = fitted_model.predict(X_test[:5], quantiles=[0.5])
+
+        assert 0.5 in predictions
+        assert not predictions[0.5]["y"].isna().any()
+
+
+def test_matching_k_neighbors() -> None:
+    """Test Matching with different k values."""
+    np.random.seed(42)
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(100),
+            "x2": np.random.randn(100),
+            "y": np.random.randn(100),
+        }
+    )
+
+    X_train, X_test = preprocess_data(data)
+
+    # Test different k values
+    for k in [1, 3, 5]:
+        model = Matching()
+        fitted_model = model.fit(X_train, ["x1", "x2"], ["y"], k=k)
+
+        predictions = fitted_model.predict(X_test[:5], quantiles=[0.5])
+
+        assert 0.5 in predictions
+        assert not predictions[0.5]["y"].isna().any()
+
+
+# === Categorical Variables ===
+
+
+def test_matching_mixed_types() -> None:
+    """Test Matching with mixed data types."""
+    np.random.seed(42)
+    n_samples = 100
+
+    data = pd.DataFrame(
+        {
+            "numeric": np.random.randn(n_samples),
+            "category": np.random.choice(["A", "B", "C"], n_samples),
+            "binary": np.random.choice([0, 1], n_samples),
+            "target_numeric": np.random.randn(n_samples),
+            "target_category": np.random.choice(["X", "Y"], n_samples),
+        }
+    )
+
+    X_train, X_test = preprocess_data(data, normalize=False)
+
+    model = Matching()
+    fitted_model = model.fit(
+        X_train,
+        ["numeric", "category", "binary"],
+        ["target_numeric", "target_category"],
+    )
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    assert predictions[0.5]["target_numeric"].dtype == np.float64
+    assert predictions[0.5]["target_category"].dtype == object
+
+
+# === Edge Cases ===
+
+
+def test_matching_single_donor(simple_data: pd.DataFrame) -> None:
+    """Test Matching with very small donor pool."""
+    # Use only 5 donors
+    X_train = simple_data[:5]
+    X_test = simple_data[90:]
+
+    model = Matching()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()
+
+    # All predictions should be from the small donor pool
+    for val in predictions[0.5]["y"]:
+        assert val in X_train["y"].values
+
+
+def test_matching_exact_match() -> None:
+    """Test Matching when exact matches exist."""
+    np.random.seed(42)
+
+    data = pd.DataFrame(
+        {
+            "x1": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "x2": [1.0, 2.0, 3.0, 4.0, 5.0],
+            "y": [10, 20, 30, 40, 50],
+        }
+    )
+
+    X_train = data
+    # Test with exact match
+    X_test = pd.DataFrame({"x1": [3.0], "x2": [3.0]})
+
+    model = Matching()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    # Check that predictions exist
+    assert 0.5 in predictions
+    assert not predictions[0.5].empty
+
+
+# === Constrained Matching ===
+
+
+def test_matching_constrained_mode() -> None:
+    """Test Matching with constrained mode."""
+    np.random.seed(42)
+
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(100),
+            "x2": np.random.randn(100),
+            "y": np.random.randn(100),
+        }
+    )
+
+    X_train, X_test = preprocess_data(data)
+
+    model = Matching()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"], constrained=True)
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()
+
+
+# === Cross-Validation ===
+
+
+def test_matching_cross_validation(diabetes_data: pd.DataFrame) -> None:
+    """Test Matching model with cross-validation."""
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1", "s4"]
+
+    # Preprocess without normalization for matching
+    data = preprocess_data(diabetes_data, full_data=True, normalize=False)
 
     matching_results = cross_validate_model(
         Matching, data, predictors, imputed_variables
     )
 
-    matching_results.to_csv("matching_cv_results.csv")
-
+    # Validate cross-validation results
     assert not matching_results.isna().any().any()
+    assert len(matching_results) > 0
 
+    # Test visualization capability
     perf_results_viz = model_performance_results(
         results=matching_results,
-        model_name="QRF",
+        model_name="Matching",
         method_name="Cross-Validation Quantile Loss Average",
     )
-    fig = perf_results_viz.plot(
-        title="Matching Cross-Validation Performance",
-        save_path="matching_cv_performance.jpg",
-    )
+
+    assert perf_results_viz is not None
 
 
-def test_matching_example_use(
-    data: pd.DataFrame = diabetes_df,
-    quantiles: List[float] = QUANTILES,
-) -> None:
-    """
-    Example of how to use the Statistical Matching imputer model.
+# === Hyperparameter Tuning ===
 
-    This example demonstrates:
-    - Initializing a Matching model
-    - Fitting the model to donor data
-    - Predicting values for recipient data
-    - How matching uses nearest neighbors for imputation
 
-    Args:
-        data: DataFrame with the dataset of interest.
-        predictors: List of predictor variables.
-        imputed_variables: List of variables to impute.
-        quantiles: List of quantiles to predict.
-    """
+def test_matching_hyperparameter_tuning(diabetes_data: pd.DataFrame) -> None:
+    """Test hyperparameter tuning for Matching model."""
     predictors = ["age", "sex", "bmi", "bp"]
     imputed_variables = ["s1", "s4"]
-    data = data[predictors + imputed_variables]
 
-    X_train, X_test = preprocess_data(data)
-
-    # Initialize Matching model
-    model = Matching()
-
-    # Fit the model (stores donor data)
-    fitted_model = model.fit(X_train, predictors, imputed_variables)
-
-    # Predict for the test data
-    # For matching, quantiles don't have the same meaning as in regression
-    # The same matched value is used for all quantiles
-    test_quantiles: List[float] = [0.5]  # Just one quantile for simplicity
-    predictions: Dict[float, pd.DataFrame] = fitted_model.predict(
-        X_test, test_quantiles
-    )
-
-    # Check structure of predictions
-    assert isinstance(predictions[0.5], pd.DataFrame)
-
-    transformed_df = pd.DataFrame()
-    for quantile, pred_df in predictions.items():
-        # For each quantile and its predictions DataFrame
-        for variable in imputed_variables:
-            # Calculate the mean of predictions for this variable at this quantile
-            mean_value = pred_df[variable].mean()
-            # Create or update the value in our transformed DataFrame
-            if variable not in transformed_df.columns:
-                transformed_df[variable] = pd.Series(dtype="float64")
-            transformed_df.loc[quantile, variable] = mean_value
-
-    # Save to CSV for further analysis
-    transformed_df.to_csv("matching_predictions_by_quantile.csv")
-
-
-def test_matching_hyperparameter_tuning(
-    data: pd.DataFrame = diabetes_df,
-    quantiles: List[float] = QUANTILES,
-) -> None:
-    """
-    Test the hyperparameter tuning functionality of the Matching model.
-
-    This test verifies that:
-    1. The hyperparameter tuning process runs without errors
-    2. The tuned model performs at least as well as a default model
-    3. The tuned hyperparameters are within expected ranges
-
-    Args:
-        data: DataFrame with the dataset to use
-        predictors: List of predictor column names
-        imputed_variables: List of target column names
-        quantiles: List of quantiles to predict
-    """
-    predictors = ["age", "sex", "bmi", "bp"]
-    imputed_variables = ["s1", "s4"]
-    data = data[predictors + imputed_variables]
-
-    # Split data for training and validation
-    np.random.seed(42)  # For reproducible testing
+    # Split data
+    np.random.seed(42)
     train_idx = np.random.choice(
-        len(data), int(0.7 * len(data)), replace=False
+        len(diabetes_data), int(0.7 * len(diabetes_data)), replace=False
     )
-    valid_idx = np.array([i for i in range(len(data)) if i not in train_idx])
-
-    train_data = data.iloc[train_idx].reset_index(drop=True)
-    valid_data = data.iloc[valid_idx].reset_index(drop=True)
-
-    # Preprocess training and validation data
-    X_train = preprocess_data(
-        train_data,
-        full_data=True,
-    )
-    X_valid = preprocess_data(
-        valid_data,
-        full_data=True,
+    valid_idx = np.array(
+        [i for i in range(len(diabetes_data)) if i not in train_idx]
     )
 
-    # Initialize Matching models - one with default parameters, one with tuning
+    train_data = diabetes_data.iloc[train_idx].reset_index(drop=True)
+    valid_data = diabetes_data.iloc[valid_idx].reset_index(drop=True)
+
+    X_train = preprocess_data(train_data, full_data=True)
+    X_valid = preprocess_data(valid_data, full_data=True)
+
+    # Fit models with and without tuning
     default_model = Matching()
-    tuned_model = Matching()
-
-    # Fit models
     default_fitted = default_model.fit(X_train, predictors, imputed_variables)
 
-    # Fit with hyperparameter tuning
+    tuned_model = Matching()
     tuned_fitted, best_params = tuned_model.fit(
-        X_train,
-        predictors,
-        imputed_variables,
-        tune_hyperparameters=True,  # Enable hyperparameter tuning
+        X_train, predictors, imputed_variables, tune_hyperparameters=True
     )
 
-    # Make predictions with both models
+    # Make predictions
     default_preds = default_fitted.predict(X_valid, quantiles=[0.5])
     tuned_preds = tuned_fitted.predict(X_valid, quantiles=[0.5])
 
-    # Evaluate performance on validation set
+    # Calculate MSE
     default_mse = {}
     tuned_mse = {}
 
     for var in imputed_variables:
-        # Calculate MSE for each variable
         default_mse[var] = mean_squared_error(
             X_valid[var], default_preds[0.5][var]
         )
@@ -197,30 +362,17 @@ def test_matching_hyperparameter_tuning(
             X_valid[var], tuned_preds[0.5][var]
         )
 
-    # Calculate average MSE across all variables
-    avg_default_mse = np.mean(list(default_mse.values()))
-    avg_tuned_mse = np.mean(list(tuned_mse.values()))
+    # Both should produce valid results
+    assert all(mse < np.inf for mse in default_mse.values())
+    assert all(mse < np.inf for mse in tuned_mse.values())
 
-    # Output results for inspection
-    print(f"Default model average MSE: {avg_default_mse:.4f}")
-    print(f"Tuned model average MSE: {avg_tuned_mse:.4f}")
-    print(
-        f"MSE improvement: {(avg_default_mse - avg_tuned_mse) / avg_default_mse:.2%}"
-    )
-
-    # Extract the tuned hyperparameters if available
+    # Check hyperparameters if available
     if (
         hasattr(tuned_fitted, "hyperparameters")
         and tuned_fitted.hyperparameters
     ):
-        print("Tuned hyperparameters:")
-        for param, value in tuned_fitted.hyperparameters.items():
-            print(f"  {param}: {value}")
-
-        # Verify that dist_fun is in expected set
         if "dist_fun" in tuned_fitted.hyperparameters:
-            dist_fun = tuned_fitted.hyperparameters["dist_fun"]
-            expected_dist_funs = [
+            assert tuned_fitted.hyperparameters["dist_fun"] in [
                 "Manhattan",
                 "Euclidean",
                 "Mahalanobis",
@@ -228,34 +380,67 @@ def test_matching_hyperparameter_tuning(
                 "Gower",
                 "minimax",
             ]
-            assert (
-                dist_fun in expected_dist_funs
-            ), f"dist_fun outside expected values: {dist_fun}"
-
-        # Verify that k is in reasonable range
         if "k" in tuned_fitted.hyperparameters:
-            k_value = tuned_fitted.hyperparameters["k"]
-            assert 1 <= k_value <= 10, f"k outside expected range: {k_value}"
+            assert 1 <= tuned_fitted.hyperparameters["k"] <= 10
 
-    # Verify that the file is saved
-    combined_results = pd.DataFrame(
+
+# === Performance Tests ===
+
+
+def test_matching_multiple_targets(diabetes_data: pd.DataFrame) -> None:
+    """Test Matching with multiple target variables."""
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1", "s2", "s3", "s4"]
+
+    diabetes = load_diabetes()
+    full_data = pd.DataFrame(diabetes.data, columns=diabetes.feature_names)
+    data = full_data[predictors + imputed_variables]
+
+    X_train, X_test = preprocess_data(data)
+
+    model = Matching()
+    fitted_model = model.fit(X_train, predictors, imputed_variables)
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    assert predictions[0.5].shape[1] == len(imputed_variables)
+    for var in imputed_variables:
+        assert var in predictions[0.5].columns
+        assert not predictions[0.5][var].isna().any()
+
+
+def test_matching_preserves_relationships() -> None:
+    """Test that Matching preserves relationships between variables."""
+    np.random.seed(42)
+    n_samples = 100
+
+    # Create data with strong relationship between targets
+    x = np.random.randn(n_samples)
+    data = pd.DataFrame(
         {
-            "Variable": imputed_variables * 2,
-            "Model": ["Default"] * len(imputed_variables)
-            + ["Tuned"] * len(imputed_variables),
-            "MSE": list(default_mse.values()) + list(tuned_mse.values()),
+            "x": x,
+            "y1": 2 * x + np.random.randn(n_samples) * 0.1,
+            "y2": 3 * x + np.random.randn(n_samples) * 0.1,
         }
     )
 
-    combined_results.to_csv(
-        "matching_hyperparameter_tuning_comparison.csv", index=False
-    )
+    X_train = data[:80]
+    X_test = data[80:][["x"]]  # Only predictors for test
 
-    # Assert that the tuned model performs at least 90% as well as the default model
-    # This is a loose check because sometimes the default model might perform better by chance,
-    # especially with limited tuning trials
-    assert_performance_comparison = False
-    if assert_performance_comparison:
-        assert (
-            avg_tuned_mse <= avg_default_mse * 1.1
-        ), "Tuned model performance significantly worse than default"
+    model = Matching()
+    fitted_model = model.fit(X_train, ["x"], ["y1", "y2"])
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    # Check that the relationship between y1 and y2 is preserved
+    # Since we're matching entire rows, y1 and y2 should maintain their relationship
+    pred_y1 = predictions[0.5]["y1"].values
+    pred_y2 = predictions[0.5]["y2"].values
+
+    # Each prediction should come from the same donor row
+    for i in range(len(pred_y1)):
+        # Find which donor row was matched
+        donor_mask = (X_train["y1"] == pred_y1[i]) & (
+            X_train["y2"] == pred_y2[i]
+        )
+        assert donor_mask.any(), "Predictions should come from same donor row"

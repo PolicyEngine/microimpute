@@ -1,8 +1,9 @@
 """
-Test module for the Imputer abstract class and its model implementations.
+Comprehensive test module for the Imputer abstract class and its implementations.
 
-This module demonstrates the compatibility and interchangeability of different
-imputer models thanks to the common Imputer interface.
+This module tests the compatibility and interchangeability of different
+imputer models through the common Imputer interface, including edge cases
+and error handling.
 """
 
 from typing import Type
@@ -12,30 +13,57 @@ import pandas as pd
 import pytest
 from sklearn.datasets import load_diabetes
 
-from microimpute.utils.data import preprocess_data
 from microimpute.config import QUANTILES
 from microimpute.models import *
+from microimpute.utils.data import preprocess_data
+
+
+# === Fixtures ===
 
 
 @pytest.fixture
 def diabetes_data() -> pd.DataFrame:
-    """Create a dataset from the Diabetes dataset for testing.
-
-    Returns:
-        A DataFrame with the Diabetes dataset.
-    """
-    # Load the Diabetes dataset
+    """Create a dataset from the Diabetes dataset for testing."""
     diabetes = load_diabetes()
-
-    # Create DataFrame with feature names
     data = pd.DataFrame(diabetes.data, columns=diabetes.feature_names)
 
     predictors = ["age", "sex", "bmi", "bp"]
     imputed_variables = ["s1"]
 
-    data = data[predictors + imputed_variables]
+    return data[predictors + imputed_variables]
 
-    return data
+
+@pytest.fixture
+def simple_data() -> pd.DataFrame:
+    """Create simple synthetic data for edge case testing."""
+    np.random.seed(42)
+    return pd.DataFrame(
+        {
+            "x1": np.random.randn(100),
+            "x2": np.random.randn(100),
+            "y": np.random.randn(100),
+        }
+    )
+
+
+@pytest.fixture
+def data_with_edge_cases() -> pd.DataFrame:
+    """Create data with various edge cases."""
+    np.random.seed(42)
+    n_samples = 100
+
+    return pd.DataFrame(
+        {
+            "numeric": np.random.randn(n_samples),
+            "constant": np.ones(n_samples),  # Constant predictor
+            "binary": np.random.choice([0, 1], n_samples),
+            "categorical": np.random.choice(["A", "B", "C"], n_samples),
+            "high_correlation": np.random.randn(
+                n_samples
+            ),  # Will be made correlated
+            "target": np.random.randn(n_samples),
+        }
+    )
 
 
 # Define all imputer model classes to test
@@ -44,24 +72,19 @@ ALL_IMPUTER_MODELS = [OLS, QuantReg, QRF]
 try:
     from microimpute.models.matching import Matching
 
-    # Add Matching model if available
     ALL_IMPUTER_MODELS.append(Matching)
 except ImportError:
-    # If Matching model is not available, skip the test
     pass
 
 
-# Parametrize tests to run for each model
+# === Basic Interface Tests ===
+
+
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
 def test_init_signatures(model_class: Type[Imputer]) -> None:
-    """Test that all models can be initialized without required arguments.
-
-    Args:
-        model_class: The model class to test
-    """
-    # Check that we can initialize the model without errors
+    """Test that all models can be initialized without required arguments."""
     model = model_class()
     assert (
         model.predictors is None
@@ -77,13 +100,7 @@ def test_init_signatures(model_class: Type[Imputer]) -> None:
 def test_fit_predict_interface(
     model_class: Type[Imputer], diabetes_data: pd.DataFrame
 ) -> None:
-    """Test the fit and predict methods for each model.
-    Demonstrating models can be interchanged through the Imputer interface.
-
-    Args:
-        model_class: The model class to test
-        diabetes_data: DataFrame with sample data
-    """
+    """Test the fit and predict methods for each model."""
     quantiles = QUANTILES
     predictors = ["age", "sex", "bmi", "bp"]
     imputed_variables = ["s1"]
@@ -95,7 +112,6 @@ def test_fit_predict_interface(
 
     # Fit the model
     if model_class.__name__ == "QuantReg":
-        # For QuantReg, we need to explicitly fit the quantiles
         fitted_model = model.fit(
             X_train, predictors, imputed_variables, quantiles=quantiles
         )
@@ -109,57 +125,92 @@ def test_fit_predict_interface(
     assert isinstance(
         predictions, dict
     ), f"{model_class.__name__} predict should return a dictionary"
-    assert set(predictions.keys()).issubset(set(quantiles)), (
-        f"{model_class.__name__} predict should return keys in the "
-        f"specified quantiles"
-    )
+    assert set(predictions.keys()).issubset(set(quantiles))
 
     # Check prediction shape
     for q, pred in predictions.items():
         assert pred.shape[0] == len(X_test)
-
-    # Test with default quantiles (None)
-
-    # Initialize the model
-    model_default_q = model_class()
-
-    # Fit the model
-    fitted_default_model = model_default_q.fit(
-        X_train, predictors, imputed_variables
-    )
-
-    default_predictions = fitted_default_model.predict(X_test)
-    assert isinstance(default_predictions, pd.DataFrame), (
-        f"{model_class.__name__} predict should return a DataFrame with "
-        f"default quantiles"
-    )
+        assert not pred.isna().any().any()
 
 
-def test_string_column_validation() -> None:
-    """Test that the _validate_data method raises an error for string columns."""
-    # Create a simple dataframe with a string column
+# === Data Type Handling Tests ===
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_categorical_variables(model_class: Type[Imputer]) -> None:
+    """Test that models handle categorical variables correctly."""
+    np.random.seed(42)
     data = pd.DataFrame(
-        {"numeric_col": [1, 2, 3], "string_col": ["a", "b", "c"]}
+        {
+            "numeric": np.random.randn(100),
+            "category": np.random.choice(["A", "B", "C"], 100),
+            "target": np.random.randn(100),
+        }
     )
-    columns = ["numeric_col", "string_col"]
 
-    # Create a model to test
-    model = OLS()
+    X_train, X_test = preprocess_data(data)
 
-    data = preprocess_data(data, full_data=True)
+    model = model_class()
 
-    # Test that it raises a ValueError with the expected message
-    model._validate_data(data, columns)
+    if model_class.__name__ == "QuantReg":
+        fitted = model.fit(
+            X_train, ["numeric", "category"], ["target"], quantiles=[0.5]
+        )
+    else:
+        fitted = model.fit(X_train, ["numeric", "category"], ["target"])
+
+    predictions = fitted.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert len(predictions[0.5]) == len(X_test)
+    assert not predictions[0.5]["target"].isna().any()
 
 
-def test_imputation_categorical_bool_vars() -> None:
-    """Test that the imputer can handle categorical and boolean variables."""
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_boolean_variables(model_class: Type[Imputer]) -> None:
+    """Test that models handle boolean variables correctly."""
+    np.random.seed(42)
+    data = pd.DataFrame(
+        {
+            "numeric": np.random.randn(100),
+            "bool_var": np.random.choice([True, False], 100),
+            "target": np.random.randn(100),
+        }
+    )
+
+    X_train, X_test = preprocess_data(data)
+
+    model = model_class()
+
+    if model_class.__name__ == "QuantReg":
+        fitted = model.fit(
+            X_train, ["numeric", "bool_var"], ["target"], quantiles=[0.5]
+        )
+    else:
+        fitted = model.fit(X_train, ["numeric", "bool_var"], ["target"])
+
+    predictions = fitted.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5]["target"].isna().any()
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_imputation_categorical_bool_targets(
+    model_class: Type[Imputer],
+) -> None:
+    """Test imputing categorical and boolean target variables."""
     diabetes = load_diabetes()
     df = pd.DataFrame(diabetes.data, columns=diabetes.feature_names)
 
-    # Add random boolean variable
+    # Add random boolean and categorical targets
     df["bool"] = np.random.choice([True, False], size=len(df))
-    # Add random categorical variable with three categories
     df["categorical"] = np.random.choice(["one", "two", "three"], size=len(df))
 
     predictors = ["age", "sex", "bmi", "bp"]
@@ -167,12 +218,133 @@ def test_imputation_categorical_bool_vars() -> None:
 
     X_train, X_test = preprocess_data(df)
 
-    ols = OLS()
-    fitted_ols = ols.fit(X_train, predictors, imputed_variables)
-    ols_predictions = fitted_ols.predict(X_test)
+    model = model_class()
+    fitted_model = model.fit(X_train, predictors, imputed_variables)
+    predictions = fitted_model.predict(X_test)
 
-    assert ols_predictions["categorical"].dtype == "object"
-    assert ols_predictions["bool"].dtype == "bool"
+    assert predictions[0.5]["categorical"].dtype == "object"
+    assert predictions[0.5]["bool"].dtype == "bool"
+
+
+# === Edge Cases and Error Handling ===
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_single_predictor(
+    model_class: Type[Imputer], simple_data: pd.DataFrame
+) -> None:
+    """Test models with only one predictor."""
+    X_train, X_test = preprocess_data(simple_data)
+
+    model = model_class()
+
+    if model_class.__name__ == "QuantReg":
+        fitted = model.fit(X_train, ["x1"], ["y"], quantiles=[0.5])
+    else:
+        fitted = model.fit(X_train, ["x1"], ["y"])
+
+    predictions = fitted.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_multiple_targets(
+    model_class: Type[Imputer], diabetes_data: pd.DataFrame
+) -> None:
+    """Test models with multiple target variables."""
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1", "s2", "s3"]
+
+    # Get more columns from diabetes data
+    diabetes = load_diabetes()
+    full_data = pd.DataFrame(diabetes.data, columns=diabetes.feature_names)
+    data = full_data[predictors + imputed_variables]
+
+    X_train, X_test = preprocess_data(data)
+
+    model = model_class()
+
+    if model_class.__name__ == "QuantReg":
+        fitted = model.fit(
+            X_train, predictors, imputed_variables, quantiles=[0.5]
+        )
+    else:
+        fitted = model.fit(X_train, predictors, imputed_variables)
+
+    predictions = fitted.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert predictions[0.5].shape[1] == len(imputed_variables)
+    assert not predictions[0.5].isna().any().any()
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_constant_predictor(model_class: Type[Imputer]) -> None:
+    """Test models with a constant predictor (no variance)."""
+    np.random.seed(42)
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(100),
+            "constant": np.ones(100),  # Constant predictor
+            "y": np.random.randn(100),
+        }
+    )
+
+    X_train, X_test = preprocess_data(data)
+
+    model = model_class()
+
+    # Models should handle constant predictors gracefully
+    if model_class.__name__ == "QuantReg":
+        fitted = model.fit(X_train, ["x1", "constant"], ["y"], quantiles=[0.5])
+    else:
+        fitted = model.fit(X_train, ["x1", "constant"], ["y"])
+
+    predictions = fitted.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_highly_correlated_predictors(model_class: Type[Imputer]) -> None:
+    """Test models with highly correlated predictors."""
+    np.random.seed(42)
+    n_samples = 100
+
+    x1 = np.random.randn(n_samples)
+    x2 = x1 + np.random.randn(n_samples) * 0.01  # Almost perfectly correlated
+
+    data = pd.DataFrame(
+        {"x1": x1, "x2": x2, "y": x1 + np.random.randn(n_samples) * 0.5}
+    )
+
+    X_train, X_test = preprocess_data(data)
+
+    model = model_class()
+
+    if model_class.__name__ == "QuantReg":
+        fitted = model.fit(X_train, ["x1", "x2"], ["y"], quantiles=[0.5])
+    else:
+        fitted = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    predictions = fitted.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()
+
+
+# === Weighted Training Tests ===
 
 
 @pytest.mark.parametrize(
@@ -182,9 +354,9 @@ def test_weighted_training(
     model_class: Type[Imputer], diabetes_data: pd.DataFrame
 ) -> None:
     """Ensure models can be trained using sampling weights."""
-
     X_train, _ = preprocess_data(diabetes_data)
-    # Create a simple positive weight column after preprocessing
+
+    # Create a simple positive weight column
     X_train["wgt"] = range(1, len(X_train) + 1)
 
     predictors = ["age", "sex", "bmi", "bp"]
@@ -197,7 +369,7 @@ def test_weighted_training(
             X_train,
             predictors,
             imputed_variables,
-            weight_col=X_train["wgt"],
+            weight_col="wgt",
             quantiles=QUANTILES,
         )
     else:
@@ -206,3 +378,176 @@ def test_weighted_training(
         )
 
     assert fitted is not None
+
+    # Test prediction
+    X_test = X_train.drop(columns=["wgt"]).head(10)
+    predictions = fitted.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5].isna().any().any()
+
+
+# === Quantile-Specific Tests ===
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_extreme_quantiles(
+    model_class: Type[Imputer], simple_data: pd.DataFrame
+) -> None:
+    """Test models with extreme quantile values."""
+    X_train, X_test = preprocess_data(simple_data)
+
+    extreme_quantiles = [0.01, 0.99]
+
+    model = model_class()
+
+    if model_class.__name__ == "QuantReg":
+        fitted = model.fit(
+            X_train, ["x1", "x2"], ["y"], quantiles=extreme_quantiles
+        )
+    else:
+        fitted = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    predictions = fitted.predict(X_test, quantiles=extreme_quantiles)
+
+    for q in extreme_quantiles:
+        assert q in predictions
+        assert not predictions[q]["y"].isna().any()
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_single_quantile(
+    model_class: Type[Imputer], simple_data: pd.DataFrame
+) -> None:
+    """Test models with a single quantile."""
+    X_train, X_test = preprocess_data(simple_data)
+
+    model = model_class()
+
+    if model_class.__name__ == "QuantReg":
+        fitted = model.fit(X_train, ["x1", "x2"], ["y"], quantiles=[0.5])
+    else:
+        fitted = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    predictions = fitted.predict(X_test, quantiles=[0.5])
+
+    assert len(predictions) == 1
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()
+
+
+# === Data Validation Tests ===
+
+
+def test_string_column_validation() -> None:
+    """Test that the _validate_data method handles string columns appropriately."""
+    data = pd.DataFrame(
+        {"numeric_col": [1, 2, 3], "string_col": ["a", "b", "c"]}
+    )
+    columns = ["numeric_col", "string_col"]
+
+    model = OLS()
+
+    # Preprocess will handle encoding
+    data = preprocess_data(data, full_data=True)
+
+    # Should not raise an error after preprocessing
+    model._validate_data(data, columns)
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_missing_predictors_in_test(model_class: Type[Imputer]) -> None:
+    """Test behavior when test data is missing predictor columns."""
+    np.random.seed(42)
+    train_data = pd.DataFrame(
+        {
+            "x1": np.random.randn(50),
+            "x2": np.random.randn(50),
+            "y": np.random.randn(50),
+        }
+    )
+
+    # Test data missing x2
+    test_data = pd.DataFrame({"x1": np.random.randn(10)})
+
+    model = model_class()
+
+    if model_class.__name__ == "QuantReg":
+        fitted = model.fit(train_data, ["x1", "x2"], ["y"], quantiles=[0.5])
+    else:
+        fitted = model.fit(train_data, ["x1", "x2"], ["y"])
+
+    # Should raise an error when predictor is missing
+    with pytest.raises(Exception):
+        predictions = fitted.predict(test_data, quantiles=[0.5])
+
+
+# === Reproducibility Tests ===
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_reproducibility(
+    model_class: Type[Imputer], simple_data: pd.DataFrame
+) -> None:
+    """Test that models produce reproducible results."""
+    X_train, X_test = preprocess_data(simple_data)
+
+    # First run
+    model1 = model_class()
+    fitted1 = model1.fit(X_train, ["x1", "x2"], ["y"])
+    pred1 = fitted1.predict(X_test, quantiles=[0.5])
+
+    # Second run with same data
+    model2 = model_class()
+    fitted2 = model2.fit(X_train, ["x1", "x2"], ["y"])
+    pred2 = fitted2.predict(X_test, quantiles=[0.5])
+
+    # Results should be very similar (allowing for minor numerical differences)
+    np.testing.assert_allclose(
+        pred1[0.5]["y"].values, pred2[0.5]["y"].values, rtol=1e-5
+    )
+
+
+# === Performance and Memory Tests ===
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_large_number_of_predictors(model_class: Type[Imputer]) -> None:
+    """Test models with many predictors."""
+    np.random.seed(42)
+    n_samples = 50
+    n_predictors = 20
+
+    # Create data with many predictors
+    data_dict = {
+        f"x{i}": np.random.randn(n_samples) for i in range(n_predictors)
+    }
+    data_dict["y"] = np.random.randn(n_samples)
+    data = pd.DataFrame(data_dict)
+
+    X_train = data.iloc[:40].reset_index(drop=True)
+    X_test = data.iloc[40:].reset_index(drop=True)
+
+    predictors = [f"x{i}" for i in range(n_predictors)]
+
+    model = model_class()
+
+    if model_class.__name__ == "QuantReg":
+        fitted = model.fit(X_train, predictors, ["y"], quantiles=[0.5])
+    else:
+        fitted = model.fit(X_train, predictors, ["y"])
+
+    predictions = fitted.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()

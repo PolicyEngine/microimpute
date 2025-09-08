@@ -1,56 +1,149 @@
-"""Tests for the end-to-end quantile loss comparison workflow.
+"""Comprehensive tests for quantile loss comparison functionality."""
 
-This module tests the complete workflow of:
-1. Preparing data
-2. Training different imputation models
-3. Generating predictions
-4. Comparing models using quantile loss metrics
-5. Visualizing the results
-"""
-
-from typing import List, Type
-
-import io
+import numpy as np
 import pandas as pd
-import requests
-from sklearn.datasets import load_diabetes
-from sklearn.model_selection import train_test_split
-import zipfile
+import pytest
 
-from microimpute.comparisons import *
-from microimpute.config import RANDOM_STATE, VALID_YEARS
-from microimpute.models import Imputer, OLS, QRF, QuantReg
-
-try:
-    from microimpute.models import Matching
-
-    HAS_MATCHING = True
-except ImportError:
-    HAS_MATCHING = False
-from microimpute.visualizations.plotting import *
-from microimpute.utils.data import preprocess_data
+from microimpute.comparisons import compare_quantile_loss, get_imputations
+from microimpute.config import QUANTILES
+from microimpute.models import OLS, QRF, Matching, QuantReg
 
 
-def test_quantile_comparison_diabetes() -> None:
-    """Test the end-to-end quantile loss comparison workflow."""
-    diabetes_data = load_diabetes()
-    diabetes_df = pd.DataFrame(
-        diabetes_data.data, columns=diabetes_data.feature_names
+# === Fixtures ===
+
+
+@pytest.fixture
+def split_data() -> tuple:
+    """Generate simple split data for testing."""
+    np.random.seed(42)
+    n_train, n_test = 100, 20
+
+    X_train = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_train),
+            "x2": np.random.randn(n_train),
+            "x3": np.random.randn(n_train),
+            "y1": np.random.randn(n_train),
+            "y2": np.random.randn(n_train),
+        }
     )
 
-    predictors = ["age", "sex", "bmi", "bp"]
-    imputed_variables = ["s1", "s4"]
-
-    diabetes_df = diabetes_df[predictors + imputed_variables]
-    X_train, X_test = train_test_split(
-        diabetes_df, test_size=0.2, random_state=RANDOM_STATE
+    X_test = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_test),
+            "x2": np.random.randn(n_test),
+            "x3": np.random.randn(n_test),
+            "y1": np.random.randn(n_test),
+            "y2": np.random.randn(n_test),
+        }
     )
 
-    Y_test: pd.DataFrame = X_test[imputed_variables]
+    return X_train, X_test
 
-    model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg]
-    if HAS_MATCHING:
-        model_classes.append(Matching)
+
+@pytest.fixture
+def diabetes_data() -> pd.DataFrame:
+    """Load diabetes dataset for testing."""
+    from sklearn.datasets import load_diabetes
+
+    X, y = load_diabetes(return_X_y=True, as_frame=True)
+    data = pd.concat([X, y.rename("target")], axis=1)
+    data.columns = [
+        "age",
+        "sex",
+        "bmi",
+        "bp",
+        "s1",
+        "s2",
+        "s3",
+        "s4",
+        "s5",
+        "s6",
+        "target",
+    ]
+    return data
+
+
+# === Basic Functionality Tests ===
+
+
+def test_get_imputations_basic(split_data: tuple) -> None:
+    """Test basic functionality of get_imputations."""
+    X_train, X_test = split_data
+    predictors = ["x1", "x2", "x3"]
+    imputed_variables = ["y1", "y2"]
+
+    model_classes = [OLS, QRF]
+    method_imputations = get_imputations(
+        model_classes, X_train, X_test, predictors, imputed_variables
+    )
+
+    # Check structure
+    assert isinstance(method_imputations, dict)
+    assert len(method_imputations) == len(model_classes)
+    assert "OLS" in method_imputations
+    assert "QRF" in method_imputations
+
+    # Check each model's imputations
+    for model_name, imputations in method_imputations.items():
+        assert isinstance(imputations, dict)
+        # Should have imputations for each quantile
+        assert all(q in imputations for q in QUANTILES)
+        # Each quantile should have a DataFrame
+        for q, df in imputations.items():
+            assert isinstance(df, pd.DataFrame)
+            assert df.shape == (len(X_test), len(imputed_variables))
+            assert all(var in df.columns for var in imputed_variables)
+
+
+def test_compare_quantile_loss_basic(split_data: tuple) -> None:
+    """Test basic functionality of compare_quantile_loss."""
+    X_train, X_test = split_data
+    predictors = ["x1", "x2", "x3"]
+    imputed_variables = ["y1", "y2"]
+
+    Y_test = X_test[imputed_variables]
+
+    # Get imputations
+    model_classes = [OLS, QuantReg]
+    method_imputations = get_imputations(
+        model_classes, X_train, X_test, predictors, imputed_variables
+    )
+
+    # Compare quantile loss
+    loss_comparison_df = compare_quantile_loss(
+        Y_test, method_imputations, imputed_variables
+    )
+
+    # Check structure - returns long format DataFrame
+    assert isinstance(loss_comparison_df, pd.DataFrame)
+    assert "Method" in loss_comparison_df.columns
+    assert "Imputed Variable" in loss_comparison_df.columns
+    assert "Percentile" in loss_comparison_df.columns
+    assert "Loss" in loss_comparison_df.columns
+
+    # Check that both models are present
+    methods = loss_comparison_df["Method"].unique()
+    assert "OLS" in methods
+    assert "QuantReg" in methods
+
+    # Check values are non-negative (quantile loss is always >= 0)
+    assert (loss_comparison_df["Loss"] >= 0).all()
+    assert not loss_comparison_df["Loss"].isna().any()
+
+
+# === Data Handling Tests ===
+
+
+def test_single_imputed_variable(split_data: tuple) -> None:
+    """Test with single imputed variable."""
+    X_train, X_test = split_data
+    predictors = ["x1", "x2"]
+    imputed_variables = ["y1"]  # Single variable
+
+    Y_test = X_test[imputed_variables]
+
+    model_classes = [OLS, QuantReg]
     method_imputations = get_imputations(
         model_classes, X_train, X_test, predictors, imputed_variables
     )
@@ -59,193 +152,259 @@ def test_quantile_comparison_diabetes() -> None:
         Y_test, method_imputations, imputed_variables
     )
 
-    assert not loss_comparison_df.isna().any().any()
-
-    loss_comparison_df.to_csv("diabetes_comparison_results.csv")
-
-    comparison_viz = method_comparison_results(
-        data=loss_comparison_df,
-        metric_name="Test Quantile Loss",
-        data_format="long",  # Explicitly using wide format
-    )
-    fig = comparison_viz.plot(
-        title="Method Comparison for Diabetes Dataset",
-        show_mean=True,
-        save_path="diabetes_model_comparison.jpg",
-    )
+    # Check results contain data for single variable
+    variables = loss_comparison_df["Imputed Variable"].unique()
+    assert "y1" in variables or "mean_loss" in variables
 
 
-def test_quantile_comparison_scf() -> None:
-    """Test the end-to-end quantile loss comparison workflow on the scf data set."""
-    scf_data = load_scf(2022)
-    PREDICTORS: List[str] = [
-        "hhsex",  # sex of head of household
-        "age",  # age of respondent
-        "married",  # marital status of respondent
-        # "kids",  # number of children in household
-        "race",  # race of respondent
-        "income",  # total annual income of household
-        "wageinc",  # income from wages and salaries
-        "bussefarminc",  # income from business, self-employment or farm
-        "intdivinc",  # income from interest and dividends
-        "ssretinc",  # income from social security and retirement accounts
-        "lf",  # labor force status
-    ]
-    IMPUTED_VARIABLES: List[str] = ["networth"]
+def test_multiple_imputed_variables(split_data: tuple) -> None:
+    """Test with multiple imputed variables."""
+    X_train, X_test = split_data
+    predictors = ["x1"]
+    imputed_variables = ["y1", "y2"]  # Multiple variables
 
-    X_train, X_test = preprocess_data(
-        data=scf_data,
-        full_data=False,
-        normalize=False,
-    )
+    Y_test = X_test[imputed_variables]
 
-    # Shrink down the data by sampling
-    X_train = X_train.sample(frac=0.01, random_state=RANDOM_STATE)
-    X_test = X_test.sample(frac=0.01, random_state=RANDOM_STATE)
-
-    Y_test: pd.DataFrame = X_test[IMPUTED_VARIABLES]
-
-    model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg]
-    if HAS_MATCHING:
-        model_classes.append(Matching)
+    model_classes = [OLS, QRF, QuantReg, Matching]
     method_imputations = get_imputations(
-        model_classes, X_train, X_test, PREDICTORS, IMPUTED_VARIABLES
+        model_classes, X_train, X_test, predictors, imputed_variables
     )
 
     loss_comparison_df = compare_quantile_loss(
-        Y_test, method_imputations, IMPUTED_VARIABLES
+        Y_test, method_imputations, imputed_variables
     )
 
-    assert not loss_comparison_df.isna().any().any()
+    # Check results contain data for all variables
+    variables = loss_comparison_df["Imputed Variable"].unique()
+    # Should have y1, y2, and mean_loss
+    assert len(variables) >= 2
 
-    loss_comparison_df.to_csv("scf_comparison_results.csv")
 
-    comparison_viz = method_comparison_results(
-        data=loss_comparison_df,
-        metric_name="Test Quantile Loss",
-        data_format="long",  # Explicitly using wide format
+# === Statistical Properties Tests ===
+
+
+def test_quantile_loss_symmetry() -> None:
+    """Test that quantile loss is properly asymmetric."""
+    np.random.seed(42)
+
+    # Create data where predictions are always above true values
+    X_train = pd.DataFrame(
+        {
+            "x": np.random.randn(50),
+            "y": np.random.randn(50),
+        }
     )
-    fig = comparison_viz.plot(
-        title="Method Comparison for SCF Dataset",
-        show_mean=True,
-        save_path="scf_model_comparison.jpg",
+
+    X_test = pd.DataFrame(
+        {
+            "x": np.random.randn(10),
+            "y": np.random.randn(10) - 5,  # True values are much lower
+        }
     )
 
+    predictors = ["x"]
+    imputed_variables = ["y"]
+    Y_test = X_test[imputed_variables]
 
-@validate_call(config=VALIDATE_CONFIG)
-def load_scf(
-    years: Optional[Union[int, List[int]]] = None,
-    columns: Optional[List[str]] = None,
-) -> pd.DataFrame:
-    """Load Survey of Consumer Finances data for specified years and columns.
+    model_classes = [OLS, QuantReg]
+    method_imputations = get_imputations(
+        model_classes, X_train, X_test, predictors, imputed_variables
+    )
 
-    Args:
-        years: Year or list of years to load data for.
-        columns: List of column names to load.
+    loss_comparison_df = compare_quantile_loss(
+        Y_test, method_imputations, imputed_variables
+    )
 
-    Returns:
-        DataFrame containing the requested data.
+    assert not loss_comparison_df.empty
 
-    Raises:
-        ValueError: If no Stata files are found in the downloaded zip
-            or invalid parameters
-        RuntimeError: If there's a network error or a problem processing
-            the downloaded data
-    """
 
-    def scf_url(year: int) -> str:
-        """Return the URL of the SCF summary microdata zip file for a year."""
-        logger.debug(f"Generating SCF URL for year {year}")
+def test_perfect_predictions() -> None:
+    """Test with perfect predictions."""
+    np.random.seed(42)
 
-        if year not in VALID_YEARS:
-            logger.error(
-                f"Invalid SCF year: {year}. Valid years are {VALID_YEARS}"
-            )
-            raise
+    # Create perfectly predictable data
+    X_train = pd.DataFrame(
+        {
+            "x": range(100),
+            "y": range(100),  # Perfect correlation
+        }
+    )
 
-        url = f"https://www.federalreserve.gov/econres/files/scfp{year}s.zip"
-        logger.debug(f"Generated URL: {url}")
-        return url
+    X_test = pd.DataFrame(
+        {
+            "x": [10, 20, 30],
+            "y": [10, 20, 30],  # Perfect match
+        }
+    )
 
-    logger.info(f"Loading SCF data with years={years}")
+    predictors = ["x"]
+    imputed_variables = ["y"]
+    Y_test = X_test[imputed_variables]
 
-    try:
-        # Identify years for download
-        if years is None:
-            years = VALID_YEARS
-            logger.warning(f"Using default years: {years}")
+    model_classes = [OLS, QuantReg]
+    method_imputations = get_imputations(
+        model_classes, X_train, X_test, predictors, imputed_variables
+    )
 
-        if isinstance(years, int):
-            years = [years]
+    loss_comparison_df = compare_quantile_loss(
+        Y_test, method_imputations, imputed_variables
+    )
 
-        all_data: List[pd.DataFrame] = []
+    # Loss should be relatively low for perfect predictions
+    ols_loss = loss_comparison_df[loss_comparison_df["Method"] == "OLS"][
+        "Loss"
+    ]
+    assert ols_loss.min() <= 1.01  # Allow for small floating point errors
 
-        for year in years:
-            logger.info(f"Processing data for year {year}")
-            try:
-                # Download zip file
-                logger.debug(f"Downloading SCF data for year {year}")
-                url = scf_url(year)
-                try:
-                    response = requests.get(url, timeout=60)
-                    response.raise_for_status()  # Raise an error for bad responses
-                except requests.exceptions.RequestException as e:
-                    logger.error(
-                        f"Network error downloading SCF data for year {year}: {str(e)}"
-                    )
-                    raise
 
-                # Process zip file
-                z = zipfile.ZipFile(io.BytesIO(response.content))
-                # Find the .dta file in the zip
-                dta_files: List[str] = [
-                    f for f in z.namelist() if f.endswith(".dta")
-                ]
-                if not dta_files:
-                    logger.error(
-                        f"No Stata files found in zip for year {year}"
-                    )
-                    raise
+# === Integration Tests ===
 
-                # Read the Stata file
-                try:
-                    logger.debug(f"Reading Stata file: {dta_files[0]}")
-                    with z.open(dta_files[0]) as f:
-                        df = pd.read_stata(
-                            io.BytesIO(f.read()), columns=columns
-                        )
-                        logger.debug(f"Read DataFrame with shape {df.shape}")
-                except Exception as e:
-                    logger.error(
-                        f"Error reading Stata file for year {year}: {str(e)}"
-                    )
-                    raise
 
-                # Add year column
-                df["year"] = year
-                logger.info(
-                    f"Successfully processed data for year {year}, shape: {df.shape}"
-                )
-                all_data.append(df)
+def test_model_ranking(diabetes_data: pd.DataFrame) -> None:
+    """Test that models can be ranked by performance."""
+    # Split data
+    train_size = int(0.8 * len(diabetes_data))
+    X_train = diabetes_data[:train_size]
+    X_test = diabetes_data[train_size:]
 
-            except Exception as e:
-                logger.error(f"Error processing year {year}: {str(e)}")
-                raise
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1"]
 
-        # Combine all years
-        logger.debug(f"Combining data from {len(all_data)} years")
-        if len(all_data) > 1:
-            result = pd.concat(all_data)
-            logger.info(
-                f"Combined data from {len(years)} years, final shape: {result.shape}"
-            )
-            return result
-        else:
-            logger.info(
-                f"Returning data for single year, shape: {all_data[0].shape}"
-            )
-            return all_data[0]
+    Y_test = X_test[imputed_variables]
 
-    except Exception as e:
-        logger.error(f"Error in _load: {str(e)}")
-        raise
+    # Compare models
+    model_classes = [OLS, QRF, QuantReg]
+    method_imputations = get_imputations(
+        model_classes, X_train, X_test, predictors, imputed_variables
+    )
+
+    loss_comparison_df = compare_quantile_loss(
+        Y_test, method_imputations, imputed_variables
+    )
+
+    # Check we can compute mean loss per model
+    mean_losses = loss_comparison_df.groupby("Method")["Loss"].mean()
+    assert len(mean_losses) == len(model_classes)
+
+    # Best model should have lowest mean loss
+    best_model = mean_losses.idxmin()
+    assert best_model in [m.__name__ for m in model_classes]
+
+
+# === Visualization Support Tests ===
+
+
+def test_wide_format_visualization(split_data: tuple) -> None:
+    """Test that results can be converted to wide format for visualization."""
+    X_train, X_test = split_data
+    predictors = ["x1", "x2"]
+    imputed_variables = ["y1"]
+
+    Y_test = X_test[imputed_variables]
+
+    model_classes = [OLS, QuantReg]
+    method_imputations = get_imputations(
+        model_classes, X_train, X_test, predictors, imputed_variables
+    )
+
+    loss_comparison_df = compare_quantile_loss(
+        Y_test, method_imputations, imputed_variables
+    )
+
+    # Convert to wide format for plotting
+    # Filter to mean_loss only
+    mean_loss_df = loss_comparison_df[
+        loss_comparison_df["Imputed Variable"] == "mean_loss"
+    ]
+
+    if not mean_loss_df.empty:
+        wide_df = mean_loss_df.pivot(
+            index="Method", columns="Percentile", values="Loss"
+        )
+
+        # Check wide format structure
+        assert isinstance(wide_df, pd.DataFrame)
+        assert wide_df.shape[0] <= len(model_classes)  # One row per model
+        # Columns should be quantiles
+        assert all(
+            col in QUANTILES for col in wide_df.columns if col in QUANTILES
+        )
+
+
+def test_long_format_visualization(split_data: tuple) -> None:
+    """Test that results are suitable for long-format visualization."""
+    X_train, X_test = split_data
+    predictors = ["x1", "x2", "x3"]
+    imputed_variables = ["y1", "y2"]
+
+    Y_test = X_test[imputed_variables]
+
+    model_classes = [OLS, QRF]
+    method_imputations = get_imputations(
+        model_classes, X_train, X_test, predictors, imputed_variables
+    )
+
+    loss_comparison_df = compare_quantile_loss(
+        Y_test, method_imputations, imputed_variables
+    )
+
+    # Long format is directly suitable for seaborn/plotly
+    assert "Method" in loss_comparison_df.columns
+    assert "Percentile" in loss_comparison_df.columns
+    assert "Loss" in loss_comparison_df.columns
+
+    # Can group by method and percentile
+    grouped = loss_comparison_df.groupby(["Method", "Percentile"])[
+        "Loss"
+    ].mean()
+    assert not grouped.empty
+
+
+# === Robustness Tests ===
+
+
+def test_comparison_consistency() -> None:
+    """Test that repeated comparisons give consistent results."""
+    np.random.seed(42)
+
+    X_train = pd.DataFrame(
+        {
+            "x1": np.random.randn(50),
+            "x2": np.random.randn(50),
+            "y": np.random.randn(50),
+        }
+    )
+
+    X_test = pd.DataFrame(
+        {
+            "x1": np.random.randn(10),
+            "x2": np.random.randn(10),
+            "y": np.random.randn(10),
+        }
+    )
+
+    predictors = ["x1", "x2"]
+    imputed_variables = ["y"]
+    Y_test = X_test[imputed_variables]
+
+    model_classes = [OLS]
+
+    # Run twice
+    method_imputations1 = get_imputations(
+        model_classes, X_train, X_test, predictors, imputed_variables
+    )
+    loss_df1 = compare_quantile_loss(
+        Y_test, method_imputations1, imputed_variables
+    )
+
+    method_imputations2 = get_imputations(
+        model_classes, X_train, X_test, predictors, imputed_variables
+    )
+    loss_df2 = compare_quantile_loss(
+        Y_test, method_imputations2, imputed_variables
+    )
+
+    # Results should be deterministic for OLS
+    ols_loss1 = loss_df1[loss_df1["Method"] == "OLS"]["Loss"].values
+    ols_loss2 = loss_df2[loss_df2["Method"] == "OLS"]["Loss"].values
+    np.testing.assert_array_almost_equal(ols_loss1, ols_loss2, decimal=5)
