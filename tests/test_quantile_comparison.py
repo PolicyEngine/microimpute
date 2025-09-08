@@ -6,7 +6,15 @@ import pytest
 
 from microimpute.comparisons import compare_quantile_loss, get_imputations
 from microimpute.config import QUANTILES
-from microimpute.models import OLS, QRF, Matching, QuantReg
+from microimpute.models import OLS, QRF, QuantReg
+
+# Check if Matching is available
+try:
+    from microimpute.models import Matching
+
+    HAS_MATCHING = True
+except ImportError:
+    HAS_MATCHING = False
 
 
 # === Fixtures ===
@@ -165,7 +173,9 @@ def test_multiple_imputed_variables(split_data: tuple) -> None:
 
     Y_test = X_test[imputed_variables]
 
-    model_classes = [OLS, QRF, QuantReg, Matching]
+    model_classes = [OLS, QRF, QuantReg]
+    if HAS_MATCHING:
+        model_classes.append(Matching)
     method_imputations = get_imputations(
         model_classes, X_train, X_test, predictors, imputed_variables
     )

@@ -93,9 +93,9 @@ def test_qrf_basic_fit_predict(diabetes_data: pd.DataFrame) -> None:
         assert pred_df.shape == (len(X_test), len(imputed_variables))
         assert not pred_df.isna().any().any()
 
-    # Test default quantiles
+    # Test default quantiles - returns DataFrame directly for single quantile
     default_predictions = fitted_model.predict(X_test)
-    assert 0.5 in default_predictions
+    assert isinstance(default_predictions, pd.DataFrame)
 
 
 def test_qrf_sequential_imputation(diabetes_data: pd.DataFrame) -> None:
@@ -218,7 +218,8 @@ def test_qrf_missing_categorical_levels_in_test(
     predictions = fitted_model.predict(
         test_data[["numeric1", "numeric2", "category"]]
     )
-    assert not predictions[0.5]["target"].isna().any()
+    # Default returns DataFrame directly
+    assert not predictions["target"].isna().any()
 
 
 # === Hyperparameter Tuning Tests ===
@@ -377,7 +378,8 @@ def test_qrf_batch_processing() -> None:
     test_data = data[["predictor1", "predictor2"]].head(5)
     predictions = fitted_model.predict(test_data)
 
-    assert not predictions[0.5].isna().any().any()
+    # Default returns DataFrame directly
+    assert not predictions.isna().any().any()
 
     model.logger.removeHandler(handler)
 
@@ -593,8 +595,9 @@ def test_qrf_all_variables_missing() -> None:
     test_data = data[["x1", "x2"]].head(5)
     predictions = fitted_model.predict(test_data)
 
-    assert isinstance(predictions[0.5], pd.DataFrame)
-    assert len(predictions[0.5].columns) == 0
+    # Default returns DataFrame directly
+    assert isinstance(predictions, pd.DataFrame)
+    assert len(predictions.columns) == 0
 
     model.logger.removeHandler(handler)
 
@@ -771,6 +774,7 @@ def test_qrf_performance_characteristics(diabetes_data: pd.DataFrame) -> None:
     predictions = fitted_model.predict(X_test, quantiles=[0.5])
 
     # Calculate correlation with true values
+    # When quantiles specified, returns dictionary
     true_values = X_test["s1"].values
     pred_values = predictions[0.5]["s1"].values
 

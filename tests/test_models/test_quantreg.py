@@ -209,6 +209,8 @@ def test_quantreg_outliers() -> None:
 
     predictions = fitted_model.predict(X_test, quantiles=[0.5])
 
+    # When quantiles specified, returns dict
+    assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert not predictions[0.5]["y"].isna().any()
 
@@ -280,6 +282,7 @@ def test_quantreg_vs_ols_median(simple_data: pd.DataFrame) -> None:
     )
 
     # For normally distributed errors, median and mean should be similar
+    # QuantReg returns DataFrame for single quantile, OLS returns dict
     quantreg_median = quantreg_pred[0.5]["y"].values
     ols_mean = ols_pred[0.5]["y"].values
 
@@ -326,6 +329,7 @@ def test_quantreg_prediction_quality(diabetes_data: pd.DataFrame) -> None:
     predictions = fitted_model.predict(X_test, quantiles=[0.5])
 
     # Calculate correlation with true values
+    # When quantiles specified, returns dict
     true_values = X_test["s1"].values
     pred_values = predictions[0.5]["s1"].values
 

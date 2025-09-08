@@ -8,6 +8,14 @@ from sklearn.datasets import load_diabetes
 from microimpute.comparisons.autoimpute import autoimpute, AutoImputeResult
 from microimpute.visualizations.plotting import *
 
+# Check if Matching is available
+try:
+    from microimpute.models import Matching
+
+    HAS_MATCHING = True
+except ImportError:
+    HAS_MATCHING = False
+
 
 # === Fixtures ===
 

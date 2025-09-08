@@ -163,6 +163,8 @@ def test_categorical_variables(model_class: Type[Imputer]) -> None:
 
     predictions = fitted.predict(X_test, quantiles=[0.5])
 
+    # When quantiles specified, returns dict
+    assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert len(predictions[0.5]) == len(X_test)
     assert not predictions[0.5]["target"].isna().any()
@@ -195,6 +197,8 @@ def test_boolean_variables(model_class: Type[Imputer]) -> None:
 
     predictions = fitted.predict(X_test, quantiles=[0.5])
 
+    # When quantiles specified, returns dict
+    assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert not predictions[0.5]["target"].isna().any()
 
@@ -222,8 +226,10 @@ def test_imputation_categorical_bool_targets(
     fitted_model = model.fit(X_train, predictors, imputed_variables)
     predictions = fitted_model.predict(X_test)
 
-    assert predictions[0.5]["categorical"].dtype == "object"
-    assert predictions[0.5]["bool"].dtype == "bool"
+    # Default behavior returns DataFrame directly
+    assert isinstance(predictions, pd.DataFrame)
+    assert predictions["categorical"].dtype == "object"
+    assert predictions["bool"].dtype == "bool"
 
 
 # === Edge Cases and Error Handling ===
@@ -247,6 +253,8 @@ def test_single_predictor(
 
     predictions = fitted.predict(X_test, quantiles=[0.5])
 
+    # When quantiles specified, returns dict
+    assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert not predictions[0.5]["y"].isna().any()
 
@@ -279,6 +287,8 @@ def test_multiple_targets(
 
     predictions = fitted.predict(X_test, quantiles=[0.5])
 
+    # When quantiles specified, returns dict
+    assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert predictions[0.5].shape[1] == len(imputed_variables)
     assert not predictions[0.5].isna().any().any()
@@ -310,6 +320,8 @@ def test_constant_predictor(model_class: Type[Imputer]) -> None:
 
     predictions = fitted.predict(X_test, quantiles=[0.5])
 
+    # When quantiles specified, returns dict
+    assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert not predictions[0.5]["y"].isna().any()
 
@@ -340,6 +352,8 @@ def test_highly_correlated_predictors(model_class: Type[Imputer]) -> None:
 
     predictions = fitted.predict(X_test, quantiles=[0.5])
 
+    # When quantiles specified, returns dict
+    assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert not predictions[0.5]["y"].isna().any()
 
@@ -383,6 +397,8 @@ def test_weighted_training(
     X_test = X_train.drop(columns=["wgt"]).head(10)
     predictions = fitted.predict(X_test, quantiles=[0.5])
 
+    # When quantiles specified, returns dict
+    assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert not predictions[0.5].isna().any().any()
 
@@ -435,7 +451,8 @@ def test_single_quantile(
 
     predictions = fitted.predict(X_test, quantiles=[0.5])
 
-    assert len(predictions) == 1
+    # When quantiles specified, returns dict
+    assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert not predictions[0.5]["y"].isna().any()
 
@@ -511,6 +528,7 @@ def test_reproducibility(
     pred2 = fitted2.predict(X_test, quantiles=[0.5])
 
     # Results should be very similar (allowing for minor numerical differences)
+    # When quantiles specified, returns dict
     np.testing.assert_allclose(
         pred1[0.5]["y"].values, pred2[0.5]["y"].values, rtol=1e-5
     )
@@ -549,5 +567,7 @@ def test_large_number_of_predictors(model_class: Type[Imputer]) -> None:
 
     predictions = fitted.predict(X_test, quantiles=[0.5])
 
+    # When quantiles specified, returns dict
+    assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert not predictions[0.5]["y"].isna().any()
