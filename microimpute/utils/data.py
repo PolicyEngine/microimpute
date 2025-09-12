@@ -1,8 +1,6 @@
 """Data preparation utilities for imputation benchmarking.
 
 This module provides functions for acquiring, preprocessing, and splitting data for imputation benchmarking.
-It includes utilities for downloading Survey of Consumer Finances
-(SCF) data, normalizing features, and creating train-test splits with consistent parameters.
 """
 
 import logging
@@ -137,3 +135,47 @@ def preprocess_data(
         except Exception as e:
             logger.error(f"Error in processing data: {str(e)}")
             raise
+
+
+@validate_call(config=VALIDATE_CONFIG)
+def unnormalize_predictions(
+    imputations: dict, normalization_params: dict
+) -> dict:
+    """Unnormalize predictions using stored normalization parameters.
+
+    Args:
+        imputations: Dictionary mapping quantiles to DataFrames of predictions.
+        normalization_params: Dictionary with mean and std for each column.
+
+    Returns:
+        Dictionary with same structure as imputations but with unnormalized values.
+
+    Raises:
+        ValueError: If columns in imputations don't match normalization parameters.
+    """
+    logger.debug(f"Unnormalizing predictions for {len(imputations)} quantiles")
+
+    # Extract mean and std from normalization parameters
+    mean = pd.Series(
+        {col: p["mean"] for col, p in normalization_params.items()}
+    )
+    std = pd.Series({col: p["std"] for col, p in normalization_params.items()})
+
+    unnormalized = {}
+    for q, df in imputations.items():
+        cols = df.columns
+
+        # Check that all columns have normalization parameters
+        missing_params = [col for col in cols if col not in mean.index]
+        if missing_params:
+            error_msg = f"Missing normalization parameters for columns: {missing_params}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Unnormalize: x_original = x_normalized * std + mean
+        df_unnorm = df.mul(std[cols], axis=1).add(mean[cols], axis=1)
+        unnormalized[q] = df_unnorm
+
+        logger.debug(f"Unnormalized quantile {q} with shape {df_unnorm.shape}")
+
+    return unnormalized

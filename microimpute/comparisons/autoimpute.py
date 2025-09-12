@@ -5,8 +5,7 @@ This module integrates all steps necessary for method selection and imputation o
 
 import logging
 import warnings
-from functools import partial
-from typing import Any, Dict, List, Optional, Type, Union
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import joblib
 import pandas as pd
@@ -14,14 +13,21 @@ from pydantic import BaseModel, ConfigDict, Field, validate_call
 from tqdm.auto import tqdm
 
 from microimpute.comparisons import *
+from microimpute.comparisons.autoimpute_helpers import (
+    evaluate_model,
+    fit_and_predict_model,
+    prepare_data_for_imputation,
+    select_best_model,
+    validate_autoimpute_inputs,
+)
 from microimpute.config import (
     QUANTILES,
     RANDOM_STATE,
     TRAIN_SIZE,
     VALIDATE_CONFIG,
 )
-from microimpute.evaluations import cross_validate_model
 from microimpute.models import OLS, QRF, Imputer, ImputerResults, QuantReg
+from microimpute.utils.data import unnormalize_predictions
 
 try:
     from microimpute.models import Matching
@@ -29,7 +35,6 @@ try:
     HAS_MATCHING = True
 except ImportError:
     HAS_MATCHING = False
-from microimpute.utils.data import preprocess_data
 
 log = logging.getLogger(__name__)
 
@@ -50,7 +55,7 @@ class AutoImputeResult(BaseModel):
         Mapping model name → fitted Imputer instance.
     cv_results : pd.DataFrame
         Cross-validation loss table (models as index, quantiles as columns)
-        with an extra “mean_loss” column.
+        with an extra "mean_loss" column.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -61,6 +66,173 @@ class AutoImputeResult(BaseModel):
     receiver_data: pd.DataFrame = Field(...)
     fitted_models: Dict[str, Any] = Field(...)
     cv_results: pd.DataFrame = Field(...)
+
+
+def _setup_logging(log_level: str) -> int:
+    """Configure logging level.
+
+    Args:
+        log_level: String representation of log level.
+
+    Returns:
+        Numeric log level.
+    """
+    level_map = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+    numeric_level = level_map[log_level]
+    log.setLevel(numeric_level)
+    warnings.filterwarnings("ignore")
+    return numeric_level
+
+
+def _evaluate_models_parallel(
+    model_classes: List[Type[Imputer]],
+    training_data: pd.DataFrame,
+    predictors: List[str],
+    imputed_variables: List[str],
+    weight_col: Optional[str],
+    quantiles: List[float],
+    k_folds: int,
+    random_state: int,
+    tune_hyperparameters: bool,
+    hyperparameters: Optional[Dict[str, Dict[str, Any]]],
+    n_jobs: int = -1,
+) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
+    """Evaluate multiple models in parallel using cross-validation.
+
+    Returns:
+        Tuple of (results_dataframe, best_hyperparameters_dict or None)
+    """
+    # Check if Matching model is present (requires sequential processing)
+    has_matching = any(model.__name__ == "Matching" for model in model_classes)
+    if has_matching and n_jobs != 1:
+        log.info(
+            "Using sequential processing (n_jobs=1) because Matching model is present"
+        )
+        n_jobs = 1
+
+    # Prepare tasks for parallel execution
+    parallel_tasks = []
+    for model in model_classes:
+        model_hyperparams = None
+        if hyperparameters and model.__name__ in hyperparameters:
+            model_hyperparams = hyperparameters[model.__name__]
+
+        parallel_tasks.append(
+            (
+                model,
+                training_data,
+                predictors,
+                imputed_variables,
+                weight_col,
+                quantiles,
+                k_folds,
+                random_state,
+                tune_hyperparameters,
+                model_hyperparams,
+            )
+        )
+
+    # Execute in parallel
+    results = joblib.Parallel(n_jobs=n_jobs)(
+        joblib.delayed(lambda args: evaluate_model(*args))(task)
+        for task in tqdm(parallel_tasks, desc="Evaluating models")
+    )
+
+    # Process results
+    method_test_losses = {}
+    best_hyperparams = {}
+
+    if tune_hyperparameters:
+        for result in results:
+            if len(result) == 3:
+                model_name, cv_result, best_params = result
+                method_test_losses[model_name] = cv_result.loc["test"]
+                if model_name in ["QRF", "Matching"]:
+                    best_hyperparams[model_name] = best_params
+            else:
+                model_name, cv_result = result
+                method_test_losses[model_name] = cv_result.loc["test"]
+    else:
+        for model_name, cv_result in results:
+            method_test_losses[model_name] = cv_result.loc["test"]
+
+    method_results_df = pd.DataFrame.from_dict(
+        method_test_losses, orient="index"
+    )
+
+    return method_results_df, (
+        best_hyperparams if tune_hyperparameters else None
+    )
+
+
+def _generate_imputations_for_all_models(
+    model_classes: List[Type[Imputer]],
+    best_method: str,
+    training_data: pd.DataFrame,
+    imputing_data: pd.DataFrame,
+    predictors: List[str],
+    imputed_variables: List[str],
+    weight_col: Optional[str],
+    imputation_q: float,
+    normalize_data: bool,
+    normalizing_params: Optional[dict],
+    tune_hyperparameters: bool,
+    hyperparams: Optional[Dict[str, Any]],
+    log_level: str,
+) -> Tuple[Dict[str, pd.DataFrame], Dict[str, Any]]:
+    """Generate imputations for all models when impute_all=True.
+
+    Returns:
+        Tuple of (imputations_dict, fitted_models_dict)
+    """
+    final_imputations_dict = {}
+    fitted_models_dict = {}
+
+    log.info("Generating imputations for all models using the full dataset.")
+
+    for model_class in model_classes:
+        model_name = model_class.__name__
+        if model_name == best_method:
+            continue  # Skip the best method as it's already done
+
+        log.info(f"Generating imputations with {model_name}.")
+
+        # Get model-specific hyperparameters if available
+        model_hyperparams = None
+        if tune_hyperparameters and hyperparams and model_name in hyperparams:
+            model_hyperparams = hyperparams[model_name]
+
+        # Fit and predict
+        fitted_model, imputations = fit_and_predict_model(
+            model_class,
+            training_data,
+            imputing_data,
+            predictors,
+            imputed_variables,
+            weight_col,
+            imputation_q,
+            model_hyperparams,
+            log_level,
+        )
+
+        # Unnormalize if needed
+        if normalize_data and normalizing_params:
+            final_imputations = unnormalize_predictions(
+                imputations, normalizing_params
+            )
+        else:
+            final_imputations = imputations
+
+        final_imputations_dict[model_name] = final_imputations[imputation_q]
+        fitted_models_dict[model_name] = fitted_model
+
+    return final_imputations_dict, fitted_models_dict
 
 
 @validate_call(config=VALIDATE_CONFIG)
@@ -124,497 +296,210 @@ def autoimpute(
         ValueError: If inputs are invalid (e.g., invalid quantiles, missing columns)
         RuntimeError: For unexpected errors during imputation
     """
-    # Set up logging level
-    if log_level not in ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]:
-        error_msg = f"Invalid log_level: {log_level}. Must be one of DEBUG, INFO, WARNING, ERROR, CRITICAL."
-        log.error(error_msg)
-        raise ValueError(error_msg)
-    if log_level == "DEBUG":
-        log_level = logging.DEBUG
-    elif log_level == "INFO":
-        log_level = logging.INFO
-    elif log_level == "WARNING":
-        log_level = logging.WARNING
-    elif log_level == "ERROR":
-        log_level = logging.ERROR
-    elif log_level == "CRITICAL":
-        log_level = logging.CRITICAL
-    log.setLevel(log_level)
-    warnings.filterwarnings("ignore")
-
-    # Set up parallel processing
-    n_jobs: Optional[int] = -1
-
-    # Create a progress tracking system
-    if log_level == "INFO" or log_level == "DEBUG":
-        main_progress = tqdm(total=4, desc="AutoImputation progress")
-        main_progress.set_description("Input validation")
-
-    if imputation_quantiles is None:
-        quantiles = QUANTILES  # Use default quantiles if not provided
-    else:
-        quantiles = imputation_quantiles
-
-    # Step 0: Input validation
     try:
-        # Validate quantiles if provided
-        if quantiles:
-            invalid_quantiles = [q for q in quantiles if not 0 <= q <= 1]
-            if invalid_quantiles:
-                error_msg = f"Invalid quantiles (must be between 0 and 1): {invalid_quantiles}"
-                log.error(error_msg)
-                raise ValueError(error_msg)
+        # Step 0: Setup and validation
+        numeric_log_level = _setup_logging(log_level)
 
-        # Validate that predictor and imputed variable columns exist in donor data
-        missing_predictors_donor = [
-            col for col in predictors if col not in donor_data.columns
-        ]
-        if missing_predictors_donor:
-            error_msg = f"Missing predictor columns in donor data: {missing_predictors_donor}"
-            log.error(error_msg)
-            raise ValueError(error_msg)
+        # Create progress tracker if needed
+        if numeric_log_level <= logging.INFO:
+            main_progress = tqdm(total=5, desc="AutoImputation progress")
+            main_progress.set_description("Input validation")
 
-        missing_predictors_receiver = [
-            col for col in predictors if col not in receiver_data.columns
-        ]
-        if missing_predictors_receiver:
-            error_msg = f"Missing predictor columns in reciver data: {missing_predictors_receiver}"
-            log.error(error_msg)
-            raise ValueError(error_msg)
+        # Use provided quantiles or defaults
+        quantiles = imputation_quantiles if imputation_quantiles else QUANTILES
 
-        missing_imputed_donor = [
-            col for col in imputed_variables if col not in donor_data.columns
-        ]
-        if missing_imputed_donor:
-            error_msg = f"Missing imputed variable columns in donor data: {missing_imputed_donor}"
-            log.error(error_msg)
-            raise ValueError(error_msg)
-
-        # Validate that predictor columns exist in receiver data (imputed variables may not be present in receiver data)
-        missing_predictors_receiver = [
-            col for col in predictors if col not in receiver_data.columns
-        ]
-        if missing_predictors_receiver:
-            error_msg = f"Missing predictor columns in test data: {missing_predictors_receiver}"
-            log.error(error_msg)
-            raise ValueError(error_msg)
-
-        log.info(
-            f"Generating imputations to impute from {len(donor_data)} donor data to {len(receiver_data)} receiver data for variables {imputed_variables} with predictors {predictors}. "
+        # Validate all inputs
+        validate_autoimpute_inputs(
+            donor_data,
+            receiver_data,
+            predictors,
+            imputed_variables,
+            weight_col,
+            quantiles,
+            hyperparameters,
+            tune_hyperparameters,
+            log_level,
         )
 
-        if (hyperparameters is not None) and (tune_hyperparameters == True):
-            error_msg = "Cannot specify both model_hyperparams and request to automatically tune hyperparameters, please select one or the other."
-            log.error(error_msg)
-            raise ValueError(error_msg)
+        log.info(
+            f"Generating imputations to impute from {len(donor_data)} donor data "
+            f"to {len(receiver_data)} receiver data for variables {imputed_variables} "
+            f"with predictors {predictors}."
+        )
 
         # Step 1: Data preparation
-        if log_level == "INFO" or log_level == "DEBUG":
+        if numeric_log_level <= logging.INFO:
             log.info("Preprocessing data...")
             main_progress.update(1)
             main_progress.set_description("Data preparation")
 
-        # If imputed variables are in receiver data, remove them
-        receiver_data = receiver_data.drop(
-            columns=imputed_variables, errors="ignore"
-        )
-
-        training_data = donor_data.copy()
-        imputing_data = receiver_data.copy()
-
-        # Keep track of original imputed variable names for final assignment
+        # Keep track of original imputed variable names
         original_imputed_variables = imputed_variables.copy()
 
-        if normalize_data:
-            training_data_predictors, _ = preprocess_data(
-                training_data[predictors],
-                full_data=True,
-                train_size=train_size,
-                test_size=(1 - train_size),
-                normalize=normalize_data,
+        training_data, imputing_data, normalizing_params = (
+            prepare_data_for_imputation(
+                donor_data,
+                receiver_data,
+                predictors,
+                imputed_variables,
+                weight_col,
+                normalize_data,
+                train_size,
+                1 - train_size,
             )
-            (
-                training_data_imputed_variables,
-                normalizing_params,
-            ) = preprocess_data(
-                training_data[imputed_variables],
-                full_data=True,
-                train_size=train_size,
-                test_size=(1 - train_size),
-                normalize=normalize_data,
-            )
-            imputing_data, _ = preprocess_data(
-                imputing_data[predictors],
-                full_data=True,
-                train_size=train_size,
-                test_size=(1 - train_size),
-                normalize=normalize_data,
-            )
+        )
 
-            training_data = training_data_predictors.join(
-                training_data_imputed_variables
-            )
-            if weight_col:
-                training_data[weight_col] = donor_data[weight_col]
-        else:
-            training_data_predictors = preprocess_data(
-                training_data[predictors],
-                full_data=True,
-                train_size=train_size,
-                test_size=(1 - train_size),
-                normalize=normalize_data,
-            )
-            training_data_imputed_variables = preprocess_data(
-                training_data[imputed_variables],
-                full_data=True,
-                train_size=train_size,
-                test_size=(1 - train_size),
-                normalize=normalize_data,
-            )
-            imputing_data = preprocess_data(  # _
-                imputing_data[predictors],
-                full_data=True,
-                train_size=train_size,
-                test_size=(1 - train_size),
-                normalize=normalize_data,
-            )
-            training_data = training_data_predictors.join(
-                training_data_imputed_variables
-            )
-            if weight_col:
-                training_data[weight_col] = donor_data[weight_col]
-
-        # Step 2: Imputation with each method
-        if log_level == "INFO" or log_level == "DEBUG":
+        # Step 2: Model evaluation
+        if numeric_log_level <= logging.INFO:
             main_progress.update(1)
             main_progress.set_description("Model evaluation")
 
+        # Get model classes
         if not models:
-            # If no models are provided, use default models
             model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg]
             if HAS_MATCHING:
                 model_classes.append(Matching)
         else:
             model_classes = models
 
+        # Log hyperparameter usage
         if hyperparameters:
             model_names = [
                 model_class.__name__ for model_class in model_classes
             ]
             for model_name, model_params in hyperparameters.items():
                 if model_name in model_names:
-                    # Update the model class with the provided hyperparameters
-                    if model_name == "QRF":
-                        log.info(
-                            f"Using hyperparameters for QRF: {model_params}"
-                        )
-                    elif model_name == "Matching":
-                        log.info(
-                            f"Using hyperparameters for Matching: {model_params}"
-                        )
+                    log.info(
+                        f"Using hyperparameters for {model_name}: {model_params}"
+                    )
                 else:
                     log.info(
-                        f"None of the hyperparameters provided are relevant for the supported models: {model_names}. Using default hyperparameters."
+                        f"Hyperparameters provided for {model_name} but model not in list: {model_names}"
                     )
 
-        method_test_losses = {}
         log.info(
-            "Hyperparameter tuning and cross-validation for model comparisson in progress... "
+            "Hyperparameter tuning and cross-validation for model comparison in progress..."
         )
 
-        def evaluate_model(
-            model: Type[Imputer],
-            data: pd.DataFrame,
-            predictors: List[str],
-            imputed_variables: List[str],
-            weight_col: Optional[str],
-            quantiles: List[float],
-            k_folds: Optional[int] = 5,
-            random_state: Optional[bool] = RANDOM_STATE,
-            tune_hyperparams: Optional[bool] = True,
-            hyperparameters: Optional[Dict[str, Any]] = None,
-        ) -> tuple[str, pd.DataFrame]:
-            """Evaluate a single imputation model with cross-validation.
-
-            Args:
-                model: The imputation model class to evaluate
-                data: The dataset to use for evaluation
-                predictors: List of predictor column names
-                imputed_variables: List of columns to impute
-                quantiles: List of quantiles to evaluate
-                k_folds: Number of cross-validation folds
-                random_state: Random seed for reproducibility
-                tune_hyperparams: Whether to tune hyperparameters
-                hyperparameters: Optional model-specific hyperparameters
-
-            Returns:
-                Tuple containing model name and cross-validation results DataFrame
-            """
-            model_name = model.__name__
-            log.info(f"Evaluating {model_name}...")
-
-            cv_result = cross_validate_model(
-                model_class=model,
-                data=data,
-                predictors=predictors,
-                imputed_variables=imputed_variables,
-                weight_col=weight_col,
-                quantiles=quantiles,
-                n_splits=k_folds,
-                random_state=random_state,
-                tune_hyperparameters=tune_hyperparams,
-                model_hyperparams=hyperparameters,
-            )
-
-            if (
-                tune_hyperparams
-                and isinstance(cv_result, tuple)
-                and len(cv_result) == 2
-            ):
-                final_results, best_params = cv_result
-                return model_name, final_results, best_params
-            else:
-                return model_name, cv_result
-
-        # Special handling for models that use rpy2
-        # Use sequential processing for Matching model to avoid thread context issues
-        has_matching = any(
-            model.__name__ == "Matching" for model in model_classes
-        )
-        if has_matching and n_jobs != 1:
-            log.info(
-                "Using sequential processing (n_jobs=1) because Matching model is present"
-            )
-            n_jobs = 1
-
-        parallel_tasks = []
-        for model in model_classes:
-            parallel_tasks.append(
-                (
-                    model,
-                    training_data,
-                    predictors,
-                    imputed_variables,
-                    weight_col,
-                    quantiles,
-                    k_folds,
-                    RANDOM_STATE,
-                    tune_hyperparameters,
-                    hyperparameters,
-                )
-            )
-
-        # Execute in parallel
-        results = joblib.Parallel(n_jobs=n_jobs)(
-            joblib.delayed(lambda args: evaluate_model(*args))(task)
-            for task in tqdm(parallel_tasks, desc="Evaluating models")
+        # Evaluate models in parallel
+        method_results_df, best_hyperparams = _evaluate_models_parallel(
+            model_classes,
+            training_data,
+            predictors,
+            imputed_variables,
+            weight_col,
+            quantiles,
+            k_folds,
+            random_state,
+            tune_hyperparameters,
+            hyperparameters,
         )
 
-        # Process results
-        if tune_hyperparameters == True:
-            hyperparams = {}
-            for model_name, cv_result, best_tuned_hyperparams in results:
-                method_test_losses[model_name] = cv_result.loc["test"]
-                if model_name == "QRF" or model_name == "Matching":
-                    hyperparams[model_name] = best_tuned_hyperparams
-        else:
-            for model_name, cv_result in results:
-                method_test_losses[model_name] = cv_result.loc["test"]
-
-        method_results_df = pd.DataFrame.from_dict(
-            method_test_losses, orient="index"
-        )
-
-        # Step 3: Compare imputation methods
-        log.info(f"Comparing across {model_classes} methods. ")
-
-        if log_level == "INFO" or log_level == "DEBUG":
+        # Step 3: Model selection
+        if numeric_log_level <= logging.INFO:
             main_progress.update(1)
             main_progress.set_description("Model selection")
 
-        # add a column called "mean_loss" with the average loss across quantiles
-        method_results_df["mean_loss"] = method_results_df.mean(axis=1)
+        log.info(f"Comparing across {model_classes} methods.")
+        best_method, best_row = select_best_model(method_results_df)
 
-        # Step 4: Select best method
-        best_method = method_results_df["mean_loss"].idxmin()
-        best_row = method_results_df.loc[best_method]
-
-        log.info(
-            f"The method with the lowest average loss is {best_method}, with an average loss across variables and quantiles of {best_row['mean_loss']}. "
-        )
-
-        # Step 5: Generate imputations with the best method on the receiver data
-        log.info(
-            f"Generating imputations using the best method: {best_method} on the receiver data. "
-        )
-
-        if log_level == "INFO" or log_level == "DEBUG":
+        # Step 4: Generate imputations with best method
+        if numeric_log_level <= logging.INFO:
             main_progress.update(1)
             main_progress.set_description("Imputation")
 
+        log.info(
+            f"Generating imputations using the best method: {best_method} on the receiver data."
+        )
+
+        # Get the best model class
         models_dict = {model.__name__: model for model in model_classes}
         chosen_model = models_dict[best_method]
 
-        # Initialize the model
-        model = chosen_model(log_level=log_level)
-        imputation_q = 0.5  # this can be an input parameter, or if unspecified will default to a random quantile
-        # Fit the model
-        if best_method == "QuantReg":
-            # For QuantReg, we need to explicitly fit the quantile
-            best_fitted_model = model.fit(
-                training_data,
-                predictors,
-                imputed_variables,
-                weight_col=weight_col,
-                quantiles=[imputation_q],
-            )
-        else:
-            if (
-                chosen_model.__name__ == "Matching"
-                or chosen_model.__name__ == "QRF"
-            ) and tune_hyperparameters == True:
-                # For Matching and QRF, we need to pass the best hyperparameters
-                best_fitted_model = model.fit(
-                    training_data,
-                    predictors,
-                    imputed_variables,
-                    weight_col=weight_col,
-                    **hyperparams[chosen_model.__name__],
-                )
-            else:
-                best_fitted_model = model.fit(
-                    training_data,
-                    predictors,
-                    imputed_variables,
-                    weight_col=weight_col,
-                )
+        # Default to median quantile for final imputation
+        imputation_q = 0.5
 
-        # Predict with explicit quantiles
-        imputations = best_fitted_model.predict(
-            imputing_data, quantiles=[imputation_q]
+        # Get hyperparameters for best model if tuned
+        model_hyperparams = None
+        if (
+            tune_hyperparameters
+            and best_hyperparams
+            and best_method in best_hyperparams
+        ):
+            model_hyperparams = best_hyperparams[best_method]
+
+        # Fit and predict with best model
+        best_fitted_model, imputations = fit_and_predict_model(
+            chosen_model,
+            training_data,
+            imputing_data,
+            predictors,
+            imputed_variables,
+            weight_col,
+            imputation_q,
+            model_hyperparams,
+            log_level,
         )
 
-        # Handle case where predict returns a DataFrame directly (single quantile)
-        if isinstance(imputations, pd.DataFrame):
-            imputations = {imputation_q: imputations}
-
-        if normalize_data:
-            # Unnormalize the imputations
-            mean = pd.Series(
-                {col: p["mean"] for col, p in normalizing_params.items()}
+        # Unnormalize if needed
+        if normalize_data and normalizing_params:
+            final_imputations = unnormalize_predictions(
+                imputations, normalizing_params
             )
-            std = pd.Series(
-                {col: p["std"] for col, p in normalizing_params.items()}
-            )
-            unnormalized_imputations = {}
-            for q, df in imputations.items():
-                cols = df.columns  # the imputed variables
-                df_unnorm = df.mul(std[cols], axis=1)  # × std
-                df_unnorm = df_unnorm.add(mean[cols], axis=1)  # + mean
-                unnormalized_imputations[q] = df_unnorm
-            final_imputations = unnormalized_imputations
         else:
             final_imputations = imputations
 
         log.info(
-            f"Imputation generation completed for {len(receiver_data)} samples using the best method: {best_method} and the median quantile. "
+            f"Imputation generation completed for {len(receiver_data)} samples "
+            f"using the best method: {best_method} and the median quantile."
         )
 
-        if log_level == "INFO" or log_level == "DEBUG":
+        # Add imputed values to receiver data
+        median_imputations = final_imputations[imputation_q]
+        for var in original_imputed_variables:
+            if var in median_imputations.columns:
+                receiver_data[var] = median_imputations[var]
+            else:
+                log.warning(
+                    f"Imputed variable {var} not found in the imputations."
+                )
+
+        # Initialize results
+        final_imputations_dict = {
+            "best_method": (
+                final_imputations[0.5]
+                if imputation_quantiles is None
+                else final_imputations
+            )
+        }
+        fitted_models_dict = {"best_method": best_fitted_model}
+
+        # Step 5: Generate imputations for all models if requested
+        if impute_all:
+            other_imputations, other_models = (
+                _generate_imputations_for_all_models(
+                    model_classes,
+                    best_method,
+                    training_data,
+                    imputing_data,
+                    predictors,
+                    imputed_variables,
+                    weight_col,
+                    imputation_q,
+                    normalize_data,
+                    normalizing_params,
+                    tune_hyperparameters,
+                    best_hyperparams,
+                    log_level,
+                )
+            )
+            final_imputations_dict.update(other_imputations)
+            fitted_models_dict.update(other_models)
+
+        # Complete progress bar if used
+        if numeric_log_level <= logging.INFO:
             main_progress.set_description("Complete")
             main_progress.close()
-
-        median_imputations = final_imputations[imputation_q]
-        # Add the imputed variables to the receiver data
-        try:
-            missing_imputed_vars = []
-            for var in original_imputed_variables:
-                if var in median_imputations.columns:
-                    receiver_data[var] = median_imputations[var]
-                else:
-                    missing_imputed_vars.append(var)
-                    log.warning(
-                        f"Imputed variable {var} not found in the imputations. "
-                    )
-        except KeyError as e:
-            error_msg = f"Missing imputed variable in the imputations: {e}"
-            log.error(error_msg)
-            raise ValueError(error_msg)
-
-        final_imputations_dict = {}
-        fitted_models_dict = {}
-        final_imputations_dict["best_method"] = (
-            final_imputations[0.5]
-            if imputation_quantiles is None
-            else final_imputations
-        )
-        fitted_models_dict["best_method"] = best_fitted_model
-
-        # Step 6: If impute_all is True, impute using the full dataset with all the remaining models
-        if impute_all:
-            log.info(
-                "Generating imputations for all the remaining models using the full dataset. "
-            )
-            for model_class in model_classes:
-                model_name = model_class.__name__
-                if model_name != best_method:
-                    log.info(f"Generating imputations with {model_name}. ")
-                    model = model_class(log_level=log_level)
-                    if model_name == "QuantReg":
-                        # For QuantReg, we need to explicitly fit the quantile
-                        fitted_model = model.fit(
-                            training_data,
-                            predictors,
-                            imputed_variables,
-                            weight_col=weight_col,
-                            quantiles=[imputation_q],
-                        )
-                    else:
-                        if (
-                            model_name == "Matching" or model_name == "QRF"
-                        ) and tune_hyperparameters == True:
-                            # For Matching and QRF, we need to pass the best hyperparameters
-                            fitted_model = model.fit(
-                                training_data,
-                                predictors,
-                                imputed_variables,
-                                weight_col=weight_col,
-                                **hyperparams[model_name],
-                            )
-                        else:
-                            fitted_model = model.fit(
-                                training_data,
-                                predictors,
-                                imputed_variables,
-                                weight_col=weight_col,
-                            )
-
-                    # Predict with explicit quantiles
-                    imputations = fitted_model.predict(
-                        imputing_data, quantiles=[imputation_q]
-                    )
-
-                    if normalize_data:
-                        unnormalized_imputations = {}
-                        for q, df in imputations.items():
-                            cols = df.columns  # the imputed variables
-                            df_unnorm = df.mul(std[cols], axis=1)  # × std
-                            df_unnorm = df_unnorm.add(
-                                mean[cols], axis=1
-                            )  # + mean
-                            unnormalized_imputations[q] = df_unnorm
-                        final_imputations = unnormalized_imputations
-                    else:
-                        final_imputations = imputations
-                    final_imputations_dict[model_name] = (
-                        final_imputations[0.5]
-                        if imputation_quantiles is None
-                        else final_imputations
-                    )
-
-                    log.warning(final_imputations)
-
-                    fitted_models_dict[model_name] = fitted_model
 
         return AutoImputeResult(
             imputations=final_imputations_dict,

@@ -5,7 +5,8 @@ A package for benchmarking different imputation methods using microdata.
 
 __version__ = "1.1.2"
 
-from microimpute.comparisons.autoimpute import autoimpute
+# Import automated imputation
+from microimpute.comparisons.autoimpute import AutoImputeResult, autoimpute
 from microimpute.comparisons.imputations import get_imputations
 
 # Import comparison utilities
@@ -13,6 +14,14 @@ from microimpute.comparisons.quantile_loss import (
     compare_quantile_loss,
     compute_quantile_loss,
     quantile_loss,
+)
+
+# Import validation utilities
+from microimpute.comparisons.validation import (
+    validate_columns_exist,
+    validate_dataframe_compatibility,
+    validate_imputation_inputs,
+    validate_quantiles,
 )
 
 # Main configuration
@@ -30,7 +39,7 @@ from microimpute.evaluations.cross_validation import cross_validate_model
 from microimpute.models import OLS, QRF, Imputer, ImputerResults, QuantReg
 
 # Import data handling functions
-from microimpute.utils.data import preprocess_data
+from microimpute.utils.data import preprocess_data, unnormalize_predictions
 
 try:
     from microimpute.models.matching import Matching
@@ -39,6 +48,8 @@ except ImportError:
 
 # Import visualization modules
 from microimpute.visualizations.plotting import (
+    MethodComparisonResults,
+    PerformanceResults,
     method_comparison_results,
     model_performance_results,
 )
