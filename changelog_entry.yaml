@@ -1,4 +1,7 @@
 - bump: patch
   changes:
-    added:
+    changed:
     - Refactor the Imputer base class.
+    - Refactor cross-validation, comparison, visualization, and autoimputation functions.
+    added:
+    - Improved test coverage.
