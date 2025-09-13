@@ -17,7 +17,6 @@ from typing import List, Optional, Tuple
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 
 from microimpute.config import PLOT_CONFIG
 from microimpute.visualizations.performance_plots import _save_figure
@@ -134,302 +133,170 @@ class MethodComparisonResults:
 
         self.comparison_data = pd.DataFrame(long_format_data)
 
-    def _plot_wide_format(
-        self,
-        title: Optional[str] = None,
-        save_path: Optional[str] = None,
-        figsize: Tuple[int, int] = (
-            PLOT_CONFIG["width"],
-            PLOT_CONFIG["height"],
-        ),
-    ) -> go.Figure:
-        """Internal method to create wide format plot with methods on x-axis.
-
-        Args:
-            title: Custom title for the plot
-            save_path: Path to save the plot
-            figsize: Figure size as (width, height) in pixels
-
-        Returns:
-            Plotly figure object
-        """
-        logger.debug("Creating wide format comparison plot")
-
-        # Filter out mean_loss from variables for individual plots
-        plot_variables = [v for v in self.variables if v != "mean_loss"]
-
-        if not plot_variables:
-            logger.warning("No individual variables to plot")
-            return self._create_single_mean_plot(title, save_path, figsize)
-
-        # Create subplots
-        n_vars = len(plot_variables)
-        n_cols = min(3, n_vars)  # Max 3 columns
-        n_rows = (n_vars + n_cols - 1) // n_cols
-
-        subplot_titles = plot_variables
-        fig = make_subplots(
-            rows=n_rows,
-            cols=n_cols,
-            subplot_titles=subplot_titles,
-            vertical_spacing=0.15,
-            horizontal_spacing=0.1,
-        )
-
-        # Color palette
-        colors = px.colors.qualitative.Plotly
-
-        # Add traces for each variable
-        for idx, var in enumerate(plot_variables):
-            row = (idx // n_cols) + 1
-            col = (idx % n_cols) + 1
-
-            var_data = self.comparison_data[
-                self.comparison_data["Imputed Variable"] == var
-            ]
-
-            # Get unique percentiles for this variable
-            percentiles = sorted(var_data["Percentile"].unique())
-
-            for pidx, percentile in enumerate(percentiles):
-                if isinstance(percentile, str):
-                    continue  # Skip mean_loss percentile
-
-                perc_data = var_data[var_data["Percentile"] == percentile]
-
-                # Sort by method name for consistent ordering
-                perc_data = perc_data.sort_values("Method")
-
-                fig.add_trace(
-                    go.Bar(
-                        x=perc_data["Method"],
-                        y=perc_data["Loss"],
-                        name=f"q={percentile:.2f}",
-                        marker_color=colors[pidx % len(colors)],
-                        showlegend=(
-                            idx == 0
-                        ),  # Only show legend for first subplot
-                    ),
-                    row=row,
-                    col=col,
-                )
-
-        # Update layout
-        fig.update_layout(
-            title=title or "Method Comparison Across Variables",
-            barmode="group",
-            width=figsize[0],
-            height=figsize[1],
-            paper_bgcolor="#F0F0F0",
-            plot_bgcolor="#F0F0F0",
-            margin=dict(l=50, r=50, t=100, b=50),
-        )
-
-        # Update axes
-        fig.update_xaxes(title_text="Method", showgrid=False)
-        fig.update_yaxes(title_text=self.metric_name, showgrid=False)
-
-        if save_path:
-            _save_figure(fig, save_path)
-
-        return fig
-
-    def _plot_long_format(
-        self,
-        title: Optional[str] = None,
-        save_path: Optional[str] = None,
-        figsize: Tuple[int, int] = (
-            PLOT_CONFIG["width"],
-            PLOT_CONFIG["height"],
-        ),
-    ) -> go.Figure:
-        """Internal method to create long format plot with quantiles on x-axis.
-
-        Args:
-            title: Custom title for the plot
-            save_path: Path to save the plot
-            figsize: Figure size as (width, height) in pixels
-
-        Returns:
-            Plotly figure object
-        """
-        logger.debug("Creating long format comparison plot")
-
-        # Filter out mean_loss from variables for individual plots
-        plot_variables = [v for v in self.variables if v != "mean_loss"]
-
-        if not plot_variables:
-            logger.warning("No individual variables to plot")
-            return self._create_single_mean_plot(title, save_path, figsize)
-
-        # Create subplots
-        n_vars = len(plot_variables)
-        n_cols = min(2, n_vars)  # Max 2 columns for long format
-        n_rows = (n_vars + n_cols - 1) // n_cols
-
-        subplot_titles = plot_variables
-        fig = make_subplots(
-            rows=n_rows,
-            cols=n_cols,
-            subplot_titles=subplot_titles,
-            vertical_spacing=0.15,
-            horizontal_spacing=0.12,
-        )
-
-        # Color palette
-        colors = px.colors.qualitative.Plotly
-
-        # Add traces for each variable
-        for idx, var in enumerate(plot_variables):
-            row = (idx // n_cols) + 1
-            col = (idx % n_cols) + 1
-
-            var_data = self.comparison_data[
-                self.comparison_data["Imputed Variable"] == var
-            ]
-
-            # Filter out non-numeric percentiles
-            var_data = var_data[var_data["Percentile"] != "mean_loss"]
-            var_data = var_data.copy()
-            var_data["Percentile"] = pd.to_numeric(
-                var_data["Percentile"], errors="coerce"
-            )
-            var_data = var_data.dropna(subset=["Percentile"])
-
-            for midx, method in enumerate(self.methods):
-                method_data = var_data[
-                    var_data["Method"] == method
-                ].sort_values("Percentile")
-
-                fig.add_trace(
-                    go.Scatter(
-                        x=method_data["Percentile"],
-                        y=method_data["Loss"],
-                        mode="lines+markers",
-                        name=method,
-                        line=dict(color=colors[midx % len(colors)]),
-                        marker=dict(size=6),
-                        showlegend=(
-                            idx == 0
-                        ),  # Only show legend for first subplot
-                    ),
-                    row=row,
-                    col=col,
-                )
-
-        # Update layout
-        fig.update_layout(
-            title=title or f"{self.metric_name} Comparison Across Variables",
-            width=figsize[0],
-            height=figsize[1],
-            paper_bgcolor="#F0F0F0",
-            plot_bgcolor="#F0F0F0",
-            margin=dict(l=50, r=50, t=100, b=50),
-        )
-
-        # Update axes
-        fig.update_xaxes(
-            title_text="Quantile", showgrid=True, gridcolor="white"
-        )
-        fig.update_yaxes(
-            title_text=self.metric_name, showgrid=True, gridcolor="white"
-        )
-
-        if save_path:
-            _save_figure(fig, save_path)
-
-        return fig
-
-    def _create_single_mean_plot(
-        self,
-        title: Optional[str],
-        save_path: Optional[str],
-        figsize: Tuple[int, int],
-    ) -> go.Figure:
-        """Create a simple bar plot for mean loss comparison.
-
-        Args:
-            title: Plot title
-            save_path: Path to save the plot
-            figsize: Figure size
-
-        Returns:
-            Plotly figure object
-        """
-        logger.debug("Creating single mean loss plot")
-
-        # Filter for mean_loss data
-        mean_data = self.comparison_data[
-            (self.comparison_data["Imputed Variable"] == "mean_loss")
-            & (self.comparison_data["Percentile"] == "mean_loss")
-        ]
-
-        if mean_data.empty:
-            logger.warning("No mean loss data available")
-            mean_data = (
-                self.comparison_data.groupby("Method")["Loss"]
-                .mean()
-                .reset_index()
-            )
-
-        fig = go.Figure(
-            data=[
-                go.Bar(
-                    x=mean_data["Method"],
-                    y=mean_data["Loss"],
-                    marker_color=px.colors.qualitative.Plotly[
-                        : len(mean_data)
-                    ],
-                )
-            ]
-        )
-
-        fig.update_layout(
-            title=title
-            or f"Average {self.metric_name} Comparison Across Methods",
-            xaxis_title="Method",
-            yaxis_title=f"Average {self.metric_name}",
-            width=figsize[0],
-            height=figsize[1],
-            paper_bgcolor="#F0F0F0",
-            plot_bgcolor="#F0F0F0",
-        )
-
-        fig.update_xaxes(showgrid=False)
-        fig.update_yaxes(showgrid=False)
-
-        if save_path:
-            _save_figure(fig, save_path)
-
-        return fig
-
     def plot(
         self,
         title: Optional[str] = None,
         save_path: Optional[str] = None,
-        show_mean: bool = False,
+        show_mean: bool = True,
         figsize: Tuple[int, int] = (
             PLOT_CONFIG["width"],
             PLOT_CONFIG["height"],
         ),
     ) -> go.Figure:
-        """Create a plot of the comparison results using the initialized format.
+        """Plot a bar chart comparing performance across different imputation methods.
 
         Args:
-            title: Custom title for the plot
-            save_path: Path to save the plot
-            show_mean: If True, shows only mean comparison, otherwise shows all quantiles
-            figsize: Figure size as (width, height) in pixels
+            title: Custom title for the plot. If None, a default title is used.
+            save_path: Path to save the plot. If None, the plot is displayed.
+            show_mean: Whether to show horizontal lines for mean loss values.
+            figsize: Figure size as (width, height) in pixels.
 
         Returns:
             Plotly figure object
+
+        Raises:
+            ValueError: If data_subset is invalid or not available
+            RuntimeError: If plot creation or saving fails
         """
-        if show_mean:
-            return self._create_single_mean_plot(title, save_path, figsize)
-        elif self.data_format == "long":
-            return self._plot_long_format(title, save_path, figsize)
-        else:  # default to wide format
-            return self._plot_wide_format(title, save_path, figsize)
+        logger.debug(
+            f"Creating method comparison plot with {len(self.methods)} methods"
+        )
+
+        try:
+            # Prepare data for plotting - we need it in a specific format
+            # regardless of how it was input
+            if hasattr(self, "method_results_df"):
+                # Data came in wide format, convert to long for plotting
+                plot_df = self.method_results_df.reset_index().rename(
+                    columns={"index": "Method"}
+                )
+
+                id_vars = ["Method"]
+                value_vars = [
+                    col
+                    for col in plot_df.columns
+                    if col not in id_vars and col != "mean_loss"
+                ]
+
+                melted_df = pd.melt(
+                    plot_df,
+                    id_vars=id_vars,
+                    value_vars=value_vars,
+                    var_name="Percentile",
+                    value_name=self.metric_name,
+                )
+
+                melted_df["Percentile"] = melted_df["Percentile"].astype(str)
+
+            else:
+                # Data is already in long format (comparison_data)
+                # Filter out mean_loss entries for the bar chart
+                melted_df = self.comparison_data[
+                    (self.comparison_data["Percentile"] != "mean_loss")
+                    & (self.comparison_data["Imputed Variable"] != "mean_loss")
+                ].copy()
+                melted_df = melted_df.rename(
+                    columns={"Loss": self.metric_name}
+                )
+                melted_df["Percentile"] = melted_df["Percentile"].astype(str)
+
+            if title is None:
+                title = f"Test {self.metric_name} Across Quantiles for Different Imputation Methods"
+
+            # Create the bar chart
+            logger.debug("Creating bar chart with plotly express")
+            fig = px.bar(
+                melted_df,
+                x="Percentile",
+                y=self.metric_name,
+                color="Method",
+                color_discrete_sequence=px.colors.qualitative.Plotly,
+                barmode="group",
+                title=title,
+                labels={
+                    "Percentile": "Quantiles",
+                    self.metric_name: f"Test {self.metric_name}",
+                },
+            )
+
+            # Add horizontal lines for mean loss if present and requested
+            if show_mean:
+                logger.debug("Adding mean loss markers to plot")
+
+                if (
+                    hasattr(self, "method_results_df")
+                    and "mean_loss" in self.method_results_df.columns
+                ):
+                    # Wide format data has mean_loss column
+                    for i, method in enumerate(self.method_results_df.index):
+                        mean_loss = self.method_results_df.loc[
+                            method, "mean_loss"
+                        ]
+                        fig.add_shape(
+                            type="line",
+                            x0=-0.5,
+                            y0=mean_loss,
+                            x1=len(value_vars) - 0.5,
+                            y1=mean_loss,
+                            line=dict(
+                                color=px.colors.qualitative.Plotly[
+                                    i % len(px.colors.qualitative.Plotly)
+                                ],
+                                width=2,
+                                dash="dot",
+                            ),
+                            name=f"{method} Mean",
+                        )
+                else:
+                    # Calculate means from the data
+                    for i, method in enumerate(self.methods):
+                        method_data = melted_df[melted_df["Method"] == method]
+                        if not method_data.empty:
+                            mean_loss = method_data[self.metric_name].mean()
+                            # Get number of unique percentiles for x1 position
+                            n_percentiles = melted_df["Percentile"].nunique()
+                            fig.add_shape(
+                                type="line",
+                                x0=-0.5,
+                                y0=mean_loss,
+                                x1=n_percentiles - 0.5,
+                                y1=mean_loss,
+                                line=dict(
+                                    color=px.colors.qualitative.Plotly[
+                                        i % len(px.colors.qualitative.Plotly)
+                                    ],
+                                    width=2,
+                                    dash="dot",
+                                ),
+                                name=f"{method} Mean",
+                            )
+
+            fig.update_layout(
+                title_font_size=14,
+                xaxis_title_font_size=12,
+                yaxis_title_font_size=12,
+                paper_bgcolor="#F0F0F0",
+                plot_bgcolor="#F0F0F0",
+                legend_title="Method",
+                height=figsize[1],
+                width=figsize[0],
+            )
+
+            fig.update_xaxes(showgrid=False, zeroline=False)
+            fig.update_yaxes(showgrid=False, zeroline=False)
+
+            # Save or show the plot
+            if save_path:
+                _save_figure(fig, save_path)
+
+            logger.debug("Plot creation completed successfully")
+            return fig
+
+        except Exception as e:
+            logger.error(f"Error creating method comparison plot: {str(e)}")
+            raise RuntimeError(
+                f"Failed to create method comparison plot: {str(e)}"
+            ) from e
 
     def summary(self, format: str = "wide") -> pd.DataFrame:
         """Generate a summary table of the comparison results.
