@@ -1,7 +1,11 @@
-"""Shared validation utilities for comparison operations.
+"""Data validation utilities for imputation operations
 
-This module provides common validation functions used across the comparisons module
-to ensure data integrity and avoid code duplication.
+This module provides centralized validation functions used throughout the microimpute
+package to ensure data integrity, validate parameters, and maintain consistency
+across different imputation methods.
+
+The validation functions help prevent common errors and provide clear error messages
+when data or parameters don't meet requirements.
 """
 
 import logging

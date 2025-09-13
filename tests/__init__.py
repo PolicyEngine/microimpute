@@ -1,1 +1,1 @@
-"""Tests for the MicroImpute package."""
+"""Tests for the Microimpute package."""

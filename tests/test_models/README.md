@@ -1,4 +1,4 @@
-# Imputer Model Tests
+# Imputer model tests
 
 This directory contains tests for the `Imputer` abstract base class and its implementations.
 
@@ -12,7 +12,7 @@ The tests in this directory verify that all imputation models in this package:
 4. Can be evaluated using common testing approaches like cross-validation
 5. Provide consistent outputs in expected formats
 
-## Test Files
+## Test files
 
 - **test_imputers.py**: Verifies the common interface across all models:
   - Tests model initialization with no required arguments
@@ -40,87 +40,3 @@ The tests in this directory verify that all imputation models in this package:
   - Cross-validation evaluation on the Iris dataset
   - Verifies that the model stores donor data correctly
   - Tests that predictions maintain the expected structure
-
-## Using the Imputer Interface
-
-### Base Interface
-
-All imputation models inherit from `Imputer` and implement:
-
-```python
-def fit(self, X_train, predictors, imputed_variables, **kwargs) -> "Imputer":
-    """Fit the model to training data."""
-    pass
-
-def predict(self, test_X, quantiles=None) -> Dict[float, Union[np.ndarray, pd.DataFrame]]:
-    """Predict imputed values at specified quantiles."""
-    pass
-```
-
-### Example: Using Models Interchangeably
-
-```python
-# Function that works with any Imputer model
-def impute_values(imputer: Imputer, train_data, test_data, predictors, target):
-    # Fit the model
-    imputer.fit(train_data, predictors, [target])
-    
-    # Make predictions at median
-    predictions = imputer.predict(test_data, [0.5])
-    
-    return predictions[0.5]
-
-# Use with different model types
-ols_preds = impute_values(OLS(), train_data, test_data, predictors, target)
-qrf_preds = impute_values(QRF(), train_data, test_data, predictors, target)
-```
-
-## Available Model Implementations
-
-### OLS (Ordinary Least Squares)
-
-- Simple linear regression model
-- Assumes normally distributed residuals
-- Predicts quantiles by adding scaled normal quantiles to the mean prediction
-
-```python
-model = OLS()
-model.fit(train_data, predictors, target_vars)
-predictions = model.predict(test_data, [0.25, 0.5, 0.75])
-```
-
-### QuantReg (Quantile Regression)
-
-- Directly models conditional quantiles
-- Can capture asymmetric distributions
-- Fits separate models for each quantile
-
-```python
-model = QuantReg()
-model.fit(train_data, predictors, target_vars, quantiles=[0.25, 0.5, 0.75])
-predictions = model.predict(test_data)  # Uses pre-fitted quantiles
-```
-
-### QRF (Quantile Random Forest)
-
-- Uses random forests to model quantiles
-- Can capture complex nonlinear relationships
-- Supports RF hyperparameters through kwargs
-
-```python
-model = QRF()
-model.fit(train_data, predictors, target_vars, n_estimators=100)
-predictions = model.predict(test_data, [0.25, 0.5, 0.75])
-```
-
-### Matching (Statistical Matching)
-
-- Uses distance hot deck matching to find donors
-- Non-parametric approach based on R's StatMatch package
-- Returns matched donor values for all quantiles
-
-```python
-model = Matching()
-model.fit(train_data, predictors, target_vars)
-predictions = model.predict(test_data, [0.5])
-```

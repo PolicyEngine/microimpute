@@ -106,7 +106,7 @@ def get_imputations(
                 imputations = fitted_model.predict(X_test, quantiles)
                 method_imputations[model_name] = imputations
 
-            except Exception as model_error:
+            except (TypeError, AttributeError, ValueError) as model_error:
                 log.error(
                     f"Error processing model {model_name}: {str(model_error)}"
                 )
@@ -122,6 +122,6 @@ def get_imputations(
     except ValueError as e:
         # Re-raise validation errors directly
         raise e
-    except Exception as e:
+    except (KeyError, TypeError, AttributeError) as e:
         log.error(f"Unexpected error during imputation generation: {str(e)}")
         raise RuntimeError(f"Failed to generate imputations: {str(e)}") from e

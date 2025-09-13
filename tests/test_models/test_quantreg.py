@@ -11,7 +11,7 @@ from microimpute.config import QUANTILES, RANDOM_STATE
 from microimpute.evaluations import *
 from microimpute.models.quantreg import QuantReg
 from microimpute.utils.data import preprocess_data
-from microimpute.visualizations.plotting import *
+from microimpute.visualizations import *
 
 
 # === Fixtures ===

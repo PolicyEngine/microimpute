@@ -1,6 +1,13 @@
-"""Data preparation utilities for imputation benchmarking.
+"""Data preparation and transformation utilities
 
-This module provides functions for acquiring, preprocessing, and splitting data for imputation benchmarking.
+This module provides comprehensive data preparation functions for imputation workflows,
+including data splitting, normalization, unnormalization, and categorical variable handling.
+These utilities ensure consistent data preprocessing across different imputation methods.
+
+Key functions:
+    - preprocess_data: split and optionally normalize data for training/testing
+    - unnormalize_predictions: convert normalized predictions back to original scale
+    - Handle categorical variables through one-hot encoding
 """
 
 import logging
@@ -93,7 +100,7 @@ def preprocess_data(
 
             logger.debug(f"Normalization parameters: {normalization_params}")
 
-        except Exception as e:
+        except (TypeError, AttributeError) as e:
             logger.error(f"Error during data normalization: {str(e)}")
             raise RuntimeError("Failed to normalize data") from e
 
@@ -132,7 +139,7 @@ def preprocess_data(
                     X_test,
                 )
 
-        except Exception as e:
+        except (ValueError, TypeError) as e:
             logger.error(f"Error in processing data: {str(e)}")
             raise
 

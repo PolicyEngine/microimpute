@@ -511,6 +511,6 @@ def autoimpute(
     except ValueError as e:
         # Re-raise validation errors directly
         raise e
-    except Exception as e:
+    except (KeyError, TypeError, AttributeError) as e:
         log.error(f"Unexpected error during autoimputation: {str(e)}")
         raise RuntimeError(f"Failed to generate imputations: {str(e)}") from e

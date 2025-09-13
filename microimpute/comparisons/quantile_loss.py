@@ -77,9 +77,7 @@ def compute_quantile_loss(
 
         return losses
 
-    except Exception as e:
-        if isinstance(e, ValueError):
-            raise e
+    except (TypeError, AttributeError) as e:
         log.error(f"Error computing quantile loss: {str(e)}")
         raise RuntimeError(f"Failed to compute quantile loss: {str(e)}") from e
 
@@ -233,6 +231,6 @@ def compare_quantile_loss(
     except ValueError as e:
         # Re-raise validation errors
         raise e
-    except Exception as e:
+    except (KeyError, TypeError, AttributeError) as e:
         log.error(f"Error in quantile loss comparison: {str(e)}")
         raise RuntimeError(f"Failed to compare quantile loss: {str(e)}") from e

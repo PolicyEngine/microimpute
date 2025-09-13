@@ -6,7 +6,7 @@ import pytest
 from sklearn.datasets import load_diabetes
 
 from microimpute.comparisons.autoimpute import autoimpute, AutoImputeResult
-from microimpute.visualizations.plotting import *
+from microimpute.visualizations import *
 
 # Check if Matching is available
 try:

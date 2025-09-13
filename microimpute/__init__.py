@@ -1,6 +1,22 @@
-"""MicroImpute Package
+"""Microimpute: advanced statistical imputation for microdata
 
-A package for benchmarking different imputation methods using microdata.
+Microimpute is a comprehensive Python package for benchmarking and applying
+various statistical imputation methods to microdata. It provides tools for
+automated model selection, cross-validation, and visualization of imputation results.
+
+Key features:
+    - Multiple imputation models (OLS, QRF, QuantReg, Matching)
+    - Automated model selection with cross-validation
+    - Quantile-based imputation and evaluation
+    - Comprehensive visualization tools
+    - Support for weighted imputation
+    - Hyperparameter tuning capabilities
+
+Main components:
+    - autoimpute: automated imputation with model selection
+    - Models: OLS, QRF, QuantReg, Matching (optional)
+    - Evaluation: cross-validation and quantile loss metrics
+    - Visualization: performance and comparison plots
 """
 
 __version__ = "1.1.2"
@@ -47,7 +63,7 @@ except ImportError:
     pass
 
 # Import visualization modules
-from microimpute.visualizations.plotting import (
+from microimpute.visualizations import (
     MethodComparisonResults,
     PerformanceResults,
     method_comparison_results,

@@ -1,7 +1,16 @@
-"""Helper functions for autoimpute module.
+"""Helper functions for automated imputation
 
-This module contains extracted helper functions to simplify the main autoimpute function
-and improve code maintainability.
+This module provides utility functions that support the autoimpute workflow,
+including input validation, data preparation, model evaluation, and result selection.
+These functions are extracted from the main autoimpute module to improve code
+organization and maintainability.
+
+Key functions:
+    - validate_autoimpute_inputs: comprehensive input validation
+    - prepare_data_for_imputation: data preprocessing and normalization
+    - evaluate_model: cross-validation evaluation for a single model
+    - fit_and_predict_model: model fitting and prediction generation
+    - select_best_model: selection of best performing model
 """
 
 import logging

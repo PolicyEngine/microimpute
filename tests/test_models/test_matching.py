@@ -11,7 +11,7 @@ from sklearn.metrics import mean_squared_error
 from microimpute.config import QUANTILES
 from microimpute.evaluations import *
 from microimpute.utils.data import preprocess_data
-from microimpute.visualizations.plotting import *
+from microimpute.visualizations import *
 
 try:
     from microimpute.models.matching import Matching

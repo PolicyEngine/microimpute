@@ -11,7 +11,7 @@ from microimpute.config import QUANTILES
 from microimpute.evaluations import *
 from microimpute.models.ols import OLS
 from microimpute.utils.data import preprocess_data
-from microimpute.visualizations.plotting import *
+from microimpute.visualizations import *
 
 
 # === Fixtures ===
