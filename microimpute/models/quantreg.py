@@ -29,8 +29,9 @@ class QuantRegResults(ImputerResults):
         imputed_vars_dummy_info: Optional[Dict[str, str]] = None,
         original_predictors: Optional[List[str]] = None,
         log_level: Optional[str] = "WARNING",
+        quantiles_specified: bool = False,
     ) -> None:
-        """Initialize the QRF results.
+        """Initialize the QuantReg results.
 
         Args:
             models: Dict of quantiles and fitted QuantReg models.
@@ -41,6 +42,7 @@ class QuantRegResults(ImputerResults):
                 about dummy variables for imputed variables.
             original_predictors: Optional list of original predictor variable
                 names before dummy encoding.
+            quantiles_specified: Whether quantiles were explicitly specified during fit.
         """
         super().__init__(
             predictors,
@@ -51,6 +53,7 @@ class QuantRegResults(ImputerResults):
             log_level,
         )
         self.models = models
+        self.quantiles_specified = quantiles_specified
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
@@ -77,6 +80,9 @@ class QuantRegResults(ImputerResults):
         try:
             # Create output dictionary with results
             imputations: Dict[float, pd.DataFrame] = {}
+
+            # Store original quantiles parameter to determine return type
+            quantiles_param = quantiles
 
             X_test_with_const = sm.add_constant(X_test[self.predictors])
             self.logger.info(f"Prepared test data with {len(X_test)} samples")
@@ -159,14 +165,18 @@ class QuantRegResults(ImputerResults):
                         imputations[q] = imputed_df
 
             self.logger.info(
-                f"Completed predictions for {len(quantiles)} quantiles"
+                f"Completed predictions for {len(imputations)} quantiles"
             )
 
-            quantiles = imputations.keys()
-            if len(quantiles) < 2:
-                q = list(quantiles)[0]
-
-            return imputations if len(imputations) > 1 else imputations[q]
+            # Return behavior based on how the model was fitted:
+            # - If quantiles were explicitly specified during fit OR predict, return dict
+            # - Otherwise, return DataFrame directly for single quantile
+            if quantiles_param is not None or self.quantiles_specified:
+                return imputations
+            else:
+                # Default behavior: return DataFrame directly
+                q = list(imputations.keys())[0]
+                return imputations[q]
 
         except ValueError as e:
             # Re-raise value errors directly
@@ -269,6 +279,7 @@ class QuantReg(Imputer):
                 original_predictors=self.original_predictors,
                 seed=self.seed,
                 log_level=self.log_level,
+                quantiles_specified=(quantiles is not None),
             )
         except Exception as e:
             self.logger.error(f"Error fitting QuantReg model: {str(e)}")

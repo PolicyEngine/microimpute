@@ -1,125 +1,342 @@
-"""Tests for the Quantile Regression imputation model."""
+"""Comprehensive tests for the Quantile Regression imputation model."""
 
 from typing import Dict, List
 
+import numpy as np
 import pandas as pd
+import pytest
 from sklearn.datasets import load_diabetes
 
-from microimpute.utils.data import preprocess_data
 from microimpute.config import QUANTILES, RANDOM_STATE
 from microimpute.evaluations import *
 from microimpute.models.quantreg import QuantReg
-from microimpute.visualizations.plotting import *
-
-# Test Method on diabetes dataset
-diabetes_data = load_diabetes()
-diabetes_df = pd.DataFrame(
-    diabetes_data.data, columns=diabetes_data.feature_names
-)
-
-predictors = ["age", "sex", "bmi", "bp"]
-imputed_variables = ["s1", "s4"]
-
-diabetes_df = diabetes_df[predictors + imputed_variables]
-
-random_generator = np.random.default_rng(RANDOM_STATE)
-count_samples = 10
-mean_quantile = 0.5
-# Calculate alpha parameter for beta distribution
-a = mean_quantile / (1 - mean_quantile)
-# Generate count_samples beta distributed values with parameter a
-beta_samples = random_generator.beta(a, 1, size=count_samples)
-quantiles = list(set(beta_samples))
+from microimpute.utils.data import preprocess_data
+from microimpute.visualizations import *
 
 
-def test_quantreg_cross_validation(
-    data: pd.DataFrame = diabetes_df,
-    predictors: List[str] = predictors,
-    imputed_variables: List[str] = imputed_variables,
-    quantiles: List[float] = QUANTILES,
-) -> None:
-    """
-    Test the QuantReg model on a specific dataset.
+# === Fixtures ===
 
-    Args:
-            data: DataFrame with the dataset of interest.
-            predictors: List of predictor variables.
-            imputed_variables: List of variables to impute.
-            quantiles: List of quantiles to predict.
-    """
-    quantreg_results = cross_validate_model(
-        QuantReg, data, predictors, imputed_variables
+
+@pytest.fixture
+def diabetes_data() -> pd.DataFrame:
+    """Load and prepare diabetes dataset for testing."""
+    diabetes = load_diabetes()
+    df = pd.DataFrame(diabetes.data, columns=diabetes.feature_names)
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1", "s4"]
+    return df[predictors + imputed_variables]
+
+
+@pytest.fixture
+def simple_data() -> pd.DataFrame:
+    """Create simple synthetic data for testing."""
+    np.random.seed(42)
+    return pd.DataFrame(
+        {
+            "x1": np.random.randn(100),
+            "x2": np.random.randn(100),
+            "y": np.random.randn(100),
+        }
     )
 
-    quantreg_results.to_csv("quantreg_cv_results.csv")
 
+@pytest.fixture
+def skewed_data() -> pd.DataFrame:
+    """Create data with skewed distribution."""
+    np.random.seed(42)
+    n_samples = 100
+
+    # Create skewed target using exponential distribution
+    return pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "x2": np.random.randn(n_samples),
+            "y": np.random.exponential(scale=2.0, size=n_samples),
+        }
+    )
+
+
+# === Basic Functionality Tests ===
+
+
+def test_quantreg_basic_fit_predict(diabetes_data: pd.DataFrame) -> None:
+    """Test basic QuantReg model fitting and prediction."""
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1", "s4"]
+
+    X_train, X_test = preprocess_data(diabetes_data)
+
+    # Initialize and fit model
+    model = QuantReg()
+    fitted_model = model.fit(
+        X_train, predictors, imputed_variables, quantiles=QUANTILES
+    )
+
+    # Predict at fitted quantiles
+    predictions = fitted_model.predict(X_test, random_quantile_sample=False)
+
+    # Validate predictions
+    assert isinstance(predictions, dict)
+
+    for q, pred_df in predictions.items():
+        assert pred_df is not None
+        assert len(pred_df) == len(X_test)
+        assert not pred_df.isna().any().any()
+
+
+def test_quantreg_specific_quantiles(simple_data: pd.DataFrame) -> None:
+    """Test QuantReg with specific quantiles."""
+    X_train, X_test = preprocess_data(simple_data)
+
+    specific_quantiles = [0.1, 0.5, 0.9]
+
+    model = QuantReg()
+    fitted_model = model.fit(
+        X_train, ["x1", "x2"], ["y"], quantiles=specific_quantiles
+    )
+
+    # Predict at the same quantiles
+    predictions = fitted_model.predict(X_test, quantiles=specific_quantiles)
+
+    assert set(predictions.keys()) == set(specific_quantiles)
+
+    for q in specific_quantiles:
+        assert not predictions[q]["y"].isna().any()
+
+
+def test_quantreg_monotonic_quantiles(simple_data: pd.DataFrame) -> None:
+    """Test that QuantReg produces monotonic quantile predictions."""
+    X_train, X_test = preprocess_data(simple_data)
+
+    quantiles = [0.1, 0.25, 0.5, 0.75, 0.9]
+
+    model = QuantReg()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"], quantiles=quantiles)
+
+    predictions = fitted_model.predict(X_test, quantiles=quantiles)
+
+    # Check monotonicity for most observations (allowing some crossing due to estimation)
+    monotonic_count = 0
+    for i in range(len(X_test)):
+        values = [predictions[q]["y"].iloc[i] for q in quantiles]
+        is_monotonic = all(
+            values[j] <= values[j + 1] + 1e-6 for j in range(len(values) - 1)
+        )
+        if is_monotonic:
+            monotonic_count += 1
+
+    # At least 80% should be monotonic (some crossing is expected in quantile regression)
+    assert monotonic_count / len(X_test) > 0.8, "Too many quantile crossings"
+
+
+# === Edge Cases ===
+
+
+def test_quantreg_skewed_distribution(skewed_data: pd.DataFrame) -> None:
+    """Test QuantReg with skewed target distribution."""
+    X_train, X_test = preprocess_data(skewed_data)
+
+    quantiles = [0.25, 0.5, 0.75]
+
+    model = QuantReg()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"], quantiles=quantiles)
+
+    predictions = fitted_model.predict(X_test, quantiles=quantiles)
+
+    # For skewed distribution, quantiles should not be symmetric
+    median = predictions[0.5]["y"].mean()
+    q25 = predictions[0.25]["y"].mean()
+    q75 = predictions[0.75]["y"].mean()
+
+    lower_diff = median - q25
+    upper_diff = q75 - median
+
+    # For skewed distributions, quantiles should be different from symmetric
+    # Just check they're not exactly equal (some asymmetry is captured)
+    assert (
+        abs(upper_diff - lower_diff) > 0.01
+    ), "QuantReg should capture some asymmetry"
+
+
+# === Cross-Validation Test ===
+
+
+def test_quantreg_cross_validation(diabetes_data: pd.DataFrame) -> None:
+    """Test QuantReg model with cross-validation."""
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1", "s4"]
+
+    quantreg_results = cross_validate_model(
+        QuantReg, diabetes_data, predictors, imputed_variables
+    )
+
+    # Validate cross-validation results
     assert not quantreg_results.isna().any().any()
+    assert len(quantreg_results) > 0
 
+    # Test visualization capability
     perf_results_viz = model_performance_results(
         results=quantreg_results,
         model_name="QuantReg",
         method_name="Cross-Validation Quantile Loss Average",
     )
-    fig = perf_results_viz.plot(
-        title="QuantReg Cross-Validation Performance",
-        save_path="quantreg_cv_performance.jpg",
-    )
+
+    assert perf_results_viz is not None
 
 
-def test_quantreg_example(
-    data: pd.DataFrame = diabetes_df,
-    predictors: List[str] = predictors,
-    imputed_variables: List[str] = imputed_variables,
-    quantiles: List[float] = QUANTILES,
-) -> None:
-    """
-    Example of how to use the Quantile Regression imputer model.
+# === Robustness Tests ===
 
-    This example demonstrates:
-    - Initializing a QuantReg model
-    - Fitting the model to specific quantiles
-    - Predicting quantiles on test data
-    - How QuantReg can capture non-symmetric distributions
 
-    Args:
-        data: DataFrame with test data
-        predictors: List of predictor column names
-        imputed_variables: List of target column names
-        quantiles: List of quantiles to predict
-    """
+def test_quantreg_outliers() -> None:
+    """Test QuantReg robustness to outliers (should be more robust than OLS)."""
+    np.random.seed(42)
+
+    data = pd.DataFrame({"x": np.random.randn(100), "y": np.random.randn(100)})
+
+    # Add extreme outliers
+    data.loc[0, "y"] = 1000
+    data.loc[1, "y"] = -1000
+
     X_train, X_test = preprocess_data(data)
 
-    # Initialize QuantReg model
     model = QuantReg()
-
-    # Fit the model to specific quantiles
     fitted_model = model.fit(
-        X_train, predictors, imputed_variables, quantiles=quantiles
+        X_train,
+        ["x"],
+        ["y"],
+        quantiles=[0.5],  # Median regression is robust to outliers
     )
 
-    # Predict at the fitted quantiles
-    predictions: Dict[float, pd.DataFrame] = fitted_model.predict(
-        X_test, random_quantile_sample=False
-    )
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
 
-    # Check structure of predictions
+    # When quantiles specified, returns dict
     assert isinstance(predictions, dict)
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()
 
-    # Basic checks
-    for q, pred in predictions.items():
-        assert pred is not None
-        assert len(pred) == len(X_test)
+    # Median predictions should not be heavily influenced by outliers
+    median_pred = predictions[0.5]["y"].median()
+    assert -10 < median_pred < 10, "Median regression affected by outliers"
 
-    transformed_df = pd.DataFrame()
-    for quantile, pred_df in predictions.items():
-        # For each quantile and its predictions DataFrame
-        for variable in imputed_variables:
-            # Calculate the mean of predictions for this variable at this quantile
-            mean_value = pred_df[variable].mean()
-            # Create or update the value in our transformed DataFrame
-            if variable not in transformed_df.columns:
-                transformed_df[variable] = pd.Series(dtype="float64")
-            transformed_df.loc[quantile, variable] = mean_value
 
-    # Save to CSV for further analysis
-    transformed_df.to_csv("quantreg_predictions_by_quantile.csv")
+def test_quantreg_heteroscedasticity() -> None:
+    """Test QuantReg with heteroscedastic errors."""
+    np.random.seed(42)
+    n_samples = 200
+
+    x = np.random.uniform(-3, 3, n_samples)
+    # Variance increases with x (heteroscedasticity)
+    y = 2 * x + np.random.randn(n_samples) * (1 + np.abs(x))
+
+    data = pd.DataFrame({"x": x, "y": y})
+
+    X_train, X_test = preprocess_data(data)
+
+    model = QuantReg()
+    fitted_model = model.fit(X_train, ["x"], ["y"], quantiles=[0.1, 0.5, 0.9])
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.1, 0.5, 0.9])
+
+    # Quantile regression should capture heteroscedasticity
+    # Prediction intervals should be wider for larger |x|
+    X_test_sorted = X_test.sort_values("x")
+    low_x_idx = X_test_sorted.index[:10]
+    high_x_idx = X_test_sorted.index[-10:]
+
+    low_x_spread = (
+        predictions[0.9].loc[low_x_idx, "y"]
+        - predictions[0.1].loc[low_x_idx, "y"]
+    ).mean()
+    high_x_spread = (
+        predictions[0.9].loc[high_x_idx, "y"]
+        - predictions[0.1].loc[high_x_idx, "y"]
+    ).mean()
+
+    # Check that there's some difference in spread (heteroscedasticity is partially captured)
+    assert (
+        abs(high_x_spread - low_x_spread) > 0.01
+    ), "QuantReg should show some heteroscedasticity effect"
+
+
+# === Comparison with OLS ===
+
+
+def test_quantreg_vs_ols_median(simple_data: pd.DataFrame) -> None:
+    """Test that QuantReg median predictions are similar to OLS mean predictions for normal data."""
+    from microimpute.models.ols import OLS
+
+    X_train, X_test = preprocess_data(simple_data)
+
+    # Fit QuantReg for median
+    quantreg = QuantReg()
+    quantreg_fitted = quantreg.fit(
+        X_train, ["x1", "x2"], ["y"], quantiles=[0.5]
+    )
+    quantreg_pred = quantreg_fitted.predict(X_test, quantiles=[0.5])
+
+    # Fit OLS
+    ols = OLS()
+    ols_fitted = ols.fit(X_train, ["x1", "x2"], ["y"])
+    ols_pred = ols_fitted.predict(
+        X_test, quantiles=[0.5], random_quantile_sample=False
+    )
+
+    # For normally distributed errors, median and mean should be similar
+    # QuantReg returns DataFrame for single quantile, OLS returns dict
+    quantreg_median = quantreg_pred[0.5]["y"].values
+    ols_mean = ols_pred[0.5]["y"].values
+
+    correlation = np.corrcoef(quantreg_median, ols_mean)[0, 1]
+    assert (
+        correlation > 0.85
+    ), "QuantReg median and OLS mean should be reasonably similar for normal data"
+
+
+# === Performance Tests ===
+
+
+def test_quantreg_prediction_quality(diabetes_data: pd.DataFrame) -> None:
+    """Test QuantReg prediction quality on real data."""
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1"]
+
+    data = diabetes_data[predictors + imputed_variables]
+
+    # Split data
+    np.random.seed(42)
+    train_idx = np.random.choice(
+        len(data), int(0.8 * len(data)), replace=False
+    )
+    test_idx = np.array([i for i in range(len(data)) if i not in train_idx])
+
+    train_data = data.iloc[train_idx].reset_index(drop=True)
+    test_data = data.iloc[test_idx].reset_index(drop=True)
+
+    X_train = preprocess_data(
+        train_data, full_data=True, train_size=1.0, test_size=0.0
+    )
+    X_test = preprocess_data(
+        test_data, full_data=True, train_size=1.0, test_size=0.0
+    )
+
+    # Fit model
+    model = QuantReg()
+    fitted_model = model.fit(
+        X_train, predictors, imputed_variables, quantiles=[0.5]
+    )
+
+    # Get predictions
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    # Calculate correlation with true values
+    # When quantiles specified, returns dict
+    true_values = X_test["s1"].values
+    pred_values = predictions[0.5]["s1"].values
+
+    correlation = np.corrcoef(true_values, pred_values)[0, 1]
+
+    # QuantReg should achieve reasonable correlation
+    assert correlation > 0.15, f"QuantReg correlation too low: {correlation}"
+
+    # Check that predictions have reasonable variance
+    assert np.var(pred_values) > 0, "QuantReg predictions have no variance"

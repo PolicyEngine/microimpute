@@ -1,8 +1,8 @@
-# MicroImpute Tests
+# Microimpute tests
 
-This directory contains tests for the MicroImpute package.
+This directory contains tests for the Microimpute package.
 
-## Test Structure
+## Test structure
 
 The test suite is organized as follows:
 
@@ -17,24 +17,16 @@ The test suite is organized as follows:
   - Tests for the common Imputer interface
   - Examples of model usage
 
-## Running Tests
+## Running tests
 
 To run the tests, use the following command from the project root:
 
 ```bash
-python -m pytest us_imputation_benchmarking/tests/
+python -m pytest tests/
 ```
 
 For more verbose output:
 
 ```bash
-python -m pytest us_imputation_benchmarking/tests/ -v
+python -m pytest tests/ -v
 ```
-
-## Model-Specific Tests
-
-For detailed information about the model-specific tests, refer to the [test_models/README.md](test_models/README.md) file, which contains:
-
-- Details about the Imputer abstract class and its implementations
-- Usage examples for each model type
-- Test descriptions for each model implementation

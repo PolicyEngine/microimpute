@@ -1,131 +1,292 @@
-"""Tests for the OLS (Ordinary Least Squares) imputation model."""
+"""Comprehensive tests for the OLS (Ordinary Least Squares) imputation model."""
 
 from typing import Dict, List
 
 import numpy as np
 import pandas as pd
+import pytest
 from sklearn.datasets import load_diabetes
 
-from microimpute.utils.data import preprocess_data
 from microimpute.config import QUANTILES
 from microimpute.evaluations import *
 from microimpute.models.ols import OLS
-from microimpute.visualizations.plotting import *
-
-# Test Method on diabetes dataset
-diabetes_data = load_diabetes()
-diabetes_df = pd.DataFrame(
-    diabetes_data.data, columns=diabetes_data.feature_names
-)
-
-predictors = ["age", "sex", "bmi", "bp"]
-imputed_variables = ["s1", "s4"]
-
-diabetes_df = diabetes_df[predictors + imputed_variables]
+from microimpute.utils.data import preprocess_data
+from microimpute.visualizations import *
 
 
-def test_ols_cross_validation(
-    data: pd.DataFrame = diabetes_df,
-    predictors: List[str] = predictors,
-    imputed_variables: List[str] = imputed_variables,
-    quantiles: List[float] = QUANTILES,
-) -> None:
-    """
-    Test the OLS model on a specific dataset.
+# === Fixtures ===
 
-    Args:
-            data: DataFrame with the dataset of interest.
-            predictors: List of predictor variables.
-            imputed_variables: List of variables to impute.
-            quantiles: List of quantiles to predict.
-    """
-    ols_results = cross_validate_model(
-        OLS, data, predictors, imputed_variables
+
+@pytest.fixture
+def diabetes_data() -> pd.DataFrame:
+    """Load and prepare diabetes dataset for testing."""
+    diabetes = load_diabetes()
+    df = pd.DataFrame(diabetes.data, columns=diabetes.feature_names)
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1", "s4"]
+    return df[predictors + imputed_variables]
+
+
+@pytest.fixture
+def simple_data() -> pd.DataFrame:
+    """Create simple synthetic data for testing."""
+    np.random.seed(42)
+    return pd.DataFrame(
+        {
+            "x1": np.random.randn(100),
+            "x2": np.random.randn(100),
+            "y": np.random.randn(100),
+        }
     )
 
-    ols_results.to_csv("ols_cv_results.csv")
 
+# === Basic Functionality Tests ===
+
+
+def test_ols_basic_fit_predict(diabetes_data: pd.DataFrame) -> None:
+    """Test basic OLS model fitting and prediction."""
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1", "s4"]
+
+    X_train, X_test = preprocess_data(diabetes_data)
+
+    # Initialize and fit model
+    model = OLS()
+    fitted_model = model.fit(X_train, predictors, imputed_variables)
+
+    # Predict at multiple quantiles
+    predictions = fitted_model.predict(
+        X_test, QUANTILES, random_quantile_sample=False
+    )
+
+    # Validate predictions
+    assert isinstance(predictions, dict)
+    assert set(predictions.keys()) == set(QUANTILES)
+
+    for q, pred_df in predictions.items():
+        assert pred_df.shape == (len(X_test), len(imputed_variables))
+        assert not pred_df.isna().any().any()
+
+
+def test_ols_symmetric_quantiles(simple_data: pd.DataFrame) -> None:
+    """Test that OLS produces symmetric quantile predictions due to normal distribution assumption."""
+    X_train, X_test = preprocess_data(simple_data)
+
+    model = OLS()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    # Predict at symmetric quantiles
+    predictions = fitted_model.predict(
+        X_test, quantiles=[0.1, 0.5, 0.9], random_quantile_sample=False
+    )
+
+    # Check symmetry around median
+    median = predictions[0.5]["y"].values
+    lower = predictions[0.1]["y"].values
+    upper = predictions[0.9]["y"].values
+
+    lower_diff = median - lower
+    upper_diff = upper - median
+
+    # OLS assumes normal distribution, so quantiles should be symmetric
+    np.testing.assert_allclose(
+        lower_diff.mean(),
+        upper_diff.mean(),
+        rtol=0.1,
+        err_msg="OLS should have symmetric quantile predictions around the median",
+    )
+
+
+def test_ols_random_quantile_sampling(simple_data: pd.DataFrame) -> None:
+    """Test OLS with random quantile sampling."""
+    X_train, X_test = preprocess_data(simple_data)
+
+    model = OLS()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    # Predict with random quantile sampling
+    predictions = fitted_model.predict(
+        X_test, quantiles=[0.5], random_quantile_sample=True
+    )
+
+    assert 0.5 in predictions
+    assert len(predictions[0.5]) == len(X_test)
+    assert not predictions[0.5]["y"].isna().any()
+
+
+# === Edge Cases ===
+
+
+def test_ols_perfect_collinearity() -> None:
+    """Test OLS behavior with perfectly collinear predictors."""
+    np.random.seed(42)
+    n_samples = 100
+
+    x1 = np.random.randn(n_samples)
+
+    data = pd.DataFrame(
+        {
+            "x1": x1,
+            "x2": x1 * 2,  # Perfect collinearity
+            "x3": x1 * 3,  # Perfect collinearity
+            "y": x1 + np.random.randn(n_samples) * 0.1,
+        }
+    )
+
+    X_train, X_test = preprocess_data(data)
+
+    model = OLS()
+    # Should handle collinearity (might drop columns or use regularization)
+    fitted_model = model.fit(X_train, ["x1", "x2", "x3"], ["y"])
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()
+
+
+def test_ols_constant_target() -> None:
+    """Test OLS with a constant target variable."""
+    np.random.seed(42)
+
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(100),
+            "x2": np.random.randn(100),
+            "y": np.ones(100),  # Constant target
+        }
+    )
+
+    X_train, X_test = preprocess_data(data)
+
+    model = OLS()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.1, 0.5, 0.9])
+
+    # All predictions should be close to 1 (the constant value)
+    for q in [0.1, 0.5, 0.9]:
+        assert np.allclose(predictions[q]["y"].values, 1.0, rtol=0.1)
+
+
+# === Cross-Validation Test ===
+
+
+def test_ols_cross_validation(diabetes_data: pd.DataFrame) -> None:
+    """Test OLS model with cross-validation."""
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1", "s4"]
+
+    ols_results = cross_validate_model(
+        OLS, diabetes_data, predictors, imputed_variables
+    )
+
+    # Validate cross-validation results
     assert not ols_results.isna().any().any()
+    assert len(ols_results) > 0
 
+    # Test visualization capability
     perf_results_viz = model_performance_results(
         results=ols_results,
         model_name="OLS",
         method_name="Cross-Validation Quantile Loss Average",
     )
-    fig = perf_results_viz.plot(
-        title="OLS Cross-Validation Performance",
-        save_path="ols_cv_performance.jpg",
+
+    assert perf_results_viz is not None
+
+
+# === Extreme Values ===
+
+
+def test_ols_extreme_values() -> None:
+    """Test OLS with extreme values in data."""
+    np.random.seed(42)
+
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(100) * 1000,  # Large scale
+            "x2": np.random.randn(100) * 0.001,  # Small scale
+            "y": np.random.randn(100),
+        }
     )
 
-
-def test_ols_example(
-    data: pd.DataFrame = diabetes_df,
-    predictors: List[str] = predictors,
-    imputed_variables: List[str] = imputed_variables,
-    quantiles: List[float] = QUANTILES,
-) -> None:
-    """
-    Example of how to use the OLS imputer model.
-
-    This example demonstrates:
-    - Initializing an OLS model
-    - Fitting the model to training data
-    - Predicting quantiles on test data
-    - How OLS models assume normally distributed residuals
-
-    Args:
-        data: DataFrame with the dataset to use.
-        predictors: List of predictor column names.
-        imputed_variables: List of target column names.
-        quantiles: List of quantiles to predict.
-    """
     X_train, X_test = preprocess_data(data)
 
-    # Initialize OLS model
     model = OLS()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
 
-    # Fit the model
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()
+    assert np.all(np.isfinite(predictions[0.5]["y"].values))
+
+
+def test_ols_outliers() -> None:
+    """Test OLS robustness to outliers."""
+    np.random.seed(42)
+
+    data = pd.DataFrame({"x": np.random.randn(100), "y": np.random.randn(100)})
+
+    # Add outliers
+    data.loc[0, "y"] = 100  # Large outlier
+    data.loc[1, "y"] = -100  # Large outlier
+
+    X_train, X_test = preprocess_data(data)
+
+    model = OLS()
+    fitted_model = model.fit(X_train, ["x"], ["y"])
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+
+    assert 0.5 in predictions
+    assert not predictions[0.5]["y"].isna().any()
+
+
+# === Performance Tests ===
+
+
+def test_ols_prediction_quality(diabetes_data: pd.DataFrame) -> None:
+    """Test OLS prediction quality on real data."""
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["s1"]
+
+    data = diabetes_data[predictors + imputed_variables]
+
+    # Split data
+    np.random.seed(42)
+    train_idx = np.random.choice(
+        len(data), int(0.8 * len(data)), replace=False
+    )
+    test_idx = np.array([i for i in range(len(data)) if i not in train_idx])
+
+    train_data = data.iloc[train_idx].reset_index(drop=True)
+    test_data = data.iloc[test_idx].reset_index(drop=True)
+
+    X_train = preprocess_data(
+        train_data, full_data=True, train_size=1.0, test_size=0.0
+    )
+    X_test = preprocess_data(
+        test_data, full_data=True, train_size=1.0, test_size=0.0
+    )
+
+    # Fit model
+    model = OLS()
     fitted_model = model.fit(X_train, predictors, imputed_variables)
 
-    # Predict at multiple quantiles
-    predictions: Dict[float, pd.DataFrame] = fitted_model.predict(
-        X_test,
-        quantiles,
-        random_quantile_sample=False,
+    # Get predictions
+    predictions = fitted_model.predict(
+        X_test, quantiles=[0.5], random_quantile_sample=False
     )
 
-    # Check structure of predictions
-    assert isinstance(predictions, dict)
-    assert set(predictions.keys()) == set(quantiles)
+    # Calculate correlation with true values
+    true_values = X_test["s1"].values
+    pred_values = predictions[0.5]["s1"].values
 
-    # Demonstrate how OLS uses normal distribution assumption
-    median_pred = predictions[0.5]
-    q10_pred = predictions[0.1]
-    q90_pred = predictions[0.9]
+    correlation = np.corrcoef(true_values, pred_values)[0, 1]
 
-    # The difference between q90 and median should approximately equal
-    # the difference between median and q10 for OLS (symmetric distribution)
-    upper_diff = q90_pred - median_pred
-    lower_diff = median_pred - q10_pred
+    # OLS should achieve reasonable correlation
+    assert correlation > 0.2, f"OLS correlation too low: {correlation}"
 
-    # Allow some numerical error
-    np.testing.assert_allclose(
-        upper_diff.mean(),
-        lower_diff.mean(),
-        rtol=0.1,
-        err_msg="OLS should have symmetric quantile predictions around the median",
-    )
-
-    transformed_df = pd.DataFrame()
-    for quantile, pred_df in predictions.items():
-        # For each quantile and its predictions DataFrame
-        for variable in imputed_variables:
-            # Calculate the mean of predictions for this variable at this quantile
-            mean_value = pred_df[variable].mean()
-            # Create or update the value in our transformed DataFrame
-            if variable not in transformed_df.columns:
-                transformed_df[variable] = pd.Series(dtype="float64")
-            transformed_df.loc[quantile, variable] = mean_value
-
-    # Save to CSV for further analysis
-    transformed_df.to_csv("ols_predictions_by_quantile.csv")
+    # Check prediction variance is reasonable
+    assert np.var(pred_values) > 0, "OLS predictions have no variance"

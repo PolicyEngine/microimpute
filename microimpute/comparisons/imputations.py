@@ -8,10 +8,13 @@ and organize results in a consistent format for comparison.
 import logging
 from typing import Any, Dict, List, Optional, Type
 
-import numpy as np
 import pandas as pd
 from pydantic import validate_call
 
+from microimpute.comparisons.validation import (
+    validate_columns_exist,
+    validate_quantiles,
+)
 from microimpute.config import QUANTILES, VALIDATE_CONFIG
 from microimpute.models.quantreg import QuantReg
 
@@ -51,39 +54,14 @@ def get_imputations(
             log.error(error_msg)
             raise ValueError(error_msg)
 
-        # Validate that predictor and imputed variable columns exist in training data
-        missing_predictors_train = [
-            col for col in predictors if col not in X_train.columns
-        ]
-        if missing_predictors_train:
-            error_msg = f"Missing predictor columns in training data: {missing_predictors_train}"
-            log.error(error_msg)
-            raise ValueError(error_msg)
-
-        missing_imputed_train = [
-            col for col in imputed_variables if col not in X_train.columns
-        ]
-        if missing_imputed_train:
-            error_msg = f"Missing imputed variable columns in training data: {missing_imputed_train}"
-            log.error(error_msg)
-            raise ValueError(error_msg)
-
-        # Validate that predictor columns exist in test data (imputed variables may not be present in test)
-        missing_predictors_test = [
-            col for col in predictors if col not in X_test.columns
-        ]
-        if missing_predictors_test:
-            error_msg = f"Missing predictor columns in test data: {missing_predictors_test}"
-            log.error(error_msg)
-            raise ValueError(error_msg)
+        # Validate columns exist
+        validate_columns_exist(X_train, predictors, "training data")
+        validate_columns_exist(X_train, imputed_variables, "training data")
+        validate_columns_exist(X_test, predictors, "test data")
 
         # Validate quantiles if provided
         if quantiles:
-            invalid_quantiles = [q for q in quantiles if not 0 <= q <= 1]
-            if invalid_quantiles:
-                error_msg = f"Invalid quantiles (must be between 0 and 1): {invalid_quantiles}"
-                log.error(error_msg)
-                raise ValueError(error_msg)
+            validate_quantiles(quantiles)
 
         log.info(
             f"Generating imputations for {len(model_classes)} model classes"
@@ -100,11 +78,9 @@ def get_imputations(
 
         method_imputations: Dict[str, Dict[float, Any]] = {}
 
-        fitted_models: Dict[str, Any] = {}
         for model_class in model_classes:
             model_name = model_class.__name__
             log.info(f"Processing model: {model_name}")
-            method_imputations[model_name] = {}
 
             try:
                 # Instantiate the model
@@ -125,30 +101,12 @@ def get_imputations(
                         X_train, predictors, imputed_variables
                     )
 
-                fitted_models[model_name] = fitted_model
-
                 # Get predictions
                 log.info(f"Generating predictions with {model_name}")
                 imputations = fitted_model.predict(X_test, quantiles)
                 method_imputations[model_name] = imputations
 
-                # Log a summary of predictions
-                num_quantiles = len(imputations)
-                first_quantile = next(iter(imputations.keys()))
-                first_pred = imputations[first_quantile]
-
-                if isinstance(first_pred, np.ndarray):
-                    pred_shape = first_pred.shape
-                elif isinstance(first_pred, pd.DataFrame):
-                    pred_shape = first_pred.shape
-                else:
-                    pred_shape = "unknown"
-
-                log.info(
-                    f"Model {model_name} generated predictions for {num_quantiles} quantiles with shape {pred_shape}"
-                )
-
-            except Exception as model_error:
+            except (TypeError, AttributeError, ValueError) as model_error:
                 log.error(
                     f"Error processing model {model_name}: {str(model_error)}"
                 )
@@ -164,6 +122,6 @@ def get_imputations(
     except ValueError as e:
         # Re-raise validation errors directly
         raise e
-    except Exception as e:
+    except (KeyError, TypeError, AttributeError) as e:
         log.error(f"Unexpected error during imputation generation: {str(e)}")
         raise RuntimeError(f"Failed to generate imputations: {str(e)}") from e
