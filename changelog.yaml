@@ -137,3 +137,11 @@
     - Unconditional import of rpy2-dependent modules in utils package causing test
       failures
   date: 2025-09-07 08:07:54
+- bump: patch
+  changes:
+    added:
+    - Improved test coverage.
+    changed:
+    - Refactor the Imputer base class.
+    - Refactor cross-validation, comparison, visualization, and autoimputation functions.
+  date: 2025-09-14 03:57:42
