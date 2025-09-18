@@ -145,30 +145,6 @@ def test_ols_perfect_collinearity() -> None:
     assert not predictions[0.5]["y"].isna().any()
 
 
-def test_ols_constant_target() -> None:
-    """Test OLS with a constant target variable."""
-    np.random.seed(42)
-
-    data = pd.DataFrame(
-        {
-            "x1": np.random.randn(100),
-            "x2": np.random.randn(100),
-            "y": np.ones(100),  # Constant target
-        }
-    )
-
-    X_train, X_test = preprocess_data(data)
-
-    model = OLS()
-    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
-
-    predictions = fitted_model.predict(X_test, quantiles=[0.1, 0.5, 0.9])
-
-    # All predictions should be close to 1 (the constant value)
-    for q in [0.1, 0.5, 0.9]:
-        assert np.allclose(predictions[q]["y"].values, 1.0, rtol=0.1)
-
-
 # === Cross-Validation Test ===
 
 

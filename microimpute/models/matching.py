@@ -35,6 +35,10 @@ class MatchingResults(ImputerResults):
         seed: int,
         imputed_vars_dummy_info: Optional[Dict[str, Any]] = None,
         original_predictors: Optional[List[str]] = None,
+        categorical_targets: Optional[Dict[str, Dict]] = None,
+        boolean_targets: Optional[Dict[str, Dict]] = None,
+        constant_targets: Optional[Dict[str, Dict]] = None,
+        dummy_processor: Optional[Any] = None,
         log_level: Optional[str] = "WARNING",
         hyperparameters: Optional[Dict[str, Any]] = None,
     ) -> None:
@@ -50,6 +54,9 @@ class MatchingResults(ImputerResults):
                 about dummy variables for imputed variables.
             original_predictors: Optional list of original predictor names
                 before dummy encoding.
+            categorical_targets: Dictionary of categorical target info.
+            boolean_targets: Dictionary of boolean target info.
+            dummy_processor: Processor for handling dummy encoding in test data.
             hyperparameters: Optional dictionary of hyperparameters for the
                 matching function, specified after tunning.
         """
@@ -64,19 +71,27 @@ class MatchingResults(ImputerResults):
         self.matching_hotdeck = matching_hotdeck
         self.donor_data = donor_data
         self.hyperparameters = hyperparameters
+        self.categorical_targets = categorical_targets or {}
+        self.boolean_targets = boolean_targets or {}
+        self.dummy_processor = dummy_processor
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
-        self, X_test: pd.DataFrame, quantiles: Optional[List[float]] = None
+        self,
+        X_test: pd.DataFrame,
+        quantiles: Optional[List[float]] = None,
+        return_probs: bool = False,
     ) -> Dict[float, pd.DataFrame]:
         """Predict imputed values using the matching model.
 
         Args:
             X_test: DataFrame containing the recipient data.
             quantiles: List of quantiles to predict.
+            return_probs: If True, return one-hot probability vectors for matched categories.
 
         Returns:
             Dictionary mapping quantiles to imputed values.
+            If return_probs=True, includes 'probabilities' key with one-hot encodings.
 
         Raises:
             ValueError: If model is not properly set up or
@@ -128,10 +143,12 @@ class MatchingResults(ImputerResults):
                     f"{len(self.donor_data)} donor records). Using chunking approach."
                 )
                 return self._predict_chunked(
-                    X_test_copy, quantiles, chunk_size
+                    X_test_copy, quantiles, chunk_size, return_probs
                 )
             else:
-                return self._predict_single(X_test_copy, quantiles)
+                return self._predict_single(
+                    X_test_copy, quantiles, return_probs
+                )
 
         except ValueError as e:
             raise e
@@ -143,6 +160,7 @@ class MatchingResults(ImputerResults):
         self,
         X_test_copy: pd.DataFrame,
         quantiles: Optional[List[float]] = None,
+        return_probs: bool = False,
     ) -> Dict[float, pd.DataFrame]:
         """Perform matching on the full dataset without chunking."""
         try:
@@ -168,13 +186,16 @@ class MatchingResults(ImputerResults):
             )
             raise RuntimeError("Hot deck matching failed") from matching_error
 
-        return self._process_matching_results(fused0, X_test_copy, quantiles)
+        return self._process_matching_results(
+            fused0, X_test_copy, quantiles, return_probs
+        )
 
     def _predict_chunked(
         self,
         X_test_copy: pd.DataFrame,
         quantiles: Optional[List[float]],
         chunk_size: int,
+        return_probs: bool = False,
     ) -> Dict[float, pd.DataFrame]:
         """Perform matching using chunking for large datasets."""
         all_results = []
@@ -231,16 +252,65 @@ class MatchingResults(ImputerResults):
             combined_results = combined_results.loc[X_test_copy.index]
 
             return self._process_matching_results(
-                combined_results, X_test_copy, quantiles
+                combined_results, X_test_copy, quantiles, return_probs
             )
         else:
             raise RuntimeError("No chunk results were produced")
+
+    def _generate_one_hot_probabilities(
+        self,
+        variable: str,
+        matched_values: np.ndarray,
+        index: pd.Index,
+        categorical_targets: Dict,
+        boolean_targets: Dict,
+    ) -> Optional[pd.DataFrame]:
+        """Generate one-hot probability matrix for categorical/boolean variables.
+
+        Args:
+            variable: Name of the variable
+            matched_values: Array of matched category values
+            index: Index for the output DataFrame
+            categorical_targets: Dictionary of categorical target info
+            boolean_targets: Dictionary of boolean target info
+
+        Returns:
+            DataFrame with one-hot encoded probabilities or None if not categorical
+        """
+        if (
+            variable not in categorical_targets
+            and variable not in boolean_targets
+        ):
+            return None
+
+        # Determine categories
+        if variable in boolean_targets:
+            categories = [False, True]
+        else:
+            categories = categorical_targets[variable].get("categories", [])
+
+        if not categories:
+            return None
+
+        # Create probability matrix (one-hot encoding)
+        prob_df = pd.DataFrame(
+            0.0, index=index, columns=[f"prob_{cat}" for cat in categories]
+        )
+
+        # Set 1.0 for matched category
+        for idx, val in enumerate(matched_values):
+            col_name = f"prob_{val}"
+            if col_name in prob_df.columns:
+                prob_df.iloc[idx, prob_df.columns.get_loc(col_name)] = 1.0
+
+        return prob_df
 
     def _process_matching_results(
         self,
         fused0: pd.DataFrame,
         X_test_copy: pd.DataFrame,
         quantiles: Optional[List[float]],
+        return_probs: bool = False,
     ) -> Dict[float, pd.DataFrame]:
         """Process matching results into the expected output format."""
         try:
@@ -271,6 +341,11 @@ class MatchingResults(ImputerResults):
 
         # Create output dictionary with results
         imputations: Dict[float, pd.DataFrame] = {}
+        prob_results = {} if return_probs else None
+
+        # Get target type information if available
+        categorical_targets = getattr(self, "categorical_targets", {})
+        boolean_targets = getattr(self, "boolean_targets", {})
 
         try:
             if quantiles:
@@ -286,7 +361,24 @@ class MatchingResults(ImputerResults):
                         )
                         imputed_df[variable] = fused0[variable].values
 
+                        # Generate one-hot probabilities if requested
+                        if return_probs and prob_results is not None:
+                            prob_df = self._generate_one_hot_probabilities(
+                                variable,
+                                fused0[variable].values,
+                                X_test_copy.index,
+                                categorical_targets,
+                                boolean_targets,
+                            )
+                            if prob_df is not None:
+                                prob_results[variable] = prob_df
+
                     imputations[q] = imputed_df
+
+                # Add probabilities to results if requested
+                if return_probs and prob_results:
+                    imputations["probabilities"] = prob_results
+
                 return imputations
             else:
                 # If no quantiles specified, use a default one
@@ -298,7 +390,27 @@ class MatchingResults(ImputerResults):
                 for variable in self.imputed_variables:
                     self.logger.info(f"Imputing variable {variable}")
                     imputed_df[variable] = fused0[variable].values
+
+                    # Generate one-hot probabilities if requested
+                    if return_probs and prob_results is not None:
+                        prob_df = self._generate_one_hot_probabilities(
+                            variable,
+                            fused0[variable].values,
+                            X_test_copy.index,
+                            categorical_targets,
+                            boolean_targets,
+                        )
+                        if prob_df is not None:
+                            prob_results[variable] = prob_df
+
                 imputations[q_default] = imputed_df
+
+                # Add probabilities to results if requested
+                if return_probs and prob_results:
+                    return {
+                        "imputations": imputations[q_default],
+                        "probabilities": prob_results,
+                    }
 
                 return imputations[q_default]
         except Exception as output_error:
@@ -352,6 +464,10 @@ class Matching(Imputer):
         predictors: List[str],
         imputed_variables: List[str],
         original_predictors: Optional[List[str]] = None,
+        categorical_targets: Optional[Dict[str, Dict]] = None,
+        boolean_targets: Optional[Dict[str, Dict]] = None,
+        numeric_targets: Optional[List[str]] = None,
+        constant_targets: Optional[Dict[str, Dict]] = None,
         tune_hyperparameters: bool = False,
         **matching_kwargs: Any,
     ) -> MatchingResults:
@@ -415,6 +531,9 @@ class Matching(Imputer):
                     imputed_variables=imputed_variables,
                     imputed_vars_dummy_info=self.imputed_vars_dummy_info,
                     original_predictors=self.original_predictors,
+                    categorical_targets=categorical_targets,
+                    boolean_targets=boolean_targets,
+                    dummy_processor=getattr(self, "dummy_processor", None),
                     seed=self.seed,
                     log_level=self.log_level,
                     hyperparameters=matching_kwargs,

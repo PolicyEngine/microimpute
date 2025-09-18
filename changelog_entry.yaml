@@ -1,0 +1,4 @@
+- bump: patch
+  changes:
+    added:
+    - RandomForestClassifier and LogisticRegression models for categorical variable imputation.

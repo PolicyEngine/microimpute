@@ -242,8 +242,8 @@ def test_perfect_predictions() -> None:
 
     X_test = pd.DataFrame(
         {
-            "x": [10, 20, 30],
-            "y": [10, 20, 30],  # Perfect match
+            "x": [12, 25, 100],
+            "y": [12, 25, 100],  # Perfect match
         }
     )
 

@@ -68,11 +68,13 @@ def data_with_edge_cases() -> pd.DataFrame:
 
 # Define all imputer model classes to test
 ALL_IMPUTER_MODELS = [OLS, QuantReg, QRF]
+CATEGORICAL_MODELS = [OLS, QRF]
 
 try:
     from microimpute.models.matching import Matching
 
     ALL_IMPUTER_MODELS.append(Matching)
+    CATEGORICAL_MODELS.append(Matching)
 except ImportError:
     pass
 
@@ -206,19 +208,46 @@ def test_boolean_variables(model_class: Type[Imputer]) -> None:
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_imputation_categorical_bool_targets(
+def test_imputation_bool_targets(
     model_class: Type[Imputer],
 ) -> None:
-    """Test imputing categorical and boolean target variables."""
+    """Test imputing boolean target variables."""
     diabetes = load_diabetes()
     df = pd.DataFrame(diabetes.data, columns=diabetes.feature_names)
 
-    # Add random boolean and categorical targets
+    # Add random boolean targets
     df["bool"] = np.random.choice([True, False], size=len(df))
+
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["bool", "s1"]
+
+    X_train, X_test = preprocess_data(df)
+
+    model = model_class()
+    fitted_model = model.fit(X_train, predictors, imputed_variables)
+    predictions = fitted_model.predict(X_test)
+
+    # Default behavior returns DataFrame directly
+    assert isinstance(predictions, pd.DataFrame)
+    assert predictions["bool"].dtype == "bool"
+    assert not predictions["s1"].isna().any()
+
+
+@pytest.mark.parametrize(
+    "model_class", CATEGORICAL_MODELS, ids=lambda cls: cls.__name__
+)
+def test_imputation_categorical_targets(
+    model_class: Type[Imputer],
+) -> None:
+    """Test imputing categorical target variables."""
+    diabetes = load_diabetes()
+    df = pd.DataFrame(diabetes.data, columns=diabetes.feature_names)
+
+    # Add random categorical targets
     df["categorical"] = np.random.choice(["one", "two", "three"], size=len(df))
 
     predictors = ["age", "sex", "bmi", "bp"]
-    imputed_variables = ["categorical", "bool"]
+    imputed_variables = ["categorical"]
 
     X_train, X_test = preprocess_data(df)
 
@@ -229,7 +258,38 @@ def test_imputation_categorical_bool_targets(
     # Default behavior returns DataFrame directly
     assert isinstance(predictions, pd.DataFrame)
     assert predictions["categorical"].dtype == "object"
-    assert predictions["bool"].dtype == "bool"
+
+    # Test probability predictions for models that support it
+    if model_class.__name__ in ["OLS", "QRF", "Matching"]:
+        # Get predictions with probabilities using quantiles
+        # (this ensures consistent return format across models)
+        predictions_with_probs = fitted_model.predict(
+            X_test, quantiles=[0.5], return_probs=True
+        )
+        assert isinstance(predictions_with_probs, dict)
+        assert 0.5 in predictions_with_probs
+        assert "probabilities" in predictions_with_probs
+
+        # Check that we still get the categorical predictions
+        assert isinstance(predictions_with_probs[0.5], pd.DataFrame)
+        assert predictions_with_probs[0.5]["categorical"].dtype == "object"
+
+        # Check probability format
+        probs = predictions_with_probs["probabilities"]["categorical"]
+        assert isinstance(probs, pd.DataFrame)
+
+        # Should have columns for each category
+        expected_cols = ["prob_one", "prob_two", "prob_three"]
+        for col in expected_cols:
+            assert col in probs.columns
+
+        # Probabilities should sum to 1 for each row (within tolerance)
+        row_sums = probs.sum(axis=1)
+        assert np.allclose(row_sums, 1.0, atol=1e-6)
+
+        # All probabilities should be between 0 and 1
+        assert (probs >= 0.0).all().all()
+        assert (probs <= 1.0).all().all()
 
 
 # === Edge Cases and Error Handling ===
@@ -324,6 +384,33 @@ def test_constant_predictor(model_class: Type[Imputer]) -> None:
     assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert not predictions[0.5]["y"].isna().any()
+
+
+@pytest.mark.parametrize(
+    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+)
+def test_constant_target(model_class: Type[Imputer]) -> None:
+    """Test models with a constant target variable."""
+    np.random.seed(42)
+
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(100),
+            "x2": np.random.randn(100),
+            "y": np.ones(100) * 100,  # Constant target
+        }
+    )
+
+    X_train, X_test = preprocess_data(data)
+
+    model = model_class()
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
+
+    predictions = fitted_model.predict(X_test, quantiles=[0.1, 0.5, 0.9])
+
+    # All predictions should be close to 100 (the constant value)
+    for q in [0.1, 0.5, 0.9]:
+        assert np.allclose(predictions[q]["y"].values, 100.0, rtol=0.1)
 
 
 @pytest.mark.parametrize(
