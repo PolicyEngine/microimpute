@@ -145,3 +145,9 @@
     - Refactor the Imputer base class.
     - Refactor cross-validation, comparison, visualization, and autoimputation functions.
   date: 2025-09-14 03:57:42
+- bump: patch
+  changes:
+    added:
+    - RandomForestClassifier and LogisticRegression models for categorical variable
+      imputation.
+  date: 2025-09-18 12:24:10
