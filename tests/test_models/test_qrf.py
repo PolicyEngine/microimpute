@@ -621,7 +621,7 @@ def test_qrf_error_handling() -> None:
     try:
         predictions = fitted_model.predict(test_data)
     except Exception as e:
-        assert "preprocess data" in str(e).lower()
+        assert "none of" in str(e).lower() and "are in the" in str(e).lower()
 
 
 # === Internal Model Tests ===
