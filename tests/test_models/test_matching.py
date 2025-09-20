@@ -300,17 +300,24 @@ def test_matching_cross_validation(diabetes_data: pd.DataFrame) -> None:
         Matching, data, predictors, imputed_variables
     )
 
-    # Validate cross-validation results
-    assert not matching_results.isna().any().any()
-    assert len(matching_results) > 0
+    # Validate cross-validation results - now a dict with dual metrics
+    assert isinstance(matching_results, dict)
+    assert "quantile_loss" in matching_results
+    assert "log_loss" in matching_results
 
-    # Test visualization capability
+    # Check quantile_loss results (for numerical variables)
+    ql_results = matching_results["quantile_loss"]
+    assert isinstance(ql_results["test"], pd.DataFrame)
+    assert isinstance(ql_results["train"], pd.DataFrame)
+    assert not ql_results["test"].isna().all().all()
+    assert ql_results["mean_test"] > 0
+
+    # Test visualization capability with quantile_loss results
     perf_results_viz = model_performance_results(
-        results=matching_results,
+        results=ql_results["test"],
         model_name="Matching",
         method_name="Cross-Validation Quantile Loss Average",
     )
-
     assert perf_results_viz is not None
 
 

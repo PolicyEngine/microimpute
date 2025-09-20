@@ -16,6 +16,7 @@ Key functions:
 import logging
 from typing import Any, Dict, List, Optional, Tuple, Type
 
+import numpy as np
 import pandas as pd
 
 from microimpute.comparisons.validation import (
@@ -24,8 +25,7 @@ from microimpute.comparisons.validation import (
 )
 from microimpute.evaluations import cross_validate_model
 from microimpute.models import Imputer
-from microimpute.models.quantreg import QuantReg
-from microimpute.utils.data import preprocess_data, unnormalize_predictions
+from microimpute.utils.data import preprocess_data
 
 log = logging.getLogger(__name__)
 
@@ -199,6 +199,7 @@ def evaluate_model(
 
     Returns:
         Tuple containing model name and cross-validation results.
+        Results are now a dict with 'quantile_loss' and 'log_loss' keys.
     """
     model_name = model.__name__
     log.info(f"Evaluating {model_name}...")
@@ -257,6 +258,29 @@ def fit_and_predict_model(
     model_name = model_class.__name__
     model = model_class(log_level=log_level)
 
+    # Check for categorical variables
+    from microimpute.comparisons.metrics import get_metric_for_variable_type
+
+    has_categorical = any(
+        get_metric_for_variable_type(training_data[var], var) == "log_loss"
+        for var in imputed_variables
+    )
+
+    # Special check for QuantReg with categorical variables
+    if model_name == "QuantReg" and has_categorical:
+        categorical_vars = [
+            var
+            for var in imputed_variables
+            if get_metric_for_variable_type(training_data[var], var)
+            == "log_loss"
+        ]
+        error_msg = (
+            f"QuantReg does not support categorical variables: {categorical_vars}. "
+            f"Please use QRF, OLS, or Matching models instead."
+        )
+        log.error(error_msg)
+        raise ValueError(error_msg)
+
     # Fit the model
     if model_name == "QuantReg":
         # QuantReg needs explicit quantiles during fitting
@@ -284,8 +308,13 @@ def fit_and_predict_model(
             weight_col=weight_col,
         )
 
-    # Generate predictions
-    imputations = fitted_model.predict(imputing_data, quantiles=[quantile])
+    # Generate predictions with return_probs for categorical variables
+    if has_categorical:
+        imputations = fitted_model.predict(
+            imputing_data, quantiles=[quantile], return_probs=True
+        )
+    else:
+        imputations = fitted_model.predict(imputing_data, quantiles=[quantile])
 
     # Handle case where predict returns a DataFrame directly
     if isinstance(imputations, pd.DataFrame):
@@ -294,27 +323,180 @@ def fit_and_predict_model(
     return fitted_model, imputations
 
 
-def select_best_model(
-    method_results_df: pd.DataFrame,
-) -> Tuple[str, pd.Series]:
-    """Select the best model based on cross-validation results.
+def select_best_model_dual_metrics(
+    method_results: Dict[str, Dict[str, Any]],
+    metric_priority: str = "auto",
+) -> Tuple[str, Dict[str, float]]:
+    """Select the best model based on dual metric cross-validation results.
 
     Args:
-        method_results_df: DataFrame with model performance metrics.
+        method_results: Dictionary with model names as keys and CV results as values.
+                       Each result contains 'quantile_loss' and 'log_loss' subdicts.
+        metric_priority: 'auto' (rank-based), 'numerical', 'categorical', or 'combined'.
 
     Returns:
-        Tuple of (best_method_name, best_method_row)
+        Tuple of (best_method_name, metrics_dict)
     """
-    # Add mean_loss column if not present
-    if "mean_loss" not in method_results_df.columns:
-        method_results_df["mean_loss"] = method_results_df.mean(axis=1)
+    # Extract metrics for each model
+    model_metrics = {}
+    for model_name, results in method_results.items():
+        model_metrics[model_name] = {
+            "quantile_loss": results.get("quantile_loss", {}).get(
+                "mean_test", np.inf
+            ),
+            "log_loss": results.get("log_loss", {}).get("mean_test", np.inf),
+            "n_quantile_vars": len(
+                results.get("quantile_loss", {}).get("variables", [])
+            ),
+            "n_log_vars": len(
+                results.get("log_loss", {}).get("variables", [])
+            ),
+        }
 
-    best_method = method_results_df["mean_loss"].idxmin()
-    best_row = method_results_df.loc[best_method]
+    # Select based on priority
+    if metric_priority == "numerical":
+        # Check if any model has numerical variables
+        has_numerical = any(
+            model_metrics[m]["n_quantile_vars"] > 0 for m in model_metrics
+        )
+        if not has_numerical:
+            error_msg = (
+                "No numerical variables found for evaluation with 'numerical' metric priority. "
+                "Please check your imputed_variables or use a different metric_priority."
+            )
+            log.error(error_msg)
+            raise ValueError(error_msg)
 
-    log.info(
-        f"The method with the lowest average loss is {best_method}, "
-        f"with an average loss across variables and quantiles of {best_row['mean_loss']}"
-    )
+        # Use only quantile loss
+        best_method = min(
+            model_metrics.keys(),
+            key=lambda m: (
+                model_metrics[m]["quantile_loss"]
+                if not np.isnan(model_metrics[m]["quantile_loss"])
+                else np.inf
+            ),
+        )
+        log.info(
+            f"Selected {best_method} based on quantile loss: {model_metrics[best_method]['quantile_loss']:.6f}"
+        )
 
-    return best_method, best_row
+    elif metric_priority == "categorical":
+        # Check if any model has categorical variables
+        has_categorical = any(
+            model_metrics[m]["n_log_vars"] > 0 for m in model_metrics
+        )
+        if not has_categorical:
+            error_msg = (
+                "No categorical variables found for evaluation with 'categorical' metric priority. "
+                "Please check your imputed_variables or use a different metric_priority."
+            )
+            log.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Use only log loss
+        best_method = min(
+            model_metrics.keys(),
+            key=lambda m: (
+                model_metrics[m]["log_loss"]
+                if not np.isnan(model_metrics[m]["log_loss"])
+                else np.inf
+            ),
+        )
+        log.info(
+            f"Selected {best_method} based on log loss: {model_metrics[best_method]['log_loss']:.6f}"
+        )
+
+    elif metric_priority == "auto":
+        # Rank-based selection
+        models = list(model_metrics.keys())
+
+        # Check if there are any variables to evaluate
+        total_vars_across_models = sum(
+            model_metrics[m]["n_quantile_vars"]
+            + model_metrics[m]["n_log_vars"]
+            for m in models
+        )
+        if total_vars_across_models == 0:
+            error_msg = (
+                "No variables compatible with any model for evaluation. "
+                "Please check that your imputed_variables are compatible with the selected models. "
+                "For example, QuantReg only supports numerical variables."
+            )
+            log.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Calculate ranks for each metric
+        quantile_scores = [model_metrics[m]["quantile_loss"] for m in models]
+        log_scores = [model_metrics[m]["log_loss"] for m in models]
+
+        # Replace NaN/inf with worst rank
+        quantile_ranks = pd.Series(quantile_scores).rank(na_option="bottom")
+        log_ranks = pd.Series(log_scores).rank(na_option="bottom")
+
+        # Weight ranks by number of variables
+        avg_ranks = []
+        for i, m in enumerate(models):
+            n_q = model_metrics[m]["n_quantile_vars"]
+            n_l = model_metrics[m]["n_log_vars"]
+            if (n_q + n_l) > 0:
+                weighted_rank = (
+                    n_q * quantile_ranks.iloc[i] + n_l * log_ranks.iloc[i]
+                ) / (n_q + n_l)
+            else:
+                weighted_rank = float("inf")
+            avg_ranks.append(weighted_rank)
+
+        best_idx = np.argmin(avg_ranks)
+        best_method = models[best_idx]
+        log.info(
+            f"Selected {best_method} based on weighted rank (quantile rank: {quantile_ranks.iloc[best_idx]:.1f}, "
+            f"log rank: {log_ranks.iloc[best_idx]:.1f})"
+        )
+
+    else:  # combined or other
+        # Check if there are any variables to evaluate
+        total_vars = sum(
+            model_metrics[m]["n_quantile_vars"]
+            + model_metrics[m]["n_log_vars"]
+            for m in model_metrics
+        )
+        if total_vars == 0:
+            error_msg = (
+                "No variables available for evaluation with 'combined' metric priority. "
+                "No models have compatible variables with the imputed_variables provided."
+            )
+            log.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Simple average of normalized metrics
+        best_score = float("inf")
+        best_method = None
+
+        for model_name, metrics in model_metrics.items():
+            q_loss = (
+                metrics["quantile_loss"]
+                if not np.isnan(metrics["quantile_loss"])
+                else 0
+            )
+            l_loss = (
+                metrics["log_loss"] if not np.isnan(metrics["log_loss"]) else 0
+            )
+            n_q = metrics["n_quantile_vars"]
+            n_l = metrics["n_log_vars"]
+
+            if (n_q + n_l) > 0:
+                combined = (n_q * q_loss + n_l * l_loss) / (n_q + n_l)
+                if combined < best_score:
+                    best_score = combined
+                    best_method = model_name
+
+        if best_method is None:
+            error_msg = "Failed to select a model - all models have infinite combined scores."
+            log.error(error_msg)
+            raise RuntimeError(error_msg)
+
+        log.info(
+            f"Selected {best_method} based on combined metric: {best_score:.6f}"
+        )
+
+    return best_method, model_metrics[best_method]

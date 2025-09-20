@@ -17,7 +17,7 @@ from microimpute.comparisons.autoimpute_helpers import (
     evaluate_model,
     fit_and_predict_model,
     prepare_data_for_imputation,
-    select_best_model,
+    select_best_model_dual_metrics,
     validate_autoimpute_inputs,
 )
 from microimpute.config import (
@@ -26,7 +26,7 @@ from microimpute.config import (
     TRAIN_SIZE,
     VALIDATE_CONFIG,
 )
-from microimpute.models import OLS, QRF, Imputer, ImputerResults, QuantReg
+from microimpute.models import OLS, QRF, Imputer, QuantReg
 from microimpute.utils.data import unnormalize_predictions
 
 try:
@@ -53,9 +53,9 @@ class AutoImputeResult(BaseModel):
         Copy of the receiver data with the median-quantile imputations of the best performing model attached.
     fitted_models : Dict[str, Any]
         Mapping model name → fitted Imputer instance.
-    cv_results : pd.DataFrame
-        Cross-validation loss table (models as index, quantiles as columns)
-        with an extra "mean_loss" column.
+    cv_results : Dict[str, Dict[str, Any]]
+        Cross-validation results with separate quantile_loss and log_loss metrics
+        for each model.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -65,7 +65,7 @@ class AutoImputeResult(BaseModel):
     ] = Field(...)
     receiver_data: pd.DataFrame = Field(...)
     fitted_models: Dict[str, Any] = Field(...)
-    cv_results: pd.DataFrame = Field(...)
+    cv_results: Dict[str, Dict[str, Any]] = Field(...)
 
 
 def _setup_logging(log_level: str) -> int:
@@ -102,11 +102,12 @@ def _evaluate_models_parallel(
     tune_hyperparameters: bool,
     hyperparameters: Optional[Dict[str, Dict[str, Any]]],
     n_jobs: int = -1,
-) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    """Evaluate multiple models in parallel using cross-validation.
+) -> Tuple[Dict[str, Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Evaluate multiple models in parallel using cross-validation with dual metrics.
 
     Returns:
-        Tuple of (results_dataframe, best_hyperparameters_dict or None)
+        Tuple of (results_dict, best_hyperparameters_dict or None)
+        results_dict contains dual metric results for each model
     """
     # Check if Matching model is present (requires sequential processing)
     has_matching = any(model.__name__ == "Matching" for model in model_classes)
@@ -144,31 +145,25 @@ def _evaluate_models_parallel(
         for task in tqdm(parallel_tasks, desc="Evaluating models")
     )
 
-    # Process results
-    method_test_losses = {}
+    # Process results - now expecting dual metric format
+    method_results = {}
     best_hyperparams = {}
 
     if tune_hyperparameters:
         for result in results:
             if len(result) == 3:
                 model_name, cv_result, best_params = result
-                method_test_losses[model_name] = cv_result.loc["test"]
+                method_results[model_name] = cv_result
                 if model_name in ["QRF", "Matching"]:
                     best_hyperparams[model_name] = best_params
             else:
                 model_name, cv_result = result
-                method_test_losses[model_name] = cv_result.loc["test"]
+                method_results[model_name] = cv_result
     else:
         for model_name, cv_result in results:
-            method_test_losses[model_name] = cv_result.loc["test"]
+            method_results[model_name] = cv_result
 
-    method_results_df = pd.DataFrame.from_dict(
-        method_test_losses, orient="index"
-    )
-
-    return method_results_df, (
-        best_hyperparams if tune_hyperparameters else None
-    )
+    return method_results, (best_hyperparams if tune_hyperparameters else None)
 
 
 def _generate_imputations_for_all_models(
@@ -248,6 +243,7 @@ def autoimpute(
     tune_hyperparameters: Optional[bool] = False,
     normalize_data: Optional[bool] = False,
     impute_all: Optional[bool] = False,
+    metric_priority: Optional[str] = "auto",
     random_state: Optional[int] = RANDOM_STATE,
     train_size: Optional[float] = TRAIN_SIZE,
     k_folds: Optional[int] = 5,
@@ -280,6 +276,11 @@ def autoimpute(
         normalize_data : If True, will normalize the data before imputation.
         impute_all : If True, will return final imputations for all models not
             just the best one.
+        metric_priority : Strategy for model selection when both metrics are present:
+            'auto' (default): rank-based selection weighted by variable count
+            'numerical': select based on quantile loss only
+            'categorical': select based on log loss only
+            'combined': weighted average of both metrics
         random_state : Random seed for reproducibility
         train_size : Proportion of data to use for training in preprocessing
         k_folds : Number of folds for cross-validation. Defaults to 5.
@@ -382,7 +383,7 @@ def autoimpute(
         )
 
         # Evaluate models in parallel
-        method_results_df, best_hyperparams = _evaluate_models_parallel(
+        method_results, best_hyperparams = _evaluate_models_parallel(
             model_classes,
             training_data,
             predictors,
@@ -400,8 +401,12 @@ def autoimpute(
             main_progress.update(1)
             main_progress.set_description("Model selection")
 
-        log.info(f"Comparing across {model_classes} methods.")
-        best_method, best_row = select_best_model(method_results_df)
+        log.info(
+            f"Comparing across {model_classes} methods using metric_priority='{metric_priority}'."
+        )
+        best_method, best_metrics = select_best_model_dual_metrics(
+            method_results, metric_priority
+        )
 
         # Step 4: Generate imputations with best method
         if numeric_log_level <= logging.INFO:
@@ -505,7 +510,7 @@ def autoimpute(
             imputations=final_imputations_dict,
             receiver_data=receiver_data,
             fitted_models=fitted_models_dict,
-            cv_results=method_results_df,
+            cv_results=method_results,
         )
 
     except ValueError as e:
