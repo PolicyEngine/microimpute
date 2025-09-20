@@ -7,8 +7,8 @@ and validation utilities for ensuring data integrity.
 Key components:
     - autoimpute: automated imputation method selection and application
     - get_imputations: generate imputations using multiple model classes
-    - quantile_loss: calculate quantile-based loss metrics
-    - compare_quantile_loss: compare performance across imputation methods
+    - metrics: calculate quantile loss and log loss metrics based on variable type
+    - compare_metrics: compare performance across imputation methods using appropriate metrics
     - Validation utilities for data and parameter validation
 """
 
@@ -18,10 +18,12 @@ from microimpute.comparisons.autoimpute import AutoImputeResult, autoimpute
 # Import imputation utilities
 from microimpute.comparisons.imputations import get_imputations
 
-# Import loss functions
-from microimpute.comparisons.quantile_loss import (
-    compare_quantile_loss,
-    compute_quantile_loss,
+# Import loss/metric functions
+from microimpute.comparisons.metrics import (
+    compare_metrics,
+    compute_loss,
+    get_metric_for_variable_type,
+    log_loss,
     quantile_loss,
 )
 

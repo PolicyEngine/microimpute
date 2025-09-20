@@ -14,7 +14,7 @@ import pandas as pd
 from pydantic import validate_call
 from sklearn.model_selection import KFold
 
-from microimpute.comparisons.quantile_loss import quantile_loss
+from microimpute.comparisons.metrics import quantile_loss
 from microimpute.comparisons.validation import (
     validate_columns_exist,
     validate_quantiles,

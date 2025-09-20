@@ -25,10 +25,12 @@ __version__ = "1.1.2"
 from microimpute.comparisons.autoimpute import AutoImputeResult, autoimpute
 from microimpute.comparisons.imputations import get_imputations
 
-# Import comparison utilities
-from microimpute.comparisons.quantile_loss import (
-    compare_quantile_loss,
-    compute_quantile_loss,
+# Import comparison and metric utilities
+from microimpute.comparisons.metrics import (
+    compare_metrics,
+    compute_loss,
+    get_metric_for_variable_type,
+    log_loss,
     quantile_loss,
 )
 
