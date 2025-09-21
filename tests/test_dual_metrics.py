@@ -290,19 +290,17 @@ def test_cross_validation_dual_metrics(mixed_type_data: pd.DataFrame) -> None:
 
     # Check quantile loss results
     ql_results = cv_results["quantile_loss"]
-    assert "train" in ql_results
-    assert "test" in ql_results
     assert "mean_train" in ql_results
     assert "mean_test" in ql_results
     assert "variables" in ql_results
     assert "num_target1" in ql_results["variables"]
-    assert isinstance(ql_results["train"], pd.DataFrame)
-    assert isinstance(ql_results["test"], pd.DataFrame)
+    assert isinstance(ql_results["results"], pd.DataFrame)
+    assert "train" in ql_results["results"].index
+    assert "test" in ql_results["results"].index
 
     # Check log loss results
     ll_results = cv_results["log_loss"]
-    assert "train" in ll_results
-    assert "test" in ll_results
+    assert "results" in ll_results  # Single DataFrame with train/test rows
     assert "mean_train" in ll_results
     assert "mean_test" in ll_results
     assert "variables" in ll_results

@@ -339,8 +339,9 @@ def test_autoimpute_cv_results_structure(simple_data: tuple) -> None:
         assert not np.isnan(ql_results["mean_test"])
         assert not np.isnan(ql_results["mean_train"])
         assert "variables" in ql_results
-        assert "test" in ql_results  # DataFrame of test results
-        assert "train" in ql_results  # DataFrame of train results
+        assert isinstance(ql_results["results"], pd.DataFrame)
+        assert "train" in ql_results["results"].index
+        assert "test" in ql_results["results"].index
 
 
 # === Visualization Compatibility ===

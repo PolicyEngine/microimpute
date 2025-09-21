@@ -54,8 +54,7 @@ class AutoImputeResult(BaseModel):
     fitted_models : Dict[str, Any]
         Mapping model name → fitted Imputer instance.
     cv_results : Dict[str, Dict[str, Any]]
-        Cross-validation results with separate quantile_loss and log_loss metrics
-        for each model.
+        Cross-validation results with separate quantile_loss and log_loss metrics for each model.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -291,7 +290,7 @@ def autoimpute(
             - imputations: Dict mapping model name(s) to quantile → DataFrame of imputed values
             - receiver_data: DataFrame with imputed values added
             - fitted_models: Dict mapping model name to ImputerResults instance(s)
-            - cv_results: DataFrame of cross-validation losses for each model
+            - cv_results: Dictionary of cross-validation quantile and log losses for each model
 
     Raises:
         ValueError: If inputs are invalid (e.g., invalid quantiles, missing columns)

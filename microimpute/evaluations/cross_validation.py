@@ -420,15 +420,13 @@ def cross_validate_model(
         Dictionary containing separate results for quantile_loss and log_loss:
         {
             "quantile_loss": {
-                "train": pd.DataFrame,  # rows: folds, cols: quantiles
-                "test": pd.DataFrame,
+                "results": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles
                 "mean_train": float,
                 "mean_test": float,
                 "variables": List[str]
             },
             "log_loss": {
-                "train": pd.DataFrame,  # constant across quantiles
-                "test": pd.DataFrame,
+                "results": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles (constant values)
                 "mean_train": float,
                 "mean_test": float,
                 "variables": List[str]
@@ -500,15 +498,13 @@ def cross_validate_model(
             # Return empty results structure
             return {
                 "quantile_loss": {
-                    "train": pd.DataFrame(),
-                    "test": pd.DataFrame(),
+                    "results": pd.DataFrame(),  # Empty DataFrame
                     "mean_train": np.nan,
                     "mean_test": np.nan,
                     "variables": [],
                 },
                 "log_loss": {
-                    "train": pd.DataFrame(),
-                    "test": pd.DataFrame(),
+                    "results": pd.DataFrame(),  # Empty DataFrame
                     "mean_train": np.nan,
                     "mean_test": np.nan,
                     "variables": [],
@@ -561,17 +557,32 @@ def cross_validate_model(
 
         for metric_type in ["quantile_loss", "log_loss"]:
             if metric_results[metric_type]["variables"]:
-                # Create DataFrames for this metric
-                test_df = pd.DataFrame(metric_results[metric_type]["test"])
-                train_df = pd.DataFrame(metric_results[metric_type]["train"])
+                # Create a single DataFrame with train and test as rows
+                # This matches the original format and is more convenient
+                combined_df = pd.DataFrame(
+                    [
+                        {
+                            q: np.mean(values)
+                            for q, values in metric_results[metric_type][
+                                "train"
+                            ].items()
+                        },
+                        {
+                            q: np.mean(values)
+                            for q, values in metric_results[metric_type][
+                                "test"
+                            ].items()
+                        },
+                    ],
+                    index=["train", "test"],
+                )
 
                 # Calculate means
-                mean_test = test_df.mean().mean()
-                mean_train = train_df.mean().mean()
+                mean_test = combined_df.loc["test"].mean()
+                mean_train = combined_df.loc["train"].mean()
 
                 final_results[metric_type] = {
-                    "train": train_df,
-                    "test": test_df,
+                    "results": combined_df,  # Single DataFrame with train/test rows
                     "mean_train": mean_train,
                     "mean_test": mean_test,
                     "variables": metric_results[metric_type]["variables"],
@@ -583,8 +594,7 @@ def cross_validate_model(
             else:
                 # No variables use this metric
                 final_results[metric_type] = {
-                    "train": pd.DataFrame(),
-                    "test": pd.DataFrame(),
+                    "results": pd.DataFrame(),  # Empty DataFrame
                     "mean_train": np.nan,
                     "mean_test": np.nan,
                     "variables": [],
