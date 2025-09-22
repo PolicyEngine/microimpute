@@ -103,7 +103,7 @@ def log_loss(
             # Convert to probabilities if needed
             if np.all(np.isin(y_pred.flatten(), labels)):
                 # These are class predictions, not probabilities
-                log.warning(
+                log.info(
                     "Converting class labels to probabilities for log loss computation. "
                     "For more accurate metrics, please provide predicted probabilities "
                     "using model.predict_proba() or equivalent method instead of class predictions. "
@@ -141,6 +141,34 @@ def log_loss(
     except Exception as e:
         log.error(f"Error computing log loss: {str(e)}")
         raise RuntimeError(f"Failed to compute log loss: {str(e)}") from e
+
+
+def order_probabilities_alphabetically(
+    probabilities: np.ndarray,
+    model_classes: np.ndarray,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Order probability matrix columns to match alphabetically sorted class labels.
+
+    The probabilities from sklearn's predict_proba() are ordered according to the model's
+    .classes_ attribute, which may not be in alphabetical order. This function reorders
+    them alphabetically, which is required for sklearn's log_loss function.
+
+    Args:
+        probabilities: Probability matrix from model.predict_proba(), shape (n_samples, n_classes)
+                      where columns are ordered according to model.classes_
+        model_classes: The model's .classes_ attribute indicating the current order of columns
+
+    Returns:
+        Tuple of (reordered_probabilities, alphabetically_sorted_labels)
+    """
+    # Get the alphabetical order of classes
+    alphabetical_indices = np.argsort(model_classes)
+    alphabetical_classes = model_classes[alphabetical_indices]
+
+    # Reorder probability columns to match alphabetical order
+    reordered_probabilities = probabilities[:, alphabetical_indices]
+
+    return reordered_probabilities, alphabetical_classes
 
 
 @validate_call(config=VALIDATE_CONFIG)

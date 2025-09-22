@@ -250,6 +250,8 @@ def _compute_fold_loss_by_metric(
     train_results: Dict[float, List],
     variable_metrics: Dict[str, str],
     imputed_variables: List[str],
+    test_probabilities: Dict[str, List] = None,
+    train_probabilities: Dict[str, List] = None,
 ) -> Dict[str, Any]:
     """Compute loss for a specific fold and quantile, separated by metric type."""
     result = {
@@ -287,13 +289,79 @@ def _compute_fold_loss_by_metric(
             result["quantile_loss"]["variables"].append(var)
 
         else:  # log_loss
-            labels = np.unique(np.concatenate([test_y_var, train_y_var]))
-            _, test_loss = compute_loss(
-                test_y_var, test_pred_var, "log_loss", labels=labels
-            )
-            _, train_loss = compute_loss(
-                train_y_var, train_pred_var, "log_loss", labels=labels
-            )
+            # Use probabilities if available, otherwise use class predictions
+            if (
+                test_probabilities
+                and test_probabilities[var][fold_idx] is not None
+            ):
+                # Get probabilities and classes for this variable
+                test_prob_info = test_probabilities[var][fold_idx]
+                train_prob_info = train_probabilities[var][fold_idx]
+
+                if (
+                    isinstance(test_prob_info, dict)
+                    and "probabilities" in test_prob_info
+                ):
+                    # Extract probabilities and classes
+                    test_probs = test_prob_info["probabilities"]
+                    train_probs = train_prob_info["probabilities"]
+                    model_classes = test_prob_info["classes"]
+
+                    # Import the ordering function
+                    from microimpute.comparisons.metrics import (
+                        order_probabilities_alphabetically,
+                    )
+
+                    # Order probabilities alphabetically
+                    test_probs_ordered, alphabetical_labels = (
+                        order_probabilities_alphabetically(
+                            test_probs, model_classes
+                        )
+                    )
+                    train_probs_ordered, _ = (
+                        order_probabilities_alphabetically(
+                            train_probs, model_classes
+                        )
+                    )
+
+                    # Compute log loss with properly ordered probabilities
+                    _, test_loss = compute_loss(
+                        test_y_var,
+                        test_probs_ordered,
+                        "log_loss",
+                        labels=alphabetical_labels,
+                    )
+                    _, train_loss = compute_loss(
+                        train_y_var,
+                        train_probs_ordered,
+                        "log_loss",
+                        labels=alphabetical_labels,
+                    )
+                else:
+                    # Fallback for old format or if probabilities not available
+                    log.warning(
+                        f"Probabilities not in expected format for variable {var}, using class predictions"
+                    )
+                    labels = np.unique(
+                        np.concatenate([test_y_var, train_y_var])
+                    )
+                    labels = np.sort(labels)  # Ensure alphabetical order
+                    _, test_loss = compute_loss(
+                        test_y_var, test_pred_var, "log_loss", labels=labels
+                    )
+                    _, train_loss = compute_loss(
+                        train_y_var, train_pred_var, "log_loss", labels=labels
+                    )
+            else:
+                # Fall back to using class predictions (less accurate)
+                labels = np.unique(np.concatenate([test_y_var, train_y_var]))
+                labels = np.sort(labels)  # Ensure alphabetical order
+                _, test_loss = compute_loss(
+                    test_y_var, test_pred_var, "log_loss", labels=labels
+                )
+                _, train_loss = compute_loss(
+                    train_y_var, train_pred_var, "log_loss", labels=labels
+                )
 
             if result["log_loss"]["test"] is None:
                 result["log_loss"]["test"] = []
@@ -327,6 +395,8 @@ def _compute_losses_parallel(
     variable_metrics: Dict[str, str],
     imputed_variables: List[str],
     n_jobs: int,
+    test_probabilities: Dict[str, List] = None,
+    train_probabilities: Dict[str, List] = None,
 ) -> Dict[str, Dict[str, Any]]:
     """Compute losses in parallel for all folds and quantiles, separated by metric type."""
     n_folds = len(next(iter(test_y_values.values())))
@@ -345,6 +415,8 @@ def _compute_losses_parallel(
                     train_results,
                     variable_metrics,
                     imputed_variables,
+                    test_probabilities,
+                    train_probabilities,
                 )
                 for fold_idx, q in loss_tasks
             )
@@ -360,6 +432,8 @@ def _compute_losses_parallel(
                 train_results,
                 variable_metrics,
                 imputed_variables,
+                test_probabilities,
+                train_probabilities,
             )
             for fold_idx, q in loss_tasks
         ]
@@ -519,6 +593,9 @@ def cross_validate_model(
         train_results = {q: [] for q in quantiles}
         test_y_values = {var: [] for var in imputed_variables}
         train_y_values = {var: [] for var in imputed_variables}
+        # Store probabilities separately for categorical variables
+        test_probabilities = {var: [] for var in imputed_variables}
+        train_probabilities = {var: [] for var in imputed_variables}
         tuned_hyperparameters = {}
 
         for (
@@ -536,6 +613,26 @@ def cross_validate_model(
             if tune_hyperparameters and fold_tuned_params:
                 tuned_hyperparameters[fold_idx] = fold_tuned_params
 
+            # Extract probabilities if available (for categorical variables)
+            if "probabilities" in fold_test_imp:
+                for var in imputed_variables:
+                    if var in fold_test_imp["probabilities"]:
+                        test_probabilities[var].append(
+                            fold_test_imp["probabilities"][var]
+                        )
+                        train_probabilities[var].append(
+                            fold_train_imp["probabilities"][var]
+                        )
+                    else:
+                        # Not a categorical variable, no probabilities
+                        test_probabilities[var].append(None)
+                        train_probabilities[var].append(None)
+            else:
+                # No probabilities returned (all numerical variables)
+                for var in imputed_variables:
+                    test_probabilities[var].append(None)
+                    train_probabilities[var].append(None)
+
             for q in quantiles:
                 test_results[q].append(fold_test_imp[q])
                 train_results[q].append(fold_train_imp[q])
@@ -550,6 +647,8 @@ def cross_validate_model(
             variable_metrics,
             imputed_variables,
             n_jobs,
+            test_probabilities,
+            train_probabilities,
         )
 
         # Create structured results

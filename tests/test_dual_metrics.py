@@ -703,3 +703,310 @@ def test_autoimpute_with_all_models(mixed_type_data: pd.DataFrame) -> None:
     assert len(result.cv_results) == len(models)
     for model in models:
         assert model.__name__ in result.cv_results
+
+
+# === Categorical Probability Handling Tests ===
+
+
+def test_categorical_probabilities_in_cross_validation() -> None:
+    """Test that cross-validation properly uses probabilities for categorical log loss."""
+    # Create synthetic data with categorical target
+    np.random.seed(42)
+    n_samples = 200
+
+    # Create features
+    X1 = np.random.randn(n_samples)
+    X2 = np.random.randn(n_samples)
+
+    # Create categorical target with 3 classes
+    # Make it somewhat predictable based on X1
+    y_prob = 1 / (1 + np.exp(-X1))  # Logistic function
+    y_cat = np.where(y_prob < 0.33, "A", np.where(y_prob < 0.66, "B", "C"))
+
+    # Create DataFrame
+    df = pd.DataFrame({"x1": X1, "x2": X2, "cat_target": y_cat})
+
+    # Run cross-validation
+    results = cross_validate_model(
+        model_class=OLS,
+        data=df,
+        predictors=["x1", "x2"],
+        imputed_variables=["cat_target"],
+        quantiles=[0.5],
+        n_splits=3,
+        random_state=42,
+    )
+
+    # Check that we have log_loss results (not quantile_loss) for categorical variable
+    assert "log_loss" in results
+    assert results["log_loss"] is not None
+    assert "results" in results["log_loss"]
+
+    # Check that log loss values are reasonable (not the dummy 0.99/0.01 values)
+    # When using actual probabilities, log loss should typically be < 1.0 for reasonable models
+    # When using dummy probabilities (0.99/0.01), log loss is usually > 2.0
+    test_loss = results["log_loss"]["mean_test"]
+
+    # This threshold distinguishes between using real probabilities vs dummy ones
+    # Real probabilities should give lower log loss
+    assert (
+        test_loss < 2.0
+    ), f"Log loss {test_loss} suggests dummy probabilities are being used instead of real ones"
+
+
+def test_probability_ordering() -> None:
+    """Test that probabilities are ordered alphabetically to match sklearn's log_loss expectation."""
+    from microimpute.comparisons.metrics import (
+        order_probabilities_alphabetically,
+    )
+
+    # Create test data with known probabilities
+    np.random.seed(42)
+
+    # True labels
+    y_true = np.array(["B", "A", "C", "A", "B", "C"])
+
+    # Create probability matrix with columns in non-alphabetical order
+    # Columns: C, B, A (wrong order)
+    probs_wrong_order = np.array(
+        [
+            [0.2, 0.7, 0.1],  # True: B, so B should have high prob
+            [0.1, 0.2, 0.7],  # True: A, so A should have high prob
+            [0.8, 0.1, 0.1],  # True: C, so C should have high prob
+            [0.1, 0.1, 0.8],  # True: A, so A should have high prob
+            [0.1, 0.8, 0.1],  # True: B, so B should have high prob
+            [0.9, 0.05, 0.05],  # True: C, so C should have high prob
+        ]
+    )
+
+    # If we don't reorder, log loss will be wrong
+    labels_wrong = np.array(["C", "B", "A"])
+    _, loss_wrong = compute_loss(
+        y_true, probs_wrong_order, "log_loss", labels=labels_wrong
+    )
+
+    # Correct alphabetical order: A, B, C
+    probs_correct_order, alphabetical_labels = (
+        order_probabilities_alphabetically(probs_wrong_order, labels_wrong)
+    )
+    _, loss_correct = compute_loss(
+        y_true, probs_correct_order, "log_loss", labels=alphabetical_labels
+    )
+
+    # The correctly ordered probabilities should give much lower loss
+    assert (
+        loss_correct < loss_wrong
+    ), "Alphabetical ordering of probabilities is not working correctly"
+
+    # Check that labels are alphabetically ordered
+    assert list(alphabetical_labels) == sorted(alphabetical_labels)
+
+
+def test_ols_returns_probabilities_for_categorical() -> None:
+    """Test that OLS model returns probabilities when asked for categorical variables."""
+    # Create synthetic data
+    np.random.seed(42)
+    n_samples = 100
+
+    df = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "x2": np.random.randn(n_samples),
+            "cat_target": np.random.choice(["X", "Y", "Z"], n_samples),
+        }
+    )
+
+    # Split data
+    train_data = df[:80]
+    test_data = df[80:]
+
+    # Fit OLS model
+    model = OLS()
+    fitted = model.fit(
+        train_data, predictors=["x1", "x2"], imputed_variables=["cat_target"]
+    )
+
+    # Predict with return_probs=True
+    predictions = fitted.predict(test_data, quantiles=[0.5], return_probs=True)
+
+    # Check that probabilities are returned
+    assert (
+        "probabilities" in predictions
+    ), "Model should return probabilities when return_probs=True"
+    assert (
+        "cat_target" in predictions["probabilities"]
+    ), "Probabilities should include categorical variable"
+
+    # Check probability structure
+    prob_info = predictions["probabilities"]["cat_target"]
+    assert isinstance(
+        prob_info, dict
+    ), "Probability info should be a dictionary"
+    assert "probabilities" in prob_info, "Should contain probabilities array"
+    assert "classes" in prob_info, "Should contain classes array"
+
+    probs = prob_info["probabilities"]
+    classes = prob_info["classes"]
+
+    # Check shapes
+    assert probs.shape[0] == len(
+        test_data
+    ), "Should have probabilities for each test sample"
+    assert probs.shape[1] == len(
+        np.unique(df["cat_target"])
+    ), "Should have probability for each class"
+    assert len(classes) == len(
+        np.unique(df["cat_target"])
+    ), "Should have all classes"
+
+    # Check that probabilities sum to 1
+    prob_sums = probs.sum(axis=1)
+    np.testing.assert_allclose(
+        prob_sums, 1.0, rtol=1e-5, err_msg="Probabilities should sum to 1"
+    )
+
+
+def test_qrf_returns_probabilities_for_categorical() -> None:
+    """Test that QRF model returns probabilities when asked for categorical variables."""
+    # Create synthetic data
+    np.random.seed(42)
+    n_samples = 100
+
+    df = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "x2": np.random.randn(n_samples),
+            "cat_target": np.random.choice(
+                ["Apple", "Banana", "Cherry"], n_samples
+            ),
+        }
+    )
+
+    # Split data
+    train_data = df[:80]
+    test_data = df[80:]
+
+    # Fit QRF model
+    model = QRF()
+    fitted = model.fit(
+        train_data, predictors=["x1", "x2"], imputed_variables=["cat_target"]
+    )
+
+    # Predict with return_probs=True
+    predictions = fitted.predict(test_data, quantiles=[0.5], return_probs=True)
+
+    # Check that probabilities are returned
+    assert (
+        "probabilities" in predictions
+    ), "Model should return probabilities when return_probs=True"
+    assert (
+        "cat_target" in predictions["probabilities"]
+    ), "Probabilities should include categorical variable"
+
+    # Check probability structure
+    prob_info = predictions["probabilities"]["cat_target"]
+    assert isinstance(
+        prob_info, dict
+    ), "Probability info should be a dictionary"
+    assert "probabilities" in prob_info, "Should contain probabilities array"
+    assert "classes" in prob_info, "Should contain classes array"
+
+    probs = prob_info["probabilities"]
+    classes = prob_info["classes"]
+
+    # Check that we have the original string labels, not encoded values
+    assert all(
+        isinstance(c, str) for c in classes
+    ), "Classes should be original string labels"
+    assert set(classes) == set(
+        df["cat_target"].unique()
+    ), "Should have all original class labels"
+
+    # Check shapes
+    assert probs.shape[0] == len(
+        test_data
+    ), "Should have probabilities for each test sample"
+    assert probs.shape[1] == len(
+        classes
+    ), "Should have probability for each class"
+
+    # Check that probabilities sum to 1
+    prob_sums = probs.sum(axis=1)
+    np.testing.assert_allclose(
+        prob_sums, 1.0, rtol=1e-5, err_msg="Probabilities should sum to 1"
+    )
+
+
+def test_probability_ordering_with_real_model() -> None:
+    """Test that probability ordering works correctly with real model output."""
+    from microimpute.comparisons.metrics import (
+        order_probabilities_alphabetically,
+    )
+
+    np.random.seed(42)
+    n_samples = 50
+
+    # Create data where class C is most likely, then B, then A
+    X = np.random.randn(n_samples, 2)
+    y_true = ["C"] * 25 + ["B"] * 15 + ["A"] * 10
+
+    # Shuffle the data
+    indices = np.random.permutation(n_samples)
+    X = X[indices]
+    y_true = [y_true[i] for i in indices]
+
+    df = pd.DataFrame({"x1": X[:, 0], "x2": X[:, 1], "target": y_true})
+
+    # Split data
+    train_df = df[:40]
+    test_df = df[40:]
+
+    # Fit model
+    model = OLS()
+    fitted = model.fit(
+        train_df, predictors=["x1", "x2"], imputed_variables=["target"]
+    )
+
+    # Get predictions with probabilities
+    predictions = fitted.predict(test_df, quantiles=[0.5], return_probs=True)
+
+    if (
+        "probabilities" in predictions
+        and "target" in predictions["probabilities"]
+    ):
+        prob_info = predictions["probabilities"]["target"]
+        probs = prob_info["probabilities"]
+        model_classes = prob_info["classes"]
+
+        # Test ordering function
+        probs_ordered, alphabetical_labels = (
+            order_probabilities_alphabetically(probs, model_classes)
+        )
+
+        # Check that labels are alphabetical
+        assert list(alphabetical_labels) == sorted(
+            alphabetical_labels
+        ), "Labels should be alphabetically ordered"
+
+        # Compute log loss with ordered probabilities
+        y_test = test_df["target"].values
+
+        # Test with correctly ordered probabilities
+        _, loss_ordered = compute_loss(
+            y_test, probs_ordered, "log_loss", labels=alphabetical_labels
+        )
+
+        # The loss should be reasonable (not NaN or infinite)
+        assert not np.isnan(loss_ordered), "Log loss should not be NaN"
+        assert not np.isinf(loss_ordered), "Log loss should not be infinite"
+        assert loss_ordered > 0, "Log loss should be positive"
+
+        # Check if this is better than using dummy probabilities
+        # With dummy probabilities (converting class predictions to 0.99/0.01)
+        class_preds = predictions[0.5]["target"].values
+        _, loss_dummy = compute_loss(y_test, class_preds, "log_loss")
+
+        # Real probabilities should give better (lower) loss than dummy probabilities
+        assert (
+            loss_ordered < loss_dummy
+        ), "Real probabilities should give better loss than dummy probabilities"

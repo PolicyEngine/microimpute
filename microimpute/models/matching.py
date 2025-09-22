@@ -264,7 +264,7 @@ class MatchingResults(ImputerResults):
         index: pd.Index,
         categorical_targets: Dict,
         boolean_targets: Dict,
-    ) -> Optional[pd.DataFrame]:
+    ) -> Optional[Dict]:
         """Generate one-hot probability matrix for categorical/boolean variables.
 
         Args:
@@ -275,7 +275,7 @@ class MatchingResults(ImputerResults):
             boolean_targets: Dictionary of boolean target info
 
         Returns:
-            DataFrame with one-hot encoded probabilities or None if not categorical
+            Dict with 'probabilities' and 'classes' keys
         """
         if (
             variable not in categorical_targets
@@ -293,17 +293,20 @@ class MatchingResults(ImputerResults):
             return None
 
         # Create probability matrix (one-hot encoding)
-        prob_df = pd.DataFrame(
-            0.0, index=index, columns=[f"prob_{cat}" for cat in categories]
-        )
+        n_samples = len(matched_values)
+        n_categories = len(categories)
+        prob_matrix = np.zeros((n_samples, n_categories))
 
         # Set 1.0 for matched category
         for idx, val in enumerate(matched_values):
-            col_name = f"prob_{val}"
-            if col_name in prob_df.columns:
-                prob_df.iloc[idx, prob_df.columns.get_loc(col_name)] = 1.0
+            try:
+                cat_idx = categories.index(val)
+                prob_matrix[idx, cat_idx] = 1.0
+            except ValueError:
+                # If value not found in categories, default to first category
+                prob_matrix[idx, 0] = 1.0
 
-        return prob_df
+        return {"probabilities": prob_matrix, "classes": np.array(categories)}
 
     def _process_matching_results(
         self,
@@ -407,12 +410,12 @@ class MatchingResults(ImputerResults):
 
                 # Add probabilities to results if requested
                 if return_probs and prob_results:
-                    return {
-                        "imputations": imputations[q_default],
-                        "probabilities": prob_results,
-                    }
-
-                return imputations[q_default]
+                    # Return dict with both quantile predictions and probabilities
+                    imputations["probabilities"] = prob_results
+                    return imputations
+                else:
+                    # Return just the DataFrame for the single quantile
+                    return imputations[q_default]
         except Exception as output_error:
             self.logger.error(
                 f"Error creating output imputations: {str(output_error)}"
