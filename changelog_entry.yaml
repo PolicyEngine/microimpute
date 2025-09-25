@@ -1,8 +1,0 @@
-- bump: patch
-  changes:
-    added:
-    - Log loss metric for evaluating categorical variable imputation.
-    - Functionality for cross-validation and autoimpute to integrate log loss.
-    - Visualization utilities for categorical imputation performance.
-    changed:
-    - Updated documentation to reflect new methods and log loss features.
