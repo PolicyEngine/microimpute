@@ -1,6 +1,10 @@
-# Ordinary Least Squares Linear Regression
+# Ordinary Least Squares
 
 The `OLS` model employs linear regression techniques to predict missing values by leveraging the relationships between predictor and target variables. This classic statistical approach provides a computationally efficient method for imputation while offering theoretical guarantees under certain assumptions.
+
+## Variable type support
+
+OLS automatically adapts to your target variable types. For numerical variables, it uses standard linear regression. For categorical variables (including strings, booleans, or numerically-encoded categorical variables), it automatically switches to logistic regression classification. This automatic detection means you don't need to specify variable types—simply pass your predictors and targets, and the model handles the rest internally.
 
 ## How it works
 

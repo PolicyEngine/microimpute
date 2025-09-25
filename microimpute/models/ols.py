@@ -66,9 +66,6 @@ class _LogisticRegressionModel:
             "solver": lr_kwargs.get(
                 "solver", "lbfgs" if len(self.categories) <= 2 else "saga"
             ),
-            "multi_class": (
-                "ovr" if len(self.categories) <= 2 else "multinomial"
-            ),
             "random_state": self.seed,
         }
 
@@ -90,13 +87,29 @@ class _LogisticRegressionModel:
         """
         if return_probs:
             probs = self.classifier.predict_proba(X)
-            # Return as DataFrame with proper column names
-            prob_df = pd.DataFrame(
-                probs,
-                columns=[f"prob_{cat}" for cat in self.categories],
-                index=X.index,
-            )
-            return prob_df
+            # Return both probabilities and the original category labels
+            # The probabilities are ordered according to self.classifier.classes_
+            # which are the encoded values, but we need to return the original labels
+            # in the same order
+
+            if self.var_type == "boolean":
+                # For boolean, classes are simply False and True
+                # sklearn's classifier.classes_ will be [0, 1] in order
+                original_classes = [False, True]
+            else:
+                # For categorical, map encoded values back to original labels
+                original_classes = []
+                for encoded_val in self.classifier.classes_:
+                    # Find the original category for this encoded value
+                    for cat, enc in self.label_map.items():
+                        if enc == encoded_val:
+                            original_classes.append(cat)
+                            break
+
+            return {
+                "probabilities": probs,
+                "classes": np.array(original_classes),
+            }
         else:
             # For quantile-based prediction, we could adjust the threshold
             # but for simplicity, using standard prediction
@@ -174,11 +187,11 @@ class OLSResults(ImputerResults):
         elif isinstance(model, _LogisticRegressionModel):
             # Classification for categorical/boolean targets
             if return_probs and prob_results is not None:
-                # Get probabilities
-                probs = model.predict(
+                # Get probabilities and classes
+                prob_info = model.predict(
                     X_test[self.predictors], return_probs=True
                 )
-                prob_results[variable] = probs
+                prob_results[variable] = prob_info
 
             # Get class predictions
             imputed_values = model.predict(
@@ -315,7 +328,13 @@ class OLSResults(ImputerResults):
                         prob_results,
                     )
                 imputations[q_default] = pd.DataFrame(imputed_df)
-                return imputations[q_default]
+
+                # Add probabilities to results if requested
+                if return_probs and prob_results:
+                    imputations["probabilities"] = prob_results
+                    return imputations
+                else:
+                    return imputations[q_default]
 
         except Exception as e:
             self.logger.error(f"Error during prediction: {str(e)}")

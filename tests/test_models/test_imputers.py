@@ -275,21 +275,75 @@ def test_imputation_categorical_targets(
         assert predictions_with_probs[0.5]["categorical"].dtype == "object"
 
         # Check probability format
-        probs = predictions_with_probs["probabilities"]["categorical"]
-        assert isinstance(probs, pd.DataFrame)
+        prob_info = predictions_with_probs["probabilities"]["categorical"]
+        assert isinstance(prob_info, dict)
+        assert "probabilities" in prob_info
+        assert "classes" in prob_info
 
-        # Should have columns for each category
-        expected_cols = ["prob_one", "prob_two", "prob_three"]
-        for col in expected_cols:
-            assert col in probs.columns
+        probs = prob_info["probabilities"]
+        classes = prob_info["classes"]
+
+        # Check that we have probabilities as a numpy array
+        assert isinstance(probs, np.ndarray)
+        assert probs.shape[0] == len(X_test)  # One row per sample
+        assert probs.shape[1] == 3  # Three categories
+
+        # Check that classes contains the category labels
+        assert len(classes) == 3
+        assert set(classes) == {"one", "two", "three"}
 
         # Probabilities should sum to 1 for each row (within tolerance)
         row_sums = probs.sum(axis=1)
         assert np.allclose(row_sums, 1.0, atol=1e-6)
 
         # All probabilities should be between 0 and 1
-        assert (probs >= 0.0).all().all()
-        assert (probs <= 1.0).all().all()
+        assert (probs >= 0.0).all()
+        assert (probs <= 1.0).all()
+
+
+@pytest.mark.parametrize(
+    "model_class", CATEGORICAL_MODELS, ids=lambda cls: cls.__name__
+)
+def test_categorical_return_probs_false(
+    model_class: Type[Imputer],
+) -> None:
+    """Test that categorical imputation with return_probs=False returns DataFrame."""
+    diabetes = load_diabetes()
+    df = pd.DataFrame(diabetes.data, columns=diabetes.feature_names)
+
+    # Add random categorical targets
+    df["categorical"] = np.random.choice(["A", "B", "C"], size=len(df))
+
+    predictors = ["age", "sex", "bmi", "bp"]
+    imputed_variables = ["categorical"]
+
+    X_train, X_test = preprocess_data(df)
+
+    model = model_class()
+    fitted_model = model.fit(X_train, predictors, imputed_variables)
+
+    # Test 1: Default behavior (no return_probs, no quantiles) should return DataFrame
+    predictions = fitted_model.predict(X_test)
+    assert isinstance(predictions, pd.DataFrame)
+    assert "categorical" in predictions.columns
+    assert predictions["categorical"].dtype == "object"
+    assert set(predictions["categorical"].unique()).issubset({"A", "B", "C"})
+
+    # Test 2: Explicit return_probs=False with quantiles should return dict of DataFrames
+    predictions_with_quantiles = fitted_model.predict(
+        X_test, quantiles=[0.5], return_probs=False
+    )
+    assert isinstance(predictions_with_quantiles, dict)
+    assert 0.5 in predictions_with_quantiles
+    assert isinstance(predictions_with_quantiles[0.5], pd.DataFrame)
+    assert "probabilities" not in predictions_with_quantiles
+
+    # Test 3: return_probs=True should include probabilities
+    predictions_with_probs = fitted_model.predict(
+        X_test, quantiles=[0.5], return_probs=True
+    )
+    assert isinstance(predictions_with_probs, dict)
+    assert "probabilities" in predictions_with_probs
 
 
 # === Edge Cases and Error Handling ===

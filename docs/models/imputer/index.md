@@ -1,6 +1,6 @@
 # The Imputer class
 
-The `Imputer` class serves as an abstract base class that defines the common interface for all imputation models within the MicroImpute framework. It establishes a foundational structure with essential methods for data validation, model fitting, and prediction. Every specialized imputation model in the system inherits from this class and implements the required abstract methods to provide its unique functionality.
+The `Imputer` class serves as an abstract base class that defines the common interface for all imputation models within the Microimpute framework. It establishes a foundational structure with essential methods for data validation, model fitting, and prediction. Every specialized imputation model in the system inherits from this class and implements the required abstract methods to provide its unique functionality.
 
 ## Key features
 

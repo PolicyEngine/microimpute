@@ -17,7 +17,7 @@ from microimpute.comparisons.autoimpute_helpers import (
     evaluate_model,
     fit_and_predict_model,
     prepare_data_for_imputation,
-    select_best_model,
+    select_best_model_dual_metrics,
     validate_autoimpute_inputs,
 )
 from microimpute.config import (
@@ -26,8 +26,9 @@ from microimpute.config import (
     TRAIN_SIZE,
     VALIDATE_CONFIG,
 )
-from microimpute.models import OLS, QRF, Imputer, ImputerResults, QuantReg
+from microimpute.models import OLS, QRF, Imputer, QuantReg
 from microimpute.utils.data import unnormalize_predictions
+from microimpute.utils.type_detector import VariableTypeDetector
 
 try:
     from microimpute.models import Matching
@@ -37,6 +38,14 @@ except ImportError:
     HAS_MATCHING = False
 
 log = logging.getLogger(__name__)
+
+# Internal constants for model compatibility with variable types
+_NUMERICAL_MODELS = {"OLS", "QRF", "QuantReg", "Matching"}
+_CATEGORICAL_MODELS = {
+    "OLS",
+    "QRF",
+    "Matching",
+}  # QuantReg doesn't support categorical
 
 
 class AutoImputeResult(BaseModel):
@@ -53,9 +62,8 @@ class AutoImputeResult(BaseModel):
         Copy of the receiver data with the median-quantile imputations of the best performing model attached.
     fitted_models : Dict[str, Any]
         Mapping model name → fitted Imputer instance.
-    cv_results : pd.DataFrame
-        Cross-validation loss table (models as index, quantiles as columns)
-        with an extra "mean_loss" column.
+    cv_results : Dict[str, Dict[str, Any]]
+        Cross-validation results with separate quantile_loss and log_loss metrics for each model.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -65,7 +73,53 @@ class AutoImputeResult(BaseModel):
     ] = Field(...)
     receiver_data: pd.DataFrame = Field(...)
     fitted_models: Dict[str, Any] = Field(...)
-    cv_results: pd.DataFrame = Field(...)
+    cv_results: Dict[str, Dict[str, Any]] = Field(...)
+
+
+def _can_model_handle_variables(
+    model_name: str,
+    training_data: pd.DataFrame,
+    imputed_variables: List[str],
+) -> bool:
+    """Check if a model can handle the types of variables to be imputed.
+
+    Args:
+        model_name: Name of the model class.
+        training_data: DataFrame containing the variables.
+        imputed_variables: List of variables to be imputed.
+
+    Returns:
+        True if the model can handle all variable types, False otherwise.
+    """
+    detector = VariableTypeDetector()
+
+    for var in imputed_variables:
+        if var not in training_data.columns:
+            continue
+
+        # Use VariableTypeDetector to categorize the variable
+        var_type, _ = detector.categorize_variable(
+            training_data[var], var, log
+        )
+
+        # Check if model supports this variable type
+        if var_type in ["categorical", "numeric_categorical"]:
+            if model_name not in _CATEGORICAL_MODELS:
+                log.warning(
+                    f"Model {model_name} cannot handle categorical variable '{var}' (type: {var_type}). Skipping."
+                )
+                return False
+        elif var_type == "bool":
+            # Boolean variables can be handled by all models (treated as 0/1)
+            continue
+        elif var_type == "numeric":
+            if model_name not in _NUMERICAL_MODELS:
+                log.warning(
+                    f"Model {model_name} cannot handle numerical variable '{var}'. Skipping."
+                )
+                return False
+
+    return True
 
 
 def _setup_logging(log_level: str) -> int:
@@ -102,11 +156,12 @@ def _evaluate_models_parallel(
     tune_hyperparameters: bool,
     hyperparameters: Optional[Dict[str, Dict[str, Any]]],
     n_jobs: int = -1,
-) -> Tuple[pd.DataFrame, Optional[Dict[str, Any]]]:
-    """Evaluate multiple models in parallel using cross-validation.
+) -> Tuple[Dict[str, Dict[str, Any]], Optional[Dict[str, Any]]]:
+    """Evaluate multiple models in parallel using cross-validation with dual metrics.
 
     Returns:
-        Tuple of (results_dataframe, best_hyperparameters_dict or None)
+        Tuple of (results_dict, best_hyperparameters_dict or None)
+        results_dict contains dual metric results for each model
     """
     # Check if Matching model is present (requires sequential processing)
     has_matching = any(model.__name__ == "Matching" for model in model_classes)
@@ -144,31 +199,25 @@ def _evaluate_models_parallel(
         for task in tqdm(parallel_tasks, desc="Evaluating models")
     )
 
-    # Process results
-    method_test_losses = {}
+    # Process results - now expecting dual metric format
+    method_results = {}
     best_hyperparams = {}
 
     if tune_hyperparameters:
         for result in results:
             if len(result) == 3:
                 model_name, cv_result, best_params = result
-                method_test_losses[model_name] = cv_result.loc["test"]
+                method_results[model_name] = cv_result
                 if model_name in ["QRF", "Matching"]:
                     best_hyperparams[model_name] = best_params
             else:
                 model_name, cv_result = result
-                method_test_losses[model_name] = cv_result.loc["test"]
+                method_results[model_name] = cv_result
     else:
         for model_name, cv_result in results:
-            method_test_losses[model_name] = cv_result.loc["test"]
+            method_results[model_name] = cv_result
 
-    method_results_df = pd.DataFrame.from_dict(
-        method_test_losses, orient="index"
-    )
-
-    return method_results_df, (
-        best_hyperparams if tune_hyperparameters else None
-    )
+    return method_results, (best_hyperparams if tune_hyperparameters else None)
 
 
 def _generate_imputations_for_all_models(
@@ -200,6 +249,15 @@ def _generate_imputations_for_all_models(
         model_name = model_class.__name__
         if model_name == best_method:
             continue  # Skip the best method as it's already done
+
+        # Check if model can handle the variable types
+        if not _can_model_handle_variables(
+            model_name, training_data, imputed_variables
+        ):
+            log.info(
+                f"Skipping {model_name} due to incompatible variable types."
+            )
+            continue
 
         log.info(f"Generating imputations with {model_name}.")
 
@@ -248,6 +306,7 @@ def autoimpute(
     tune_hyperparameters: Optional[bool] = False,
     normalize_data: Optional[bool] = False,
     impute_all: Optional[bool] = False,
+    metric_priority: Optional[str] = "auto",
     random_state: Optional[int] = RANDOM_STATE,
     train_size: Optional[float] = TRAIN_SIZE,
     k_folds: Optional[int] = 5,
@@ -280,6 +339,11 @@ def autoimpute(
         normalize_data : If True, will normalize the data before imputation.
         impute_all : If True, will return final imputations for all models not
             just the best one.
+        metric_priority : Strategy for model selection when both metrics are present:
+            'auto' (default): rank-based selection weighted by variable count
+            'numerical': select based on quantile loss only
+            'categorical': select based on log loss only
+            'combined': weighted average of both metrics
         random_state : Random seed for reproducibility
         train_size : Proportion of data to use for training in preprocessing
         k_folds : Number of folds for cross-validation. Defaults to 5.
@@ -290,7 +354,7 @@ def autoimpute(
             - imputations: Dict mapping model name(s) to quantile → DataFrame of imputed values
             - receiver_data: DataFrame with imputed values added
             - fitted_models: Dict mapping model name to ImputerResults instance(s)
-            - cv_results: DataFrame of cross-validation losses for each model
+            - cv_results: Dictionary of cross-validation quantile and log losses for each model
 
     Raises:
         ValueError: If inputs are invalid (e.g., invalid quantiles, missing columns)
@@ -382,7 +446,7 @@ def autoimpute(
         )
 
         # Evaluate models in parallel
-        method_results_df, best_hyperparams = _evaluate_models_parallel(
+        method_results, best_hyperparams = _evaluate_models_parallel(
             model_classes,
             training_data,
             predictors,
@@ -400,8 +464,12 @@ def autoimpute(
             main_progress.update(1)
             main_progress.set_description("Model selection")
 
-        log.info(f"Comparing across {model_classes} methods.")
-        best_method, best_row = select_best_model(method_results_df)
+        log.info(
+            f"Comparing across {model_classes} methods using metric_priority='{metric_priority}'."
+        )
+        best_method, _ = select_best_model_dual_metrics(
+            method_results, metric_priority
+        )
 
         # Step 4: Generate imputations with best method
         if numeric_log_level <= logging.INFO:
@@ -415,6 +483,14 @@ def autoimpute(
         # Get the best model class
         models_dict = {model.__name__: model for model in model_classes}
         chosen_model = models_dict[best_method]
+
+        if not _can_model_handle_variables(
+            best_method, training_data, imputed_variables
+        ):
+            raise RuntimeError(
+                f"Best performing model {best_method} cannot handle the variable types "
+                f"in the imputed variables. This should not happen in normal operation."
+            )
 
         # Default to median quantile for final imputation
         imputation_q = 0.5
@@ -505,7 +581,7 @@ def autoimpute(
             imputations=final_imputations_dict,
             receiver_data=receiver_data,
             fitted_models=fitted_models_dict,
-            cv_results=method_results_df,
+            cv_results=method_results,
         )
 
     except ValueError as e:

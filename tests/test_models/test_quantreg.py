@@ -170,18 +170,19 @@ def test_quantreg_cross_validation(diabetes_data: pd.DataFrame) -> None:
         QuantReg, diabetes_data, predictors, imputed_variables
     )
 
-    # Validate cross-validation results
-    assert not quantreg_results.isna().any().any()
-    assert len(quantreg_results) > 0
+    # Validate cross-validation results - now a dict with dual metrics
+    assert isinstance(quantreg_results, dict)
+    assert "quantile_loss" in quantreg_results
+    assert "log_loss" in quantreg_results
 
-    # Test visualization capability
-    perf_results_viz = model_performance_results(
-        results=quantreg_results,
-        model_name="QuantReg",
-        method_name="Cross-Validation Quantile Loss Average",
-    )
-
-    assert perf_results_viz is not None
+    # Check quantile_loss results (for numerical variables)
+    ql_results = quantreg_results["quantile_loss"]
+    assert "results" in ql_results
+    assert isinstance(ql_results["results"], pd.DataFrame)
+    assert "train" in ql_results["results"].index
+    assert "test" in ql_results["results"].index
+    assert not ql_results["results"].isna().all().all()
+    assert ql_results["mean_test"] > 0
 
 
 # === Robustness Tests ===

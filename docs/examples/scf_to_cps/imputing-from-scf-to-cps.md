@@ -387,7 +387,6 @@ imputations, imputed_data, fitted_model, method_results_df = autoimpute(
     weight_col=weights[0],
     tune_hyperparameters=True,  # enable automated hyperparameter tuning
     normalize_data=True,  # normalization
-    verbose=False,
 )
 ```
 
@@ -401,7 +400,7 @@ quantiles = [q for q in method_results_df.columns if isinstance(q, float)]
 
 comparison_viz = method_comparison_results(
     data=method_results_df,
-    metric_name="quantile loss",
+    metric="quantile_loss",
     data_format="wide",
 )
 fig = comparison_viz.plot(

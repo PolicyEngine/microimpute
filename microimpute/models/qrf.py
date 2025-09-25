@@ -103,13 +103,29 @@ class _RandomForestClassifierModel:
         """Predict classes or probabilities."""
         if return_probs:
             probs = self.classifier.predict_proba(X)
-            # Return as DataFrame with proper column names
-            prob_df = pd.DataFrame(
-                probs,
-                columns=[f"prob_{cat}" for cat in self.categories],
-                index=X.index,
-            )
-            return prob_df
+            # Return both probabilities and the original category labels
+            # The probabilities are ordered according to self.classifier.classes_
+            # which are the encoded values, but we need to return the original labels
+            # in the same order
+
+            if self.var_type == "boolean":
+                # For boolean, classes are simply False and True
+                # sklearn's classifier.classes_ will be [0, 1] in order
+                original_classes = [False, True]
+            else:
+                # For categorical, map encoded values back to original labels
+                original_classes = []
+                for encoded_val in self.classifier.classes_:
+                    # Find the original category for this encoded value
+                    for cat, enc in self.label_map.items():
+                        if enc == encoded_val:
+                            original_classes.append(cat)
+                            break
+
+            return {
+                "probabilities": probs,
+                "classes": np.array(original_classes),
+            }
         else:
             y_pred = self.classifier.predict(X)
 
@@ -337,12 +353,12 @@ class QRFResults(ImputerResults):
                     elif isinstance(model, _RandomForestClassifierModel):
                         # Classification for categorical/boolean targets
                         if return_probs and prob_results is not None:
-                            # Get probabilities
-                            probs = model.predict(
+                            # Get probabilities and classes
+                            prob_info = model.predict(
                                 X_test_augmented[var_predictors],
                                 return_probs=True,
                             )
-                            prob_results[variable] = probs
+                            prob_results[variable] = prob_info
 
                         # Get class predictions
                         imputed_values = model.predict(
@@ -397,7 +413,17 @@ class QRFResults(ImputerResults):
             if len(qs) < 2:
                 q = list(qs)[0]
 
-            return imputations if quantiles else imputations[q]
+            # If quantiles not provided, decide what to return based on return_probs
+            if not quantiles:
+                if return_probs and prob_results:
+                    # Return dict with both quantile predictions and probabilities
+                    return imputations
+                else:
+                    # Return just the DataFrame for the single quantile
+                    return imputations[q]
+            else:
+                # Multiple quantiles requested, return the full dict
+                return imputations
 
         except Exception as e:
             self.logger.error(f"Error during QRF prediction: {str(e)}")

@@ -1,24 +1,26 @@
-"""Individual model performance visualization
+"""Individual model performance visualization with dual metric support
 
 This module provides comprehensive visualization tools for analyzing the performance
-of individual imputation models. It creates interactive plots showing train/test
-performance across different quantiles, helping identify overfitting and understand
-model behavior at different points of the distribution.
+of individual imputation models. It supports both quantile loss (for numerical variables)
+and log loss (for categorical variables), creating appropriate visualizations for each
+metric type.
 
 Key components:
     - PerformanceResults: container class for model performance data with plotting methods
     - model_performance_results: factory function to create performance visualizations
-    - Interactive Plotly-based visualizations with customizable styling
+    - Support for quantile loss, log loss, and combined metric visualizations
+    - Confusion matrix and probability distribution plots for categorical variables
 """
 
 import logging
 import os
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from microimpute.config import PLOT_CONFIG
 
@@ -26,45 +28,67 @@ logger = logging.getLogger(__name__)
 
 
 class PerformanceResults:
-    """Class to store and visualize model performance results.
+    """Class to store and visualize model performance results with dual metric support.
 
     This class provides an interface for storing and visualizing
-    performance metrics, with methods like plot() and summary().
+    performance metrics for both quantile loss and log loss.
     """
 
     def __init__(
         self,
-        results: pd.DataFrame,
+        results: Union[pd.DataFrame, Dict[str, Dict[str, any]]],
         model_name: Optional[str] = None,
         method_name: Optional[str] = None,
+        metric: str = "quantile_loss",
+        class_probabilities: Optional[Dict[str, pd.DataFrame]] = None,
+        y_true: Optional[Dict[str, np.ndarray]] = None,
+        y_pred: Optional[Dict[str, np.ndarray]] = None,
     ):
         """Initialize PerformanceResults with train/test performance data.
 
         Args:
-            results: DataFrame with train and test rows, quantiles
-                as columns, and loss values.
+            results: Either:
+                - DataFrame with train and test rows, quantiles as columns (backward compat)
+                - Dict with 'quantile_loss' and/or 'log_loss' keys containing metrics
             model_name: Name of the model used for imputation.
             method_name: Name of the imputation method.
+            metric: Which metric to visualize: 'quantile_loss', 'log_loss', or 'combined'
+            class_probabilities: Optional dict of class probability DataFrames for categorical vars
+            y_true: Optional dict of true values for confusion matrix
+            y_pred: Optional dict of predicted values for confusion matrix
         """
-        self.results = results.copy()
         self.model_name = model_name or "Unknown Model"
         self.method_name = method_name or "Unknown Method"
+        self.metric = metric
+        self.class_probabilities = class_probabilities or {}
+        self.y_true = y_true or {}
+        self.y_pred = y_pred or {}
 
-        # Validate inputs
-        required_indices = ["train", "test"]
-        available_indices = self.results.index.tolist()
-        missing_indices = [
-            idx for idx in required_indices if idx not in available_indices
-        ]
-
-        if missing_indices:
-            logger.warning(
-                f"Missing indices in results DataFrame: {missing_indices}"
+        # Handle different input formats
+        if isinstance(results, pd.DataFrame):
+            # Backward compatibility: single metric DataFrame
+            self.results = {"quantile_loss": {"results": results.copy()}}
+            self.has_quantile_loss = True
+            self.has_log_loss = False
+        else:
+            # New format: dual metric dict
+            self.results = results
+            self.has_quantile_loss = (
+                "quantile_loss" in results
+                and results["quantile_loss"].get("results") is not None
+                and not results["quantile_loss"]["results"].empty
             )
-            logger.info(f"Available indices: {available_indices}")
+            self.has_log_loss = (
+                "log_loss" in results
+                and results["log_loss"].get("results") is not None
+                and not results["log_loss"]["results"].empty
+            )
 
-        # Convert column names to strings if they are not already
-        self.results.columns = [str(col) for col in self.results.columns]
+        # Validate metric parameter
+        if metric not in ["quantile_loss", "log_loss", "combined"]:
+            raise ValueError(
+                f"Invalid metric: {metric}. Must be 'quantile_loss', 'log_loss', or 'combined'"
+            )
 
     def plot(
         self,
@@ -75,8 +99,7 @@ class PerformanceResults:
             PLOT_CONFIG["height"],
         ),
     ) -> go.Figure:
-        """Plot the performance comparison between training and testing
-        sets across quantiles.
+        """Plot the performance based on the specified metric.
 
         Args:
             title: Custom title for the plot. If None, a default title is used.
@@ -89,42 +112,63 @@ class PerformanceResults:
         Raises:
             RuntimeError: If plot creation or saving fails
         """
-        logger.debug(
-            f"Creating train-test performance plot from results shape {self.results.shape}"
-        )
+        logger.debug(f"Creating performance plot for metric: {self.metric}")
+
+        if self.metric == "quantile_loss":
+            return self._plot_quantile_loss(title, save_path, figsize)
+        elif self.metric == "log_loss":
+            return self._plot_log_loss(title, save_path, figsize)
+        elif self.metric == "combined":
+            return self._plot_combined(title, save_path, figsize)
+        else:
+            raise ValueError(f"Invalid metric: {self.metric}")
+
+    def _plot_quantile_loss(
+        self,
+        title: Optional[str],
+        save_path: Optional[str],
+        figsize: Tuple[int, int],
+    ) -> go.Figure:
+        """Plot quantile loss performance across quantiles."""
+        if not self.has_quantile_loss:
+            logger.warning("No quantile loss data available")
+            return go.Figure()
+
         palette = px.colors.qualitative.Plotly
         train_color = palette[2]
         test_color = palette[3]
 
         try:
-            logger.debug("Creating Plotly figure")
             fig = go.Figure()
 
-            # Add bars for training data if present
-            if "train" in self.results.index:
-                logger.debug("Adding training data bars")
+            # Get the DataFrame for quantile loss
+            ql_data = self.results["quantile_loss"]["results"]
+
+            # Add bars for training data
+            if "train" in ql_data.index:
                 fig.add_trace(
                     go.Bar(
-                        x=self.results.columns,
-                        y=self.results.loc["train"],
+                        x=[str(x) for x in ql_data.columns],
+                        y=ql_data.loc["train"].values,
                         name="Train",
                         marker_color=train_color,
                     )
                 )
 
-            # Add bars for test data if present
-            if "test" in self.results.index:
-                logger.debug("Adding test data bars")
+            # Add bars for test data
+            if "test" in ql_data.index:
                 fig.add_trace(
                     go.Bar(
-                        x=self.results.columns,
-                        y=self.results.loc["test"],
+                        x=[str(x) for x in ql_data.columns],
+                        y=ql_data.loc["test"].values,
                         name="Test",
                         marker_color=test_color,
                     )
                 )
 
-            logger.debug("Updating plot layout")
+            if title is None:
+                title = f"Quantile Loss Performance - {self.model_name}"
+
             fig.update_layout(
                 title=title,
                 xaxis_title="Quantile",
@@ -144,87 +188,366 @@ class PerformanceResults:
             if save_path:
                 _save_figure(fig, save_path)
 
-            logger.debug("Plot creation successful")
             return fig
 
-        except KeyError as e:
-            error_msg = f"Missing required data in results: {str(e)}"
+        except Exception as e:
+            error_msg = f"Error creating quantile loss plot: {str(e)}"
             logger.error(error_msg)
             raise RuntimeError(error_msg) from e
-        except ValueError as e:
-            error_msg = f"Invalid data format for plotting: {str(e)}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
+
+    def _plot_log_loss(
+        self,
+        title: Optional[str],
+        save_path: Optional[str],
+        figsize: Tuple[int, int],
+    ) -> go.Figure:
+        """Plot log loss performance and additional categorical metrics."""
+        if not self.has_log_loss:
+            logger.warning("No log loss data available")
+            return go.Figure()
+
+        ll_data = self.results["log_loss"]
+        num_subplots = 1  # Base subplot for log loss bars
+
+        # Check if we have confusion matrix data
+        has_confusion = bool(self.y_true and self.y_pred)
+        # Check if we have probability distributions
+        has_probs = bool(self.class_probabilities)
+
+        if has_confusion:
+            num_subplots += 1
+        if has_probs:
+            num_subplots += 1
+
+        # Create subplots
+        subplot_titles = ["Log loss performance"]
+        if has_confusion:
+            subplot_titles.append("Confusion matrix")
+        if has_probs:
+            subplot_titles.append("Class probability distribution")
+
+        fig = make_subplots(
+            rows=num_subplots,
+            cols=1,
+            subplot_titles=subplot_titles,
+            vertical_spacing=0.15,
+            row_heights=[1] * num_subplots,
+        )
+
+        # Plot 1: Log Loss bars
+        palette = px.colors.qualitative.Plotly
+        train_color = palette[2]
+        test_color = palette[3]
+
+        # Get log loss values from the results DataFrame
+        ll_results_df = ll_data["results"]
+
+        if "train" in ll_results_df.index:
+            # Log loss should be constant across quantiles, so take the mean
+            train_loss = ll_results_df.loc["train"].mean()
+            fig.add_trace(
+                go.Bar(
+                    x=["Train"],
+                    y=[train_loss],
+                    name="Train",
+                    marker_color=train_color,
+                    showlegend=True,
+                ),
+                row=1,
+                col=1,
+            )
+
+        if "test" in ll_results_df.index:
+            test_loss = ll_results_df.loc["test"].mean()
+            fig.add_trace(
+                go.Bar(
+                    x=["Test"],
+                    y=[test_loss],
+                    name="Test",
+                    marker_color=test_color,
+                    showlegend=True,
+                ),
+                row=1,
+                col=1,
+            )
+
+        current_row = 2
+
+        # Plot 2: Confusion Matrix (if available)
+        if has_confusion:
+            # Use first categorical variable for confusion matrix
+            var_name = list(self.y_true.keys())[0]
+            y_true = self.y_true[var_name]
+            y_pred = self.y_pred[var_name]
+
+            # Create confusion matrix
+            from sklearn.metrics import confusion_matrix
+
+            labels = np.unique(np.concatenate([y_true, y_pred]))
+            cm = confusion_matrix(y_true, y_pred, labels=labels)
+
+            # Create heatmap
+            fig.add_trace(
+                go.Heatmap(
+                    z=cm,
+                    x=[str(l) for l in labels],
+                    y=[str(l) for l in labels],
+                    colorscale="Blues",
+                    showscale=True,
+                    text=cm,
+                    texttemplate="%{text}",
+                    textfont={"size": 10},
+                    hovertemplate="True: %{y}<br>Predicted: %{x}<br>Count: %{z}<extra></extra>",
+                ),
+                row=current_row,
+                col=1,
+            )
+
+            fig.update_xaxes(title_text="Predicted", row=current_row, col=1)
+            fig.update_yaxes(title_text="True", row=current_row, col=1)
+            current_row += 1
+
+        # Plot 3: Class Probability Distribution (if available)
+        if has_probs:
+            var_name = list(self.class_probabilities.keys())[0]
+            probs_df = self.class_probabilities[var_name]
+
+            # Create box plots for each class
+            for col in probs_df.columns:
+                fig.add_trace(
+                    go.Box(
+                        y=probs_df[col],
+                        name=str(col),
+                        boxmean=True,
+                    ),
+                    row=current_row,
+                    col=1,
+                )
+
+            fig.update_xaxes(title_text="Class", row=current_row, col=1)
+            fig.update_yaxes(
+                title_text="Predicted Probability", row=current_row, col=1
+            )
+
+        if title is None:
+            title = f"Log loss performance - {self.model_name}"
+
+        fig.update_layout(
+            title=title,
+            height=figsize[1] * num_subplots * 0.7,
+            width=figsize[0],
+            paper_bgcolor="#F0F0F0",
+            plot_bgcolor="#F0F0F0",
+            showlegend=True,
+        )
+
+        if save_path:
+            _save_figure(fig, save_path)
+
+        return fig
+
+    def _plot_combined(
+        self,
+        title: Optional[str],
+        save_path: Optional[str],
+        figsize: Tuple[int, int],
+    ) -> go.Figure:
+        """Plot combined view of both metrics."""
+        if not self.has_quantile_loss and not self.has_log_loss:
+            logger.warning("No metric data available")
+            return go.Figure()
+
+        # Count number of subplots needed
+        num_subplots = 0
+        subplot_titles = []
+
+        if self.has_quantile_loss:
+            num_subplots += 1
+            subplot_titles.append("Quantile loss")
+        if self.has_log_loss:
+            num_subplots += 1
+            subplot_titles.append("Log loss")
+
+        fig = make_subplots(
+            rows=num_subplots,
+            cols=1,
+            subplot_titles=subplot_titles,
+            vertical_spacing=0.2,
+        )
+
+        palette = px.colors.qualitative.Plotly
+        train_color = palette[2]
+        test_color = palette[3]
+        current_row = 1
+
+        # Add quantile loss plot
+        if self.has_quantile_loss:
+            ql_data = self.results["quantile_loss"]["results"]
+
+            if "train" in ql_data.index:
+                fig.add_trace(
+                    go.Bar(
+                        x=[str(x) for x in ql_data.columns],
+                        y=ql_data.loc["train"].values,
+                        name="QL Train",
+                        marker_color=train_color,
+                        legendgroup="train",
+                    ),
+                    row=current_row,
+                    col=1,
+                )
+
+            if "test" in ql_data.index:
+                fig.add_trace(
+                    go.Bar(
+                        x=[str(x) for x in ql_data.columns],
+                        y=ql_data.loc["test"].values,
+                        name="QL Test",
+                        marker_color=test_color,
+                        legendgroup="test",
+                    ),
+                    row=current_row,
+                    col=1,
+                )
+
+            fig.update_xaxes(title_text="Quantile", row=current_row, col=1)
+            fig.update_yaxes(title_text="Loss", row=current_row, col=1)
+            current_row += 1
+
+        # Add log loss plot
+        if self.has_log_loss:
+            ll_data = self.results["log_loss"]["results"]
+
+            if "train" in ll_data.index:
+                train_loss = ll_data.loc["train"].mean()
+                fig.add_trace(
+                    go.Bar(
+                        x=["Log loss"],
+                        y=[train_loss],
+                        name="Log loss train",
+                        marker_color=train_color,
+                        legendgroup="train",
+                        showlegend=self.has_quantile_loss == False,
+                    ),
+                    row=current_row,
+                    col=1,
+                )
+
+            if "test" in ll_data.index:
+                test_loss = ll_data.loc["test"].mean()
+                fig.add_trace(
+                    go.Bar(
+                        x=["Log loss"],
+                        y=[test_loss],
+                        name="Log loss test",
+                        marker_color=test_color,
+                        legendgroup="test",
+                        showlegend=self.has_quantile_loss == False,
+                    ),
+                    row=current_row,
+                    col=1,
+                )
+
+            fig.update_yaxes(title_text="Loss", row=current_row, col=1)
+
+        if title is None:
+            title = f"Combined Metric Performance - {self.model_name}"
+
+        fig.update_layout(
+            title=title,
+            barmode="group",
+            height=figsize[1] * num_subplots * 0.6,
+            width=figsize[0],
+            paper_bgcolor="#F0F0F0",
+            plot_bgcolor="#F0F0F0",
+            showlegend=True,
+        )
+
+        fig.update_xaxes(showgrid=False, zeroline=False)
+        fig.update_yaxes(showgrid=False, zeroline=False)
+
+        if save_path:
+            _save_figure(fig, save_path)
+
+        return fig
 
     def summary(self) -> pd.DataFrame:
         """Generate a summary of the performance metrics.
 
         Returns:
-            Summary DataFrame with metrics
+            Summary DataFrame with metrics for available metric types
         """
         logger.debug("Generating performance summary")
 
-        # Calculate summary statistics
-        train_mean = (
-            self.results.loc["train"].mean()
-            if "train" in self.results.index
-            else np.nan
-        )
-        test_mean = (
-            self.results.loc["test"].mean()
-            if "test" in self.results.index
-            else np.nan
-        )
-
-        train_std = (
-            self.results.loc["train"].std()
-            if "train" in self.results.index
-            else np.nan
-        )
-        test_std = (
-            self.results.loc["test"].std()
-            if "test" in self.results.index
-            else np.nan
-        )
-
-        train_min = (
-            self.results.loc["train"].min()
-            if "train" in self.results.index
-            else np.nan
-        )
-        test_min = (
-            self.results.loc["test"].min()
-            if "test" in self.results.index
-            else np.nan
-        )
-
-        train_max = (
-            self.results.loc["train"].max()
-            if "train" in self.results.index
-            else np.nan
-        )
-        test_max = (
-            self.results.loc["test"].max()
-            if "test" in self.results.index
-            else np.nan
-        )
-
-        # Create summary DataFrame
         summary_data = {
             "Model": [self.model_name],
             "Method": [self.method_name],
-            "Train Mean": [train_mean],
-            "Test Mean": [test_mean],
-            "Train Std": [train_std],
-            "Test Std": [test_std],
-            "Train Min": [train_min],
-            "Test Min": [test_min],
-            "Train Max": [train_max],
-            "Test Max": [test_max],
-            "Train/Test Ratio": [
-                train_mean / test_mean if test_mean != 0 else np.nan
-            ],
         }
+
+        # Add quantile loss statistics if available
+        if self.has_quantile_loss:
+            ql_data = self.results["quantile_loss"]["results"]
+
+            if "train" in ql_data.index:
+                train_data = ql_data.loc["train"]
+                summary_data["Quantile loss train mean"] = [train_data.mean()]
+                summary_data["Quantile loss train std"] = [train_data.std()]
+            else:
+                summary_data["Quantile loss train mean"] = [np.nan]
+                summary_data["Quantile loss train std"] = [np.nan]
+
+            if "test" in ql_data.index:
+                test_data = ql_data.loc["test"]
+                summary_data["Quantile loss test mean"] = [test_data.mean()]
+                summary_data["Quantile loss test std"] = [test_data.std()]
+            else:
+                summary_data["Quantile loss test mean"] = [np.nan]
+                summary_data["Quantile loss test std"] = [np.nan]
+
+            # Add ratio
+            if "train" in ql_data.index and "test" in ql_data.index:
+                train_mean = ql_data.loc["train"].mean()
+                test_mean = ql_data.loc["test"].mean()
+                summary_data["Quantile loss train/test ratio"] = [
+                    train_mean / test_mean if test_mean != 0 else np.nan
+                ]
+            else:
+                summary_data["Quantile loss train/test ratio"] = [np.nan]
+
+        # Add log loss statistics if available
+        if self.has_log_loss:
+            ll_data = self.results["log_loss"]
+            ll_results_df = ll_data["results"]
+
+            if "train" in ll_results_df.index:
+                train_loss = ll_results_df.loc["train"].mean()
+                summary_data["Log loss train mean"] = [train_loss]
+            else:
+                summary_data["Log loss train mean"] = [np.nan]
+
+            if "test" in ll_results_df.index:
+                test_loss = ll_results_df.loc["test"].mean()
+                summary_data["Log loss test mean"] = [test_loss]
+            else:
+                summary_data["Log loss test mean"] = [np.nan]
+
+            if (
+                "train" in ll_results_df.index
+                and "test" in ll_results_df.index
+            ):
+                train_loss = ll_results_df.loc["train"].mean()
+                test_loss = ll_results_df.loc["test"].mean()
+                summary_data["Log loss train/test ratio"] = [
+                    train_loss / test_loss if test_loss != 0 else np.nan
+                ]
+            else:
+                summary_data["Log loss train/test ratio"] = [np.nan]
+
+            # Add variable info
+            if "variables" in ll_data:
+                summary_data["Log loss variables"] = [
+                    ", ".join(ll_data["variables"])
+                ]
 
         summary_df = pd.DataFrame(summary_data)
         logger.debug(f"Summary generated with shape {summary_df.shape}")
@@ -232,10 +555,15 @@ class PerformanceResults:
 
     def __repr__(self) -> str:
         """String representation of the PerformanceResults object."""
+        metrics = []
+        if self.has_quantile_loss:
+            metrics.append("quantile_loss")
+        if self.has_log_loss:
+            metrics.append("log_loss")
         return (
             f"PerformanceResults(model='{self.model_name}', "
             f"method='{self.method_name}', "
-            f"shape={self.results.shape})"
+            f"metrics={metrics})"
         )
 
 
@@ -277,17 +605,26 @@ def _save_figure(fig: go.Figure, save_path: str) -> None:
 
 
 def model_performance_results(
-    results: pd.DataFrame,
+    results: Union[pd.DataFrame, Dict[str, Dict[str, any]]],
     model_name: Optional[str] = None,
     method_name: Optional[str] = None,
+    metric: str = "quantile_loss",
+    class_probabilities: Optional[Dict[str, pd.DataFrame]] = None,
+    y_true: Optional[Dict[str, np.ndarray]] = None,
+    y_pred: Optional[Dict[str, np.ndarray]] = None,
 ) -> PerformanceResults:
     """Create a PerformanceResults object from train/test results.
 
     Args:
-        results: DataFrame with train and test rows, quantiles
-            as columns, and loss values.
+        results: Either:
+            - DataFrame with train and test rows, quantiles as columns (backward compat)
+            - Dict with 'quantile_loss' and/or 'log_loss' keys containing metrics
         model_name: Name of the model used for imputation.
         method_name: Name of the imputation method.
+        metric: Which metric to visualize: 'quantile_loss', 'log_loss', or 'combined'
+        class_probabilities: Optional dict of class probability DataFrames for categorical vars
+        y_true: Optional dict of true values for confusion matrix
+        y_pred: Optional dict of predicted values for confusion matrix
 
     Returns:
         PerformanceResults object for visualization
@@ -296,4 +633,8 @@ def model_performance_results(
         results=results,
         model_name=model_name,
         method_name=method_name,
+        metric=metric,
+        class_probabilities=class_probabilities,
+        y_true=y_true,
+        y_pred=y_pred,
     )
