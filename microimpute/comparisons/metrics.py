@@ -19,7 +19,7 @@ from microimpute.comparisons.validation import (
     validate_quantiles,
 )
 from microimpute.config import QUANTILES, VALIDATE_CONFIG
-from microimpute.models.imputer import VariableTypeDetector
+from microimpute.utils.type_detector import VariableTypeDetector
 
 log = logging.getLogger(__name__)
 

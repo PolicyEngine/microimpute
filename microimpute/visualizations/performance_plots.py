@@ -220,11 +220,11 @@ class PerformanceResults:
             num_subplots += 1
 
         # Create subplots
-        subplot_titles = ["Log Loss Performance"]
+        subplot_titles = ["Log loss performance"]
         if has_confusion:
-            subplot_titles.append("Confusion Matrix")
+            subplot_titles.append("Confusion matrix")
         if has_probs:
-            subplot_titles.append("Class Probability Distribution")
+            subplot_titles.append("Class probability distribution")
 
         fig = make_subplots(
             rows=num_subplots,
@@ -330,7 +330,7 @@ class PerformanceResults:
             )
 
         if title is None:
-            title = f"Log Loss Performance - {self.model_name}"
+            title = f"Log loss performance - {self.model_name}"
 
         fig.update_layout(
             title=title,
@@ -363,10 +363,10 @@ class PerformanceResults:
 
         if self.has_quantile_loss:
             num_subplots += 1
-            subplot_titles.append("Quantile Loss")
+            subplot_titles.append("Quantile loss")
         if self.has_log_loss:
             num_subplots += 1
-            subplot_titles.append("Log Loss")
+            subplot_titles.append("Log loss")
 
         fig = make_subplots(
             rows=num_subplots,
@@ -422,9 +422,9 @@ class PerformanceResults:
                 train_loss = ll_data.loc["train"].mean()
                 fig.add_trace(
                     go.Bar(
-                        x=["Log Loss"],
+                        x=["Log loss"],
                         y=[train_loss],
-                        name="LL Train",
+                        name="Log loss train",
                         marker_color=train_color,
                         legendgroup="train",
                         showlegend=self.has_quantile_loss == False,
@@ -437,9 +437,9 @@ class PerformanceResults:
                 test_loss = ll_data.loc["test"].mean()
                 fig.add_trace(
                     go.Bar(
-                        x=["Log Loss"],
+                        x=["Log loss"],
                         y=[test_loss],
-                        name="LL Test",
+                        name="Log loss test",
                         marker_color=test_color,
                         legendgroup="test",
                         showlegend=self.has_quantile_loss == False,

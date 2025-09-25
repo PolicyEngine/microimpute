@@ -811,8 +811,6 @@ def method_comparison_results(
 
     return MethodComparisonResults(
         comparison_data=data,
-        metric_name=metric_name,
         metric=metric,
-        imputed_variables=None,  # Will be inferred from data
         data_format=data_format,
     )

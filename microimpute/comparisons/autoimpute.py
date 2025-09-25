@@ -28,6 +28,7 @@ from microimpute.config import (
 )
 from microimpute.models import OLS, QRF, Imputer, QuantReg
 from microimpute.utils.data import unnormalize_predictions
+from microimpute.utils.type_detector import VariableTypeDetector
 
 try:
     from microimpute.models import Matching
@@ -37,6 +38,14 @@ except ImportError:
     HAS_MATCHING = False
 
 log = logging.getLogger(__name__)
+
+# Internal constants for model compatibility with variable types
+_NUMERICAL_MODELS = {"OLS", "QRF", "QuantReg", "Matching"}
+_CATEGORICAL_MODELS = {
+    "OLS",
+    "QRF",
+    "Matching",
+}  # QuantReg doesn't support categorical
 
 
 class AutoImputeResult(BaseModel):
@@ -65,6 +74,52 @@ class AutoImputeResult(BaseModel):
     receiver_data: pd.DataFrame = Field(...)
     fitted_models: Dict[str, Any] = Field(...)
     cv_results: Dict[str, Dict[str, Any]] = Field(...)
+
+
+def _can_model_handle_variables(
+    model_name: str,
+    training_data: pd.DataFrame,
+    imputed_variables: List[str],
+) -> bool:
+    """Check if a model can handle the types of variables to be imputed.
+
+    Args:
+        model_name: Name of the model class.
+        training_data: DataFrame containing the variables.
+        imputed_variables: List of variables to be imputed.
+
+    Returns:
+        True if the model can handle all variable types, False otherwise.
+    """
+    detector = VariableTypeDetector()
+
+    for var in imputed_variables:
+        if var not in training_data.columns:
+            continue
+
+        # Use VariableTypeDetector to categorize the variable
+        var_type, _ = detector.categorize_variable(
+            training_data[var], var, log
+        )
+
+        # Check if model supports this variable type
+        if var_type in ["categorical", "numeric_categorical"]:
+            if model_name not in _CATEGORICAL_MODELS:
+                log.warning(
+                    f"Model {model_name} cannot handle categorical variable '{var}' (type: {var_type}). Skipping."
+                )
+                return False
+        elif var_type == "bool":
+            # Boolean variables can be handled by all models (treated as 0/1)
+            continue
+        elif var_type == "numeric":
+            if model_name not in _NUMERICAL_MODELS:
+                log.warning(
+                    f"Model {model_name} cannot handle numerical variable '{var}'. Skipping."
+                )
+                return False
+
+    return True
 
 
 def _setup_logging(log_level: str) -> int:
@@ -194,6 +249,15 @@ def _generate_imputations_for_all_models(
         model_name = model_class.__name__
         if model_name == best_method:
             continue  # Skip the best method as it's already done
+
+        # Check if model can handle the variable types
+        if not _can_model_handle_variables(
+            model_name, training_data, imputed_variables
+        ):
+            log.info(
+                f"Skipping {model_name} due to incompatible variable types."
+            )
+            continue
 
         log.info(f"Generating imputations with {model_name}.")
 
@@ -403,7 +467,7 @@ def autoimpute(
         log.info(
             f"Comparing across {model_classes} methods using metric_priority='{metric_priority}'."
         )
-        best_method, best_metrics = select_best_model_dual_metrics(
+        best_method, _ = select_best_model_dual_metrics(
             method_results, metric_priority
         )
 
@@ -419,6 +483,14 @@ def autoimpute(
         # Get the best model class
         models_dict = {model.__name__: model for model in model_classes}
         chosen_model = models_dict[best_method]
+
+        if not _can_model_handle_variables(
+            best_method, training_data, imputed_variables
+        ):
+            raise RuntimeError(
+                f"Best performing model {best_method} cannot handle the variable types "
+                f"in the imputed variables. This should not happen in normal operation."
+            )
 
         # Default to median quantile for final imputation
         imputation_q = 0.5
