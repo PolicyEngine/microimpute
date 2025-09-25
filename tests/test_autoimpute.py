@@ -359,25 +359,6 @@ def test_autoimpute_visualization_compatibility(simple_data: tuple) -> None:
         log_level="WARNING",
     )
 
-    # TODO: Re-enable once visualization functions are updated for new cv_results structure
-    # # Test that visualization can be created
-    # comparison_viz = method_comparison_results(
-    #     data=results.cv_results,
-    #     metric_name="Test Quantile Loss",
-    #     data_format="wide",
-    # )
-
-    # assert comparison_viz is not None
-
-    # # Test that plot can be generated (without saving)
-    # fig = comparison_viz.plot(
-    #     title="Test Autoimpute Comparison",
-    #     show_mean=True,
-    #     save_path=None,  # Don't save
-    # )
-
-    # assert fig is not None
-
 
 # === Error Handling ===
 
