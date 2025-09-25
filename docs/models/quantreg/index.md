@@ -8,7 +8,7 @@ QuantReg is designed specifically for numerical variables and does not support c
 
 ## How it works
 
-Quantile regression in MicroImpute leverages the statsmodels' QuantReg implementation to create precise models of conditional quantiles. During the training phase, the approach fits separate regression models for each requested quantile level, creating a focused model for each part of the conditional distribution you wish to estimate.
+Quantile regression in Microimpute leverages the statsmodels' QuantReg implementation to create precise models of conditional quantiles. During the training phase, the approach fits separate regression models for each requested quantile level, creating a focused model for each part of the conditional distribution you wish to estimate.
 
 The mathematical foundation of the method lies in its objective function, which minimizes asymmetrically weighted absolute residuals rather than squared residuals as in ordinary least squares. This asymmetric weighting system penalizes under-predictions more heavily when estimating higher quantiles and over-predictions more heavily when estimating lower quantiles. This clever formulation allows the model to converge toward solutions that represent true conditional quantiles.
 

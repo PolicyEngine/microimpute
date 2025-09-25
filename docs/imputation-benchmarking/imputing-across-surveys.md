@@ -1,6 +1,6 @@
 # Imputing across surveys
 
-This document explains what the workflow for imputing variables from one survey to another using MicroImpute may look like. We'll use the example of imputing wealth data from the Survey of Consumer Finances (SCF) into the Current Population Survey (CPS).
+This document explains what the workflow for imputing variables from one survey to another using Microimpute may look like. We'll use the example of imputing wealth data from the Survey of Consumer Finances (SCF) into the Current Population Survey (CPS).
 
  ## Identifying receiver and donor datasets
 
@@ -49,7 +49,7 @@ target_variable = ['networth']
 
 ## Performing imputation
 
-MicroImpute offers several methods for imputation across surveys. The approach under the hood will differ based on the method chosen, although the workflow will remain constant. Let us see this for two different example methods.
+Microimpute offers several methods for imputation across surveys. The approach under the hood will differ based on the method chosen, although the workflow will remain constant. Let us see this for two different example methods.
 
 ### Matching imputation
 
@@ -89,7 +89,7 @@ cps_data_with_wealth_ols = ols_imputer.impute(cps_data)
 
 ## Evaluating imputation quality
 
-Evaluating imputation quality across surveys can be challenging since the true values aren't known in the receiver dataset. Comparing the distribution of the target variables in the donor dataset to the distribution of the variables we imputed in the receiver dataset may give us an understanding of the imputation quality for different sections of the distribution. We may want to pay particular attention to obtaining accurate prediction not only for mean or median values but also look at the performance at the distribution tails. This can be achieved computing the quantile loss supported by MicroImpute. Additionally, if we have performed imputation accross multiple methods we may want to compare across them. MicroImpute supports this through the easy workflow described in the [benchmarking-methods.ipynb](./benchmarking-methods.ipynb) file.
+Evaluating imputation quality across surveys can be challenging since the true values aren't known in the receiver dataset. Comparing the distribution of the target variables in the donor dataset to the distribution of the variables we imputed in the receiver dataset may give us an understanding of the imputation quality for different sections of the distribution. We may want to pay particular attention to obtaining accurate prediction not only for mean or median values but also look at the performance at the distribution tails. This can be achieved computing the quantile loss supported by Microimpute. Additionally, if we have performed imputation accross multiple methods we may want to compare across them. Microimpute supports this through the easy workflow described in the [benchmarking-methods.ipynb](./benchmarking-methods.ipynb) file.
 
 ```python
 # Ensure all imputations are in a dictionary mapping quantiles to dataframes containing imputed values

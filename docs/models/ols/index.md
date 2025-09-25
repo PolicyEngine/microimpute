@@ -1,4 +1,4 @@
-# Ordinary least squares
+# Ordinary Least Squares
 
 The `OLS` model employs linear regression techniques to predict missing values by leveraging the relationships between predictor and target variables. This classic statistical approach provides a computationally efficient method for imputation while offering theoretical guarantees under certain assumptions.
 

@@ -1,10 +1,10 @@
 # Creating a new imputer model
 
-This document demonstrates how to create a new imputation model by extending the `Imputer` and `ImputerResults` abstract base classes in MicroImpute.
+This document demonstrates how to create a new imputation model by extending the `Imputer` and `ImputerResults` abstract base classes in Microimpute.
 
-## Understanding the microImpute architecture
+## Understanding the Microimpute architecture
 
-MicroImpute uses a two-class architecture for imputation models:
+Microimpute uses a two-class architecture for imputation models:
 
 1. **Imputer**: The base model class that handles model initialization and fitting
 2. **ImputerResults**: Represents a fitted model and handles prediction
@@ -174,7 +174,7 @@ for q in test_quantiles:
 
 ## Integrating with the benchmarking framework
 
-The new `NewModel` model is then ready to be integrated into the MicroImpute benchmarking framework. Here's how you would compare it with other models:
+The new `NewModel` model is then ready to be integrated into the Microimpute benchmarking framework. Here's how you would compare it with other models:
 
 ```python
 from microimpute.models import OLS, QRF
@@ -212,7 +212,7 @@ fig.show()
 
 ## Best practices for implementing new models
 
-When implementing a new imputation model for MicroImpute, adhering to certain best practices will ensure your model integrates seamlessly with the framework and provides a consistent experience for users.
+When implementing a new imputation model for Microimpute, adhering to certain best practices will ensure your model integrates seamlessly with the framework and provides a consistent experience for users.
 
 ### Architecture
 
