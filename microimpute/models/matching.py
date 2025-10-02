@@ -573,7 +573,7 @@ class Matching(Imputer):
 
         optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-        # Use same CV strategy as QRF: 3-fold CV with 10 trials
+        # Use 3-fold CV with 10 trials
         n_cv_folds = 3
         n_trials = 10
 

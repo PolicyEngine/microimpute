@@ -1,0 +1,4 @@
+- bump: minor
+  changes:
+    added:
+    - Wasserstein distance and Total Variation Distance metrics for distributional similarity.

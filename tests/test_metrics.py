@@ -13,9 +13,11 @@ from microimpute.comparisons.autoimpute_helpers import (
     select_best_model_dual_metrics,
 )
 from microimpute.comparisons.metrics import (
+    compare_distributions,
     compute_loss,
     get_metric_for_variable_type,
     log_loss,
+    total_variation_distance,
 )
 from microimpute.config import QUANTILES
 from microimpute.evaluations.cross_validation import cross_validate_model
@@ -1010,3 +1012,274 @@ def test_probability_ordering_with_real_model() -> None:
         assert (
             loss_ordered < loss_dummy
         ), "Real probabilities should give better loss than dummy probabilities"
+
+
+# === Distribution Comparison Tests ===
+
+
+def test_total_variation_distance_identical() -> None:
+    """Test TVD between identical distributions."""
+    values = np.array(["A", "B", "C", "A", "B", "C"])
+    tvd = total_variation_distance(values, values)
+    assert tvd == 0.0, "TVD should be 0 for identical distributions"
+
+
+def test_total_variation_distance_disjoint() -> None:
+    """Test TVD between completely disjoint distributions."""
+    donor = np.array(["A", "A", "A", "A"])
+    receiver = np.array(["B", "B", "B", "B"])
+    tvd = total_variation_distance(donor, receiver)
+    assert tvd == 1.0, "TVD should be 1 for disjoint distributions"
+
+
+def test_total_variation_distance_partial_overlap() -> None:
+    """Test TVD with partial distribution overlap."""
+    # Donor: 75% A, 25% B
+    donor = np.array(["A", "A", "A", "B"])
+    # Receiver: 50% A, 50% B
+    receiver = np.array(["A", "A", "B", "B"])
+    tvd = total_variation_distance(donor, receiver)
+    # Expected: 0.5 * (|0.75-0.50| + |0.25-0.50|) = 0.5 * (0.25 + 0.25) = 0.25
+    assert np.isclose(tvd, 0.25), f"Expected TVD ~0.25, got {tvd}"
+
+
+def test_total_variation_distance_different_categories() -> None:
+    """Test TVD when distributions have different category sets."""
+    donor = np.array(["A", "B", "A", "B"])
+    receiver = np.array(["B", "C", "B", "C"])
+    tvd = total_variation_distance(donor, receiver)
+    # Donor: A=0.5, B=0.5, C=0.0
+    # Receiver: A=0.0, B=0.5, C=0.5
+    # TVD = 0.5 * (|0.5-0| + |0.5-0.5| + |0-0.5|) = 0.5 * (0.5 + 0 + 0.5) = 0.5
+    assert np.isclose(tvd, 0.5), f"Expected TVD ~0.5, got {tvd}"
+
+
+def test_total_variation_distance_empty_input() -> None:
+    """Test TVD raises error with empty inputs."""
+    with pytest.raises(ValueError, match="non-empty"):
+        total_variation_distance(np.array([]), np.array(["A"]))
+
+    with pytest.raises(ValueError, match="non-empty"):
+        total_variation_distance(np.array(["A"]), np.array([]))
+
+
+def test_compare_distributions_numerical_only() -> None:
+    """Test compare_distributions with only numerical variables."""
+    np.random.seed(42)
+
+    # Create donor data
+    donor = pd.DataFrame(
+        {
+            "income": np.random.normal(50000, 10000, 100),
+            "age": np.random.normal(40, 10, 100),
+        }
+    )
+
+    # Create receiver data with similar but slightly different distribution
+    receiver = pd.DataFrame(
+        {
+            "income": np.random.normal(52000, 10000, 100),
+            "age": np.random.normal(41, 10, 100),
+        }
+    )
+
+    results = compare_distributions(donor, receiver, ["income", "age"])
+
+    # Check structure
+    assert len(results) == 2
+    assert all(results["Metric"] == "wasserstein_distance")
+    assert set(results["Variable"]) == {"income", "age"}
+
+    # Check that distances are positive
+    assert all(results["Distance"] >= 0)
+
+
+def test_compare_distributions_categorical_only() -> None:
+    """Test compare_distributions with only categorical variables."""
+    np.random.seed(42)
+
+    # Create donor data
+    donor = pd.DataFrame(
+        {
+            "region": np.random.choice(
+                ["North", "South", "East", "West"], 100
+            ),
+            "status": np.random.choice(["Active", "Inactive"], 100),
+        }
+    )
+
+    # Create receiver data with different distribution
+    receiver = pd.DataFrame(
+        {
+            "region": np.random.choice(
+                ["North", "South", "East", "West"], 100, p=[0.4, 0.3, 0.2, 0.1]
+            ),
+            "status": np.random.choice(
+                ["Active", "Inactive"], 100, p=[0.7, 0.3]
+            ),
+        }
+    )
+
+    results = compare_distributions(donor, receiver, ["region", "status"])
+
+    # Check structure
+    assert len(results) == 2
+    assert all(results["Metric"] == "total_variation_distance")
+    assert set(results["Variable"]) == {"region", "status"}
+
+    # TVD should be between 0 and 1
+    assert all(results["Distance"] >= 0)
+    assert all(results["Distance"] <= 1)
+
+
+def test_compare_distributions_mixed_types() -> None:
+    """Test compare_distributions with mixed numerical and categorical variables."""
+    np.random.seed(42)
+
+    donor = pd.DataFrame(
+        {
+            "income": np.random.normal(50000, 10000, 100),
+            "region": np.random.choice(["A", "B", "C"], 100),
+            "age": np.random.normal(40, 10, 100),
+            "employed": np.random.choice([True, False], 100),
+        }
+    )
+
+    receiver = pd.DataFrame(
+        {
+            "income": np.random.normal(51000, 10000, 100),
+            "region": np.random.choice(
+                ["A", "B", "C"], 100, p=[0.5, 0.3, 0.2]
+            ),
+            "age": np.random.normal(40.5, 10, 100),
+            "employed": np.random.choice([True, False], 100, p=[0.8, 0.2]),
+        }
+    )
+
+    results = compare_distributions(
+        donor, receiver, ["income", "region", "age", "employed"]
+    )
+
+    # Check structure
+    assert len(results) == 4
+
+    # Check correct metric assignment
+    numerical_vars = results[results["Metric"] == "wasserstein_distance"][
+        "Variable"
+    ].tolist()
+    categorical_vars = results[
+        results["Metric"] == "total_variation_distance"
+    ]["Variable"].tolist()
+
+    assert "income" in numerical_vars
+    assert "age" in numerical_vars
+    assert "region" in categorical_vars
+    assert "employed" in categorical_vars
+
+
+def test_compare_distributions_identical() -> None:
+    """Test that identical distributions give zero distance."""
+    np.random.seed(42)
+
+    data = pd.DataFrame(
+        {
+            "x": np.random.randn(50),
+            "y": np.random.choice(["A", "B"], 50),
+        }
+    )
+
+    results = compare_distributions(data, data, ["x", "y"])
+
+    # Both distances should be very close to 0
+    assert all(results["Distance"] < 1e-10)
+
+
+def test_compare_distributions_missing_columns() -> None:
+    """Test error handling for missing columns."""
+    donor = pd.DataFrame({"a": [1, 2, 3], "b": [4, 5, 6]})
+    receiver = pd.DataFrame({"a": [1, 2, 3], "c": [7, 8, 9]})
+
+    # Should raise error for missing column in receiver
+    with pytest.raises(ValueError, match="Missing columns"):
+        compare_distributions(donor, receiver, ["a", "b"])
+
+    # Should raise error for missing column in donor
+    with pytest.raises(ValueError, match="Missing columns"):
+        compare_distributions(donor, receiver, ["c"])
+
+
+def test_compare_distributions_with_nulls() -> None:
+    """Test that compare_distributions handles null values correctly."""
+    np.random.seed(42)
+
+    donor = pd.DataFrame(
+        {
+            "x": [1, 2, 3, 4, 5, np.nan, np.nan],
+            "y": ["A", "B", "A", "B", "A", None, "B"],
+        }
+    )
+
+    receiver = pd.DataFrame(
+        {
+            "x": [1.5, 2.5, 3.5, 4.5, 5.5, np.nan],
+            "y": ["A", "A", "B", "B", "B", None],
+        }
+    )
+
+    # Should work - nulls are dropped
+    results = compare_distributions(donor, receiver, ["x", "y"])
+
+    assert len(results) == 2
+    assert all(results["Distance"] >= 0)
+
+
+def test_compare_distributions_insufficient_data() -> None:
+    """Test error when variables have insufficient non-null data."""
+    donor = pd.DataFrame(
+        {
+            "x": [np.nan, np.nan, np.nan],
+            "y": [None, None, None],
+        }
+    )
+
+    receiver = pd.DataFrame(
+        {
+            "x": [1, 2, 3],
+            "y": ["A", "B", "C"],
+        }
+    )
+
+    # Should raise error when no valid comparisons can be computed
+    with pytest.raises(ValueError, match="No valid distribution comparisons"):
+        compare_distributions(donor, receiver, ["x", "y"])
+
+
+def test_compare_distributions_return_format() -> None:
+    """Test that compare_distributions returns correctly formatted DataFrame."""
+    np.random.seed(42)
+
+    donor = pd.DataFrame(
+        {
+            "num": np.random.randn(50),
+            "cat": np.random.choice(["X", "Y"], 50),
+        }
+    )
+
+    receiver = pd.DataFrame(
+        {
+            "num": np.random.randn(50),
+            "cat": np.random.choice(["X", "Y"], 50),
+        }
+    )
+
+    results = compare_distributions(donor, receiver, ["num", "cat"])
+
+    # Check DataFrame structure
+    assert isinstance(results, pd.DataFrame)
+    assert list(results.columns) == ["Variable", "Metric", "Distance"]
+    assert len(results) == 2
+
+    # Check data types
+    assert results["Variable"].dtype == "object"
+    assert results["Metric"].dtype == "object"
+    assert results["Distance"].dtype in ["float64", "float32"]
