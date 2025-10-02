@@ -222,67 +222,6 @@ def test_qrf_missing_categorical_levels_in_test(
     assert not predictions["target"].isna().any()
 
 
-# === Hyperparameter Tuning Tests ===
-
-
-def test_qrf_hyperparameter_tuning(diabetes_data: pd.DataFrame) -> None:
-    """Test hyperparameter tuning functionality."""
-    predictors = ["age", "sex", "bmi", "bp"]
-    imputed_variables = ["s1", "s4"]
-    data = diabetes_data[predictors + imputed_variables]
-
-    # Split data
-    np.random.seed(42)
-    train_idx = np.random.choice(
-        len(data), int(0.7 * len(data)), replace=False
-    )
-    valid_idx = np.array([i for i in range(len(data)) if i not in train_idx])
-
-    train_data = data.iloc[train_idx].reset_index(drop=True)
-    valid_data = data.iloc[valid_idx].reset_index(drop=True)
-
-    X_train = preprocess_data(
-        train_data, full_data=True, train_size=1.0, test_size=0.0
-    )
-    X_valid = preprocess_data(
-        valid_data, full_data=True, train_size=1.0, test_size=0.0
-    )
-
-    # Fit models with and without tuning
-    default_model = QRF()
-    default_fitted = default_model.fit(X_train, predictors, imputed_variables)
-
-    tuned_model = QRF()
-    tuned_fitted, best_params = tuned_model.fit(
-        X_train, predictors, imputed_variables, tune_hyperparameters=True
-    )
-
-    # Compare predictions
-    default_preds = default_fitted.predict(X_valid, quantiles=[0.5])
-    tuned_preds = tuned_fitted.predict(X_valid, quantiles=[0.5])
-
-    # Calculate MSE
-    default_mse = {}
-    tuned_mse = {}
-
-    for var in imputed_variables:
-        default_mse[var] = mean_squared_error(
-            X_valid[var], default_preds[0.5][var]
-        )
-        tuned_mse[var] = mean_squared_error(
-            X_valid[var], tuned_preds[0.5][var]
-        )
-
-    # Verify hyperparameters are reasonable
-    for var in imputed_variables:
-        model = tuned_fitted.models[var]
-        if hasattr(model, "rf"):
-            if hasattr(model.rf, "n_estimators"):
-                assert 50 <= model.rf.n_estimators <= 300
-            if hasattr(model.rf, "min_samples_leaf"):
-                assert 1 <= model.rf.min_samples_leaf <= 10
-
-
 # === Memory Management and Performance Tests ===
 
 
@@ -792,3 +731,319 @@ def test_qrf_performance_characteristics(diabetes_data: pd.DataFrame) -> None:
     # MSE should be reasonable (not infinite or NaN)
     assert np.isfinite(mse)
     assert mse < 1e6  # Reasonable upper bound
+
+
+# === Hyperparameter Tuning Tests ===
+
+
+def test_qrf_hyperparameter_tuning_numeric_only() -> None:
+    """Test hyperparameter tuning with numeric variables only (backward compatibility)."""
+    np.random.seed(42)
+    n_samples = 150
+
+    # Create numeric-only dataset
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "x2": np.random.randn(n_samples),
+            "y1": np.random.randn(n_samples) * 2 + 5,
+            "y2": np.random.randn(n_samples) * 3 + 10,
+        }
+    )
+
+    model = QRF(log_level="INFO")
+
+    # Fit with hyperparameter tuning
+    fitted_model = model.fit(
+        data,
+        predictors=["x1", "x2"],
+        imputed_variables=["y1", "y2"],
+        tune_hyperparameters=True,
+    )
+
+    # Check that tuning returned parameters
+    assert isinstance(fitted_model, tuple)
+    fitted_instance, tuned_params = fitted_model
+
+    # Should return flat dict (not nested) for numeric-only
+    assert isinstance(tuned_params, dict)
+    assert "qrf" not in tuned_params  # Should be flat
+    assert "rfc" not in tuned_params
+
+    # Check that expected hyperparameters are present
+    assert "n_estimators" in tuned_params
+    assert "min_samples_split" in tuned_params
+    assert "min_samples_leaf" in tuned_params
+    assert "max_features" in tuned_params
+    assert "bootstrap" in tuned_params
+
+    # Verify parameter ranges
+    assert 50 <= tuned_params["n_estimators"] <= 300
+    assert 2 <= tuned_params["min_samples_split"] <= 20
+    assert 1 <= tuned_params["min_samples_leaf"] <= 10
+    assert 0.1 <= tuned_params["max_features"] <= 1.0
+    assert tuned_params["bootstrap"] in [True, False]
+
+    # Test that predictions work
+    predictions = fitted_instance.predict(data[["x1", "x2"]].head(10))
+    assert isinstance(predictions, pd.DataFrame)
+    assert set(predictions.columns) == {"y1", "y2"}
+
+
+def test_qrf_hyperparameter_tuning_categorical_only() -> None:
+    """Test hyperparameter tuning with categorical variables only."""
+    np.random.seed(42)
+    n_samples = 150
+
+    # Create categorical-only dataset
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "x2": np.random.randn(n_samples),
+            "cat1": np.random.choice(["A", "B", "C"], n_samples),
+            "cat2": np.random.choice(["X", "Y", "Z"], n_samples),
+        }
+    )
+
+    model = QRF(log_level="INFO")
+
+    # Fit with hyperparameter tuning
+    fitted_model = model.fit(
+        data,
+        predictors=["x1", "x2"],
+        imputed_variables=["cat1", "cat2"],
+        tune_hyperparameters=True,
+    )
+
+    # Check that tuning returned parameters
+    assert isinstance(fitted_model, tuple)
+    fitted_instance, tuned_params = fitted_model
+
+    # Should return flat dict (not nested) for categorical-only
+    assert isinstance(tuned_params, dict)
+    assert "qrf" not in tuned_params  # Should be flat
+    assert "rfc" not in tuned_params
+
+    # Check that expected hyperparameters are present
+    assert "n_estimators" in tuned_params
+    assert "min_samples_split" in tuned_params
+    assert "min_samples_leaf" in tuned_params
+    assert "max_features" in tuned_params
+    assert "bootstrap" in tuned_params
+
+    # Verify parameter ranges
+    assert 50 <= tuned_params["n_estimators"] <= 300
+    assert 2 <= tuned_params["min_samples_split"] <= 20
+    assert 1 <= tuned_params["min_samples_leaf"] <= 10
+    # For RFC, max_features can be string or float
+    assert tuned_params["max_features"] in ["sqrt", "log2", 0.5, 0.8, 1.0]
+    assert tuned_params["bootstrap"] in [True, False]
+
+    # Test that predictions work
+    predictions = fitted_instance.predict(data[["x1", "x2"]].head(10))
+    assert isinstance(predictions, pd.DataFrame)
+    assert set(predictions.columns) == {"cat1", "cat2"}
+
+
+def test_qrf_hyperparameter_tuning_mixed_variables() -> None:
+    """Test hyperparameter tuning with mixed numeric and categorical variables."""
+    np.random.seed(42)
+    n_samples = 150
+
+    # Create mixed dataset
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "x2": np.random.randn(n_samples),
+            "numeric1": np.random.randn(n_samples) * 2 + 5,
+            "numeric2": np.random.randn(n_samples) * 3 + 10,
+            "category": np.random.choice(["Low", "Medium", "High"], n_samples),
+            "boolean": np.random.choice([True, False], n_samples),
+        }
+    )
+
+    model = QRF(log_level="INFO")
+
+    # Fit with hyperparameter tuning
+    fitted_model = model.fit(
+        data,
+        predictors=["x1", "x2"],
+        imputed_variables=["numeric1", "numeric2", "category", "boolean"],
+        tune_hyperparameters=True,
+    )
+
+    # Check that tuning returned parameters
+    assert isinstance(fitted_model, tuple)
+    fitted_instance, tuned_params = fitted_model
+
+    # Should return NESTED dict for mixed variables
+    assert isinstance(tuned_params, dict)
+    assert "qrf" in tuned_params
+    assert "rfc" in tuned_params
+
+    # Check QRF parameters
+    qrf_params = tuned_params["qrf"]
+    assert isinstance(qrf_params, dict)
+    assert "n_estimators" in qrf_params
+    assert "max_features" in qrf_params
+    assert 0.1 <= qrf_params["max_features"] <= 1.0  # QRF uses float
+
+    # Check RFC parameters
+    rfc_params = tuned_params["rfc"]
+    assert isinstance(rfc_params, dict)
+    assert "n_estimators" in rfc_params
+    assert "max_features" in rfc_params
+    assert rfc_params["max_features"] in [
+        "sqrt",
+        "log2",
+        0.5,
+        0.8,
+        1.0,
+    ]  # RFC uses categorical
+
+    # Test that predictions work
+    predictions = fitted_instance.predict(data[["x1", "x2"]].head(10))
+    assert isinstance(predictions, pd.DataFrame)
+    assert set(predictions.columns) == {
+        "numeric1",
+        "numeric2",
+        "category",
+        "boolean",
+    }
+
+    # Verify categorical predictions are valid
+    assert all(predictions["category"].isin(["Low", "Medium", "High"]))
+    assert all(predictions["boolean"].isin([True, False]))
+
+
+def test_qrf_hyperparameter_tuning_with_cv_folds() -> None:
+    """Test that hyperparameter tuning uses CV folds correctly."""
+    np.random.seed(42)
+    n_samples = 150
+
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "x2": np.random.randn(n_samples),
+            "y1": np.random.randn(n_samples),
+            "cat1": np.random.choice(["A", "B"], n_samples),
+        }
+    )
+
+    # Capture logs
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.INFO)
+
+    model = QRF(log_level="INFO")
+    model.logger.addHandler(handler)
+
+    # Fit with mixed variables to test both QRF and RFC tuning
+    fitted_model = model.fit(
+        data,
+        predictors=["x1", "x2"],
+        imputed_variables=["y1", "cat1"],
+        tune_hyperparameters=True,
+    )
+
+    log_output = log_stream.getvalue()
+
+    # Verify CV strategy is logged
+    assert "3-fold CV" in log_output or "3-fold cv" in log_output.lower()
+    assert "10 trials" in log_output.lower()
+
+    # Verify both QRF and RFC were tuned
+    assert "QRF" in log_output
+    assert "RFC" in log_output
+
+    # Verify results structure
+    fitted_instance, tuned_params = fitted_model
+    assert "qrf" in tuned_params
+    assert "rfc" in tuned_params
+
+    model.logger.removeHandler(handler)
+
+
+def test_qrf_hyperparameter_tuning_improves_performance() -> None:
+    """Test that tuned hyperparameters perform better than untuned model."""
+    from microimpute.comparisons.metrics import compute_loss
+
+    np.random.seed(42)
+    n_samples = 400
+
+    # Create a more complex dataset where tuning matters
+    # Include non-linear relationships and interactions
+    x1 = np.random.randn(n_samples)
+    x2 = np.random.randn(n_samples)
+    x3 = np.random.randn(n_samples)
+    x4 = np.random.randn(n_samples)
+    x5 = np.random.randn(n_samples)
+
+    # Complex non-linear relationship with interactions
+    y = (
+        2 * x1
+        + 3 * x2
+        + 1.5 * x3 * x4  # interaction term
+        + 0.5 * x1**2  # non-linear term
+        - 0.8 * x5
+        + np.random.randn(n_samples) * 0.5
+    )
+
+    data = pd.DataFrame(
+        {
+            "x1": x1,
+            "x2": x2,
+            "x3": x3,
+            "x4": x4,
+            "x5": x5,
+            "y": y,
+        }
+    )
+
+    # Split into train and test
+    train_data = data[:300]
+    test_data = data[300:]
+
+    # Fit with default hyperparameters (untuned)
+    untuned_model = QRF(log_level="WARNING")
+    untuned_fitted = untuned_model.fit(
+        train_data,
+        predictors=["x1", "x2", "x3", "x4", "x5"],
+        imputed_variables=["y"],
+    )
+
+    # Fit with tuning
+    tuned_model = QRF(log_level="WARNING")
+    tuned_fitted, tuned_params = tuned_model.fit(
+        train_data,
+        predictors=["x1", "x2", "x3", "x4", "x5"],
+        imputed_variables=["y"],
+        tune_hyperparameters=True,
+    )
+
+    # Predict on test set with both models
+    untuned_predictions = untuned_fitted.predict(
+        test_data[["x1", "x2", "x3", "x4", "x5"]], quantiles=[0.5]
+    )
+    tuned_predictions = tuned_fitted.predict(
+        test_data[["x1", "x2", "x3", "x4", "x5"]], quantiles=[0.5]
+    )
+
+    # Calculate quantile loss for both models using q=0.5
+    true_values = test_data["y"].values
+    _, untuned_loss = compute_loss(
+        true_values,
+        untuned_predictions[0.5]["y"].values,
+        "quantile_loss",
+        q=0.5,
+    )
+    _, tuned_loss = compute_loss(
+        true_values, tuned_predictions[0.5]["y"].values, "quantile_loss", q=0.5
+    )
+
+    # Tuned model should perform at least as well as untuned, or within 20% margin
+    # (allowing for random variation in small datasets)
+    margin = 0.2
+    assert tuned_loss <= untuned_loss * (
+        1 + margin
+    ), f"Tuned loss ({tuned_loss:.4f}) should be ≤ {(1+margin)*100}% of untuned loss ({untuned_loss:.4f} * {1+margin} = {untuned_loss * (1+margin):.4f})"

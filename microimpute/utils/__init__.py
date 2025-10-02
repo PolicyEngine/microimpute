@@ -11,7 +11,7 @@ Key components:
 """
 
 from microimpute.utils.data import preprocess_data, unnormalize_predictions
-from microimpute.utils.type_detector import VariableTypeDetector
+from microimpute.utils.type_handling import VariableTypeDetector
 
 # Optional import for R-based functions
 try:

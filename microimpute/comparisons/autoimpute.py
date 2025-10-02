@@ -28,7 +28,7 @@ from microimpute.config import (
 )
 from microimpute.models import OLS, QRF, Imputer, QuantReg
 from microimpute.utils.data import unnormalize_predictions
-from microimpute.utils.type_detector import VariableTypeDetector
+from microimpute.utils.type_handling import VariableTypeDetector
 
 try:
     from microimpute.models import Matching
