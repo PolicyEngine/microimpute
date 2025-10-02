@@ -17,7 +17,10 @@ import pandas as pd
 from pydantic import SkipValidation, validate_call
 
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
-from microimpute.utils.type_detector import VariableTypeDetector
+from microimpute.utils.type_handling import (
+    DummyVariableProcessor,
+    VariableTypeDetector,
+)
 
 
 class _ConstantValueModel:
@@ -32,144 +35,6 @@ class _ConstantValueModel:
         return pd.Series(
             self.constant_value, index=X.index, name=self.variable_name
         )
-
-
-class DummyVariableProcessor:
-    """Handles conversion of categorical predictors to dummy variables."""
-
-    def __init__(self, logger: logging.Logger):
-        self.logger = logger
-        self.dummy_mapping = {}  # Maps original column to dummy columns
-
-    def preprocess_predictors(
-        self,
-        data: pd.DataFrame,
-        predictors: List[str],
-        imputed_variables: List[str],
-    ) -> Tuple[pd.DataFrame, List[str]]:
-        """
-        Process only predictor variables, converting categoricals to dummies.
-        Imputation targets remain in original form.
-
-        Returns:
-            Tuple of (processed_data, updated_predictors)
-        """
-        # Start with a copy containing all needed columns
-        all_columns = list(set(predictors + imputed_variables))
-        data = data[all_columns].copy()
-        detector = VariableTypeDetector()
-
-        # Identify categorical predictors only (not targets)
-        categorical_predictors = []
-        for col in predictors:  # Only check predictors
-            if col not in data.columns:
-                continue
-            var_type, categories = detector.categorize_variable(
-                data[col], col, self.logger
-            )
-            if var_type in ["categorical", "numeric_categorical"]:
-                categorical_predictors.append(col)
-                self.logger.info(
-                    f"Will create dummy variables for predictor '{col}' ({var_type})"
-                )
-
-        # Process categorical predictors
-        updated_predictors = predictors.copy()
-
-        if categorical_predictors:
-            # Create dummy variables for categorical predictors only
-            dummy_df = pd.get_dummies(
-                data[categorical_predictors],
-                columns=categorical_predictors,
-                dtype="float64",
-                drop_first=True,  # Standard practice for predictors
-            )
-
-            # Track mapping for each original column
-            for orig_col in categorical_predictors:
-                dummy_cols = [
-                    col
-                    for col in dummy_df.columns
-                    if col.startswith(f"{orig_col}_")
-                ]
-                self.dummy_mapping[orig_col] = dummy_cols
-
-                # Update predictor list
-                updated_predictors.remove(orig_col)
-                updated_predictors.extend(dummy_cols)
-
-                self.logger.debug(
-                    f"Created {len(dummy_cols)} dummy variables for '{orig_col}'"
-                )
-
-            # Drop original categorical columns and add dummies
-            data = data.drop(columns=categorical_predictors)
-            data = pd.concat([data, dummy_df], axis=1)
-
-        # Convert boolean predictors to float (but keep as single column)
-        for col in predictors:
-            if col in data.columns:
-                var_type, _ = detector.categorize_variable(
-                    data[col], col, self.logger
-                )
-                if var_type == "bool":
-                    data[col] = data[col].astype("float64")
-                    self.logger.debug(
-                        f"Converted boolean predictor '{col}' to float64"
-                    )
-
-        return data, updated_predictors
-
-    def apply_dummy_encoding_to_test(
-        self,
-        data: pd.DataFrame,
-        predictors: List[str],
-    ) -> Tuple[pd.DataFrame, List[str]]:
-        """Apply same dummy encoding to test data based on training mapping."""
-        detector = VariableTypeDetector()
-        data = data.copy()
-        updated_predictors = predictors.copy()
-
-        # Apply dummy encoding based on stored mapping
-        for orig_col, dummy_cols in self.dummy_mapping.items():
-            if orig_col in predictors and orig_col in data.columns:
-                # Create dummies for this column
-                dummy_df = pd.get_dummies(
-                    data[[orig_col]],
-                    columns=[orig_col],
-                    dtype="float64",
-                    drop_first=False,  # Don't drop first, we'll handle missing manually
-                )
-
-                # Ensure we have the exact dummy columns from training
-                for dummy_col in dummy_cols:
-                    if dummy_col not in dummy_df.columns:
-                        dummy_df[dummy_col] = 0.0  # Missing category gets 0
-
-                # Keep only the dummy columns from training
-                dummy_df = dummy_df[dummy_cols]
-
-                # Update data
-                data = data.drop(columns=[orig_col])
-                data = pd.concat([data, dummy_df], axis=1)
-
-                # Update predictor list
-                updated_predictors.remove(orig_col)
-                updated_predictors.extend(dummy_cols)
-
-        # Convert boolean predictors to float
-        for col in predictors:
-            if col in data.columns:
-                var_type, _ = detector.categorize_variable(
-                    data[col], col, self.logger
-                )
-                if var_type == "bool":
-                    data[col] = data[col].astype("float64")
-
-        return data, updated_predictors
-
-    # Note: Old reverse encoding methods removed as we now handle categorical
-    # targets directly through classification models
 
 
 class Imputer(ABC):

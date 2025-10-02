@@ -316,15 +316,27 @@ class QRFResults(ImputerResults):
                     var_predictors = _get_sequential_predictors(
                         self.predictors, self.imputed_variables, i
                     )
+
+                    # Get properly encoded predictor columns
+                    if self.dummy_processor:
+                        encoded_predictors = self.dummy_processor.get_sequential_predictor_columns(
+                            var_predictors
+                        )
+                    else:
+                        encoded_predictors = var_predictors
+
                     self.logger.debug(
                         f"var_predictors for {variable}: {var_predictors}"
+                    )
+                    self.logger.debug(
+                        f"encoded_predictors for {variable}: {encoded_predictors}"
                     )
                     self.logger.debug(
                         f"Available columns in X_test_augmented: {X_test_augmented.columns.tolist()}"
                     )
 
                     # Ensure we have all needed columns in X_test_augmented
-                    missing_cols = set(var_predictors) - set(
+                    missing_cols = set(encoded_predictors) - set(
                         X_test_augmented.columns
                     )
                     if missing_cols:
@@ -355,20 +367,21 @@ class QRFResults(ImputerResults):
                         if return_probs and prob_results is not None:
                             # Get probabilities and classes
                             prob_info = model.predict(
-                                X_test_augmented[var_predictors],
+                                X_test_augmented[encoded_predictors],
                                 return_probs=True,
                             )
                             prob_results[variable] = prob_info
 
                         # Get class predictions
                         imputed_values = model.predict(
-                            X_test_augmented[var_predictors],
+                            X_test_augmented[encoded_predictors],
                             return_probs=False,
                         )
                     else:
                         # Regression for numeric targets
                         imputed_values = model.predict(
-                            X_test_augmented[var_predictors], mean_quantile=q
+                            X_test_augmented[encoded_predictors],
+                            mean_quantile=q,
                         )
 
                     imputed_df[variable] = imputed_values
@@ -376,21 +389,23 @@ class QRFResults(ImputerResults):
                     # Add the imputed values to X_test_augmented for subsequent variables
                     X_test_augmented[variable] = imputed_values
 
-                    # If this is a categorical variable, track its dummy columns
-                    # for future sequential imputation steps
-                    if variable in self.categorical_targets:
-                        # Track which dummy columns would be created for this variable
-                        # using drop_first=True convention
-                        unique_values = imputed_values.unique()
-                        if len(unique_values) > 1:
-                            # With drop_first=True, we create dummies for all but the first category
-                            for val in sorted(unique_values)[1:]:
-                                dummy_col = f"{variable}_{val}"
-                                imputed_dummy_cols.add(dummy_col)
-                                # Also create the actual dummy column if it will be used
-                                X_test_augmented[dummy_col] = (
-                                    imputed_values == val
-                                ).astype(float)
+                    # Encode categorical/boolean imputed variable for next iteration
+                    if (
+                        self.dummy_processor
+                        and variable
+                        in self.dummy_processor.imputed_var_dummy_mapping
+                    ):
+                        X_test_augmented = self.dummy_processor.sequential_imputed_predictor_encoding(
+                            X_test_augmented, variable
+                        )
+                        # Track the dummy columns that were added
+                        var_info = (
+                            self.dummy_processor.imputed_var_dummy_mapping[
+                                variable
+                            ]
+                        )
+                        if var_info["dummy_cols"]:
+                            imputed_dummy_cols.update(var_info["dummy_cols"])
 
                     # Log timing for individual variables when not processing multiple quantiles
                     if not quantiles:
@@ -504,20 +519,42 @@ class QRF(Imputer):
         categorical_targets = getattr(self, "categorical_targets", {})
         boolean_targets = getattr(self, "boolean_targets", {})
 
+        # Extract appropriate parameters based on model type
+        # Handle nested structure from hyperparameter tuning
         if isinstance(model, _RandomForestClassifierModel):
+            # Use RFC params if they exist in a nested structure
+            if "rfc" in kwargs:
+                model_params = kwargs["rfc"]
+            elif "qrf" in kwargs:
+                # Mixed case: only QRF params available, use defaults for RFC
+                model_params = {}
+            else:
+                # Flat dict: use all kwargs (backward compatible)
+                model_params = kwargs
+
             if variable in categorical_targets:
                 model.fit(
                     X,
                     y,
                     var_type=categorical_targets[variable]["type"],
                     categories=categorical_targets[variable].get("categories"),
-                    **kwargs,
+                    **model_params,
                 )
             elif variable in boolean_targets:
-                model.fit(X, y, var_type="boolean", **kwargs)
+                model.fit(X, y, var_type="boolean", **model_params)
         else:
+            # Use QRF params if they exist in a nested structure
+            if "qrf" in kwargs:
+                model_params = kwargs["qrf"]
+            elif "rfc" in kwargs:
+                # Mixed case: only RFC params available, use defaults for QRF
+                model_params = {}
+            else:
+                # Flat dict: use all kwargs (backward compatible)
+                model_params = kwargs
+
             # Regular QRF fit
-            model.fit(X, y, **kwargs)
+            model.fit(X, y, **model_params)
 
     def _get_memory_usage_info(self) -> str:
         """Get formatted memory usage information."""
@@ -556,6 +593,13 @@ class QRF(Imputer):
             RuntimeError: If model fitting fails.
         """
         try:
+            # Store target type information early for hyperparameter tuning
+            self.categorical_targets = categorical_targets or {}
+            self.boolean_targets = boolean_targets or {}
+            self.numeric_targets = numeric_targets or []
+            self.constant_targets = constant_targets or {}
+            self.imputed_variables = imputed_variables
+
             if tune_hyperparameters:
                 try:
                     qrf_kwargs = self._tune_hyperparameters(
@@ -633,12 +677,23 @@ class QRF(Imputer):
                                 predictors, imputed_variables, i
                             )
 
+                            # Get properly encoded predictor columns
+                            dummy_processor = getattr(
+                                self, "dummy_processor", None
+                            )
+                            if dummy_processor:
+                                encoded_predictors = dummy_processor.get_sequential_predictor_columns(
+                                    current_predictors
+                                )
+                            else:
+                                encoded_predictors = current_predictors
+
                             # Log detailed pre-imputation information
                             self.logger.info(
                                 f"[{i+1}/{len(imputed_variables)}] Starting imputation for '{variable}'"
                             )
                             self.logger.info(
-                                f"  Features: {len(current_predictors)} predictors"
+                                f"  Features: {len(encoded_predictors)} predictors"
                             )
                             self.logger.info(
                                 f"  Memory usage: {self._get_memory_usage_info()}"
@@ -648,7 +703,7 @@ class QRF(Imputer):
                             model = self._create_model_for_variable(variable)
                             self._fit_model(
                                 model,
-                                X_train[current_predictors],
+                                X_train[encoded_predictors],
                                 X_train[variable],
                                 variable,
                                 **qrf_kwargs,
@@ -677,6 +732,19 @@ class QRF(Imputer):
                                     )
 
                                 self.models[variable] = model
+
+                                # Encode categorical/boolean imputed variable for next iteration
+                                if (
+                                    dummy_processor
+                                    and variable
+                                    in dummy_processor.imputed_var_dummy_mapping
+                                ):
+                                    X_train = dummy_processor.sequential_imputed_predictor_encoding(
+                                        X_train, variable
+                                    )
+                                    self.logger.debug(
+                                        f"  Encoded '{variable}' for use in sequential imputation"
+                                    )
 
                             except Exception as e:
                                 self.logger.error(
@@ -966,33 +1034,39 @@ class QRF(Imputer):
                     f"  Memory cleanup performed. Usage: {self._get_memory_usage_info()}"
                 )
 
-    @validate_call(config=VALIDATE_CONFIG)
-    def _tune_hyperparameters(
+    def _tune_qrf_hyperparameters(
         self,
         data: pd.DataFrame,
         predictors: List[str],
-        imputed_variables: List[str],
+        numeric_vars: List[str],
+        n_cv_folds: int = 3,
+        n_trials: int = 10,
     ) -> Dict[str, Any]:
-        """Tune hyperparameters for the QRF model using Optuna.
+        """Tune hyperparameters for QRF model using quantile loss with CV.
 
         Args:
-            X_train: DataFrame containing the training data.
+            data: Full training data.
             predictors: List of column names to use as predictors.
-            imputed_variables: List of column names to impute.
+            numeric_vars: List of numeric variables to impute.
+            n_cv_folds: Number of CV folds for robust evaluation (default: 3).
+            n_trials: Number of Optuna trials (default: 10).
 
         Returns:
-            Dictionary of tuned hyperparameters.
+            Dictionary of tuned hyperparameters for QRF.
         """
         import optuna
-        from sklearn.model_selection import train_test_split
+        from sklearn.model_selection import KFold
+
+        from microimpute.comparisons.metrics import compute_loss
 
         # Suppress Optuna's logs during optimization
         optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-        # Create a validation split (80% train, 20% validation)
-        X_train, X_test = train_test_split(
-            data, test_size=0.2, random_state=self.seed
-        )
+        # Get all imputed variables for proper sequential imputation
+        all_imputed_vars = getattr(self, "imputed_variables", numeric_vars)
+
+        # Set up CV folds
+        kf = KFold(n_splits=n_cv_folds, shuffle=True, random_state=self.seed)
 
         def objective(trial: optuna.Trial) -> float:
             params = {
@@ -1009,54 +1083,96 @@ class QRF(Imputer):
                 ),
             }
 
-            # Track errors for all variables
-            var_errors = []
+            # Track errors across CV folds
+            fold_errors = []
 
-            # Create copies for augmented data
-            X_train_augmented = X_train.copy()
-            X_test_augmented = X_test.copy()
+            # Perform CV
+            for fold_idx, (train_idx, val_idx) in enumerate(kf.split(data)):
+                X_train_fold = data.iloc[train_idx]
+                X_val_fold = data.iloc[val_idx]
 
-            # For each imputed variable
-            for i, var in enumerate(imputed_variables):
-                # Build predictor set: original predictors + previously imputed variables
-                current_predictors = _get_sequential_predictors(
-                    predictors, imputed_variables, i
-                )
+                # Track errors for numeric variables in this fold
+                var_errors = []
 
-                # Extract target variable values
-                y_test = X_test[var]
+                # Create copies for augmented data
+                X_train_augmented = X_train_fold.copy()
+                X_val_augmented = X_val_fold.copy()
 
-                # Create and fit QRF model with trial parameters
-                # Note: X_train_augmented is already preprocessed by base class
-                model = self._create_model_for_variable(var)
-                self._fit_model(
-                    model,
-                    X_train_augmented[current_predictors],
-                    X_train[var],
-                    var,
-                    **params,
-                )
+                # For each imputed variable (only evaluate numeric ones)
+                for i, var in enumerate(all_imputed_vars):
+                    # Build predictor set: original predictors + previously imputed variables
+                    current_predictors = _get_sequential_predictors(
+                        predictors, all_imputed_vars, i
+                    )
 
-                # Predict and calculate error
-                y_pred = model.predict(X_test_augmented[current_predictors])
+                    # Get properly encoded predictor columns
+                    dummy_processor = getattr(self, "dummy_processor", None)
+                    if dummy_processor:
+                        encoded_predictors = (
+                            dummy_processor.get_sequential_predictor_columns(
+                                current_predictors
+                            )
+                        )
+                    else:
+                        encoded_predictors = current_predictors
 
-                # Add predictions to augmented datasets for next variable
-                X_train_augmented[var] = model.predict(
-                    X_train_augmented[current_predictors]
-                )
-                X_test_augmented[var] = y_pred
+                    # Only fit and evaluate numeric variables
+                    if var in numeric_vars:
+                        # Extract target variable values
+                        y_val = X_val_fold[var]
 
-                # Normalize error by variable's standard deviation
-                std = np.std(y_test.values.flatten())
-                mse = np.mean(
-                    (y_pred.values.flatten() - y_test.values.flatten()) ** 2
-                )
-                normalized_mse = mse / (std**2) if std > 0 else mse
+                        # Create and fit QRF model with trial parameters
+                        model = _QRFModel(seed=self.seed, logger=self.logger)
+                        model.fit(
+                            X_train_augmented[encoded_predictors],
+                            X_train_fold[var],
+                            **params,
+                        )
 
-                var_errors.append(normalized_mse)
+                        # Predict
+                        y_pred = model.predict(
+                            X_val_augmented[encoded_predictors]
+                        )
 
-            # Return mean error across all variables
-            return np.mean(var_errors)
+                        # Add predictions to augmented datasets for next variable
+                        X_train_augmented[var] = model.predict(
+                            X_train_augmented[encoded_predictors]
+                        )
+                        X_val_augmented[var] = y_pred
+
+                        # Use quantile loss with median (q=0.5) for hyperparameter tuning
+                        _, quantile_loss_value = compute_loss(
+                            y_val.values.flatten(),
+                            y_pred.values.flatten(),
+                            "quantile_loss",
+                            q=0.5,
+                        )
+
+                        # Normalize by variable's standard deviation
+                        std = np.std(y_val.values.flatten())
+                        normalized_loss = (
+                            quantile_loss_value / std
+                            if std > 0
+                            else quantile_loss_value
+                        )
+
+                        var_errors.append(normalized_loss)
+                    else:
+                        # Categorical variable - encode it for use as predictor in next iterations
+                        if dummy_processor and var in X_train_fold.columns:
+                            X_train_augmented = dummy_processor.sequential_imputed_predictor_encoding(
+                                X_train_augmented, var
+                            )
+                            X_val_augmented = dummy_processor.sequential_imputed_predictor_encoding(
+                                X_val_augmented, var
+                            )
+
+                # Average across variables for this fold
+                if var_errors:
+                    fold_errors.append(np.mean(var_errors))
+
+            # Return mean error across all CV folds
+            return np.mean(fold_errors) if fold_errors else float("inf")
 
         # Create and run the study
         study = optuna.create_study(
@@ -1069,12 +1185,290 @@ class QRF(Imputer):
 
         os.environ["PYTHONWARNINGS"] = "ignore"
 
-        study.optimize(objective, n_trials=30)
+        study.optimize(objective, n_trials=n_trials)
 
         best_value = study.best_value
-        self.logger.info(f"Lowest average normalized MSE: {best_value}")
+        self.logger.info(
+            f"QRF - Lowest average normalized quantile loss ({n_cv_folds}-fold CV): {best_value}"
+        )
 
         best_params = study.best_params
-        self.logger.info(f"Best hyperparameters found: {best_params}")
+        self.logger.info(f"QRF - Best hyperparameters found: {best_params}")
 
         return best_params
+
+    def _tune_rfc_hyperparameters(
+        self,
+        data: pd.DataFrame,
+        predictors: List[str],
+        categorical_vars: List[str],
+        n_cv_folds: int = 3,
+        n_trials: int = 10,
+    ) -> Dict[str, Any]:
+        """Tune hyperparameters for RFC model using log loss with CV.
+
+        Args:
+            data: Full training data.
+            predictors: List of column names to use as predictors.
+            categorical_vars: List of categorical/boolean variables to impute.
+            n_cv_folds: Number of CV folds for robust evaluation (default: 3).
+            n_trials: Number of Optuna trials (default: 10).
+
+        Returns:
+            Dictionary of tuned hyperparameters for RFC.
+        """
+        import optuna
+        from sklearn.model_selection import KFold
+
+        from microimpute.comparisons.metrics import (
+            compute_loss,
+            order_probabilities_alphabetically,
+        )
+
+        # Suppress Optuna's logs during optimization
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        # Get all imputed variables for proper sequential imputation
+        all_imputed_vars = getattr(self, "imputed_variables", categorical_vars)
+        categorical_targets = getattr(self, "categorical_targets", {})
+        boolean_targets = getattr(self, "boolean_targets", {})
+
+        # Set up CV folds
+        kf = KFold(n_splits=n_cv_folds, shuffle=True, random_state=self.seed)
+
+        def objective(trial: optuna.Trial) -> float:
+            params = {
+                "n_estimators": trial.suggest_int("n_estimators", 50, 300),
+                "min_samples_split": trial.suggest_int(
+                    "min_samples_split", 2, 20
+                ),
+                "min_samples_leaf": trial.suggest_int(
+                    "min_samples_leaf", 1, 10
+                ),
+                "max_features": trial.suggest_categorical(
+                    "max_features", ["sqrt", "log2", 0.5, 0.8, 1.0]
+                ),
+                "bootstrap": trial.suggest_categorical(
+                    "bootstrap", [True, False]
+                ),
+            }
+
+            # Track errors across CV folds
+            fold_errors = []
+
+            # Perform CV
+            for fold_idx, (train_idx, val_idx) in enumerate(kf.split(data)):
+                X_train_fold = data.iloc[train_idx]
+                X_val_fold = data.iloc[val_idx]
+
+                # Track errors for categorical variables in this fold
+                var_errors = []
+
+                # Create copies for augmented data
+                X_train_augmented = X_train_fold.copy()
+                X_val_augmented = X_val_fold.copy()
+
+                # For each imputed variable (only evaluate categorical ones)
+                for i, var in enumerate(all_imputed_vars):
+                    # Build predictor set: original predictors + previously imputed variables
+                    current_predictors = _get_sequential_predictors(
+                        predictors, all_imputed_vars, i
+                    )
+
+                    # Get properly encoded predictor columns
+                    dummy_processor = getattr(self, "dummy_processor", None)
+                    if dummy_processor:
+                        encoded_predictors = (
+                            dummy_processor.get_sequential_predictor_columns(
+                                current_predictors
+                            )
+                        )
+                    else:
+                        encoded_predictors = current_predictors
+
+                    # Only fit and evaluate categorical/boolean variables
+                    if var in categorical_vars:
+                        # Extract target variable values
+                        y_val = X_val_fold[var]
+
+                        # Create and fit RFC model with trial parameters
+                        model = _RandomForestClassifierModel(
+                            seed=self.seed, logger=self.logger
+                        )
+
+                        # Determine variable type and fit appropriately
+                        if var in categorical_targets:
+                            model.fit(
+                                X_train_augmented[encoded_predictors],
+                                X_train_fold[var],
+                                var_type=categorical_targets[var]["type"],
+                                categories=categorical_targets[var].get(
+                                    "categories"
+                                ),
+                                **params,
+                            )
+                        elif var in boolean_targets:
+                            model.fit(
+                                X_train_augmented[encoded_predictors],
+                                X_train_fold[var],
+                                var_type="boolean",
+                                **params,
+                            )
+
+                        # Get probability predictions
+                        prob_info = model.predict(
+                            X_val_augmented[encoded_predictors],
+                            return_probs=True,
+                        )
+
+                        # Get class predictions for augmented data
+                        y_pred = model.predict(
+                            X_val_augmented[encoded_predictors],
+                            return_probs=False,
+                        )
+
+                        # Add predictions to augmented datasets for next variable
+                        X_train_augmented[var] = model.predict(
+                            X_train_augmented[encoded_predictors],
+                            return_probs=False,
+                        )
+                        X_val_augmented[var] = y_pred
+
+                        # Order probabilities alphabetically for log loss
+                        probs_ordered, alphabetical_labels = (
+                            order_probabilities_alphabetically(
+                                prob_info["probabilities"],
+                                prob_info["classes"],
+                            )
+                        )
+
+                        # Compute log loss
+                        _, log_loss_value = compute_loss(
+                            y_val.values,
+                            probs_ordered,
+                            "log_loss",
+                            labels=alphabetical_labels,
+                        )
+
+                        var_errors.append(log_loss_value)
+
+                        # Encode the categorical variable for use as predictor in next iterations
+                        if dummy_processor:
+                            X_train_augmented = dummy_processor.sequential_imputed_predictor_encoding(
+                                X_train_augmented, var
+                            )
+                            X_val_augmented = dummy_processor.sequential_imputed_predictor_encoding(
+                                X_val_augmented, var
+                            )
+                    else:
+                        # Numeric variable - just add it to augmented data (already there from fold data)
+                        pass
+
+                # Average across variables for this fold
+                if var_errors:
+                    fold_errors.append(np.mean(var_errors))
+
+            # Return mean error across all CV folds
+            return np.mean(fold_errors) if fold_errors else float("inf")
+
+        # Create and run the study
+        study = optuna.create_study(
+            direction="minimize",
+            sampler=optuna.samplers.TPESampler(seed=self.seed),
+        )
+
+        # Suppress warnings during optimization
+        import os
+
+        os.environ["PYTHONWARNINGS"] = "ignore"
+
+        study.optimize(objective, n_trials=n_trials)
+
+        best_value = study.best_value
+        self.logger.info(
+            f"RFC - Lowest average log loss ({n_cv_folds}-fold CV): {best_value}"
+        )
+
+        best_params = study.best_params
+        self.logger.info(f"RFC - Best hyperparameters found: {best_params}")
+
+        return best_params
+
+    @validate_call(config=VALIDATE_CONFIG)
+    def _tune_hyperparameters(
+        self,
+        data: pd.DataFrame,
+        predictors: List[str],
+        imputed_variables: List[str],
+    ) -> Dict[str, Any]:
+        """Tune hyperparameters for the QRF/RFC models using Optuna with CV.
+
+        Automatically detects variable types and tunes appropriate models:
+        - Numeric variables: QRF with quantile loss
+        - Categorical/Boolean variables: RFC with log loss
+
+        Uses cross-validation for robust hyperparameter selection.
+
+        Args:
+            data: DataFrame containing the training data.
+            predictors: List of column names to use as predictors.
+            imputed_variables: List of column names to impute.
+
+        Returns:
+            Dictionary of tuned hyperparameters. Format depends on variable types:
+            - Only numeric: flat dict with QRF params
+            - Only categorical: flat dict with RFC params
+            - Mixed: nested dict {"qrf": {...}, "rfc": {...}}
+        """
+        # Separate variables by type using existing class attributes
+        categorical_targets = getattr(self, "categorical_targets", {})
+        boolean_targets = getattr(self, "boolean_targets", {})
+
+        categorical_vars = [
+            var
+            for var in imputed_variables
+            if var in categorical_targets or var in boolean_targets
+        ]
+        numeric_vars = [
+            var for var in imputed_variables if var not in categorical_vars
+        ]
+
+        # Default: 3-fold CV with 10 trials (same computational cost as old 30 trials)
+        n_cv_folds = 3
+        n_trials = 10
+
+        self.logger.info(
+            f"Hyperparameter tuning with {n_cv_folds}-fold CV and {n_trials} trials: "
+            f"{len(numeric_vars)} numeric variables, "
+            f"{len(categorical_vars)} categorical/boolean variables"
+        )
+
+        # Tune appropriate models based on variable types
+        if not categorical_vars:
+            # Backward compatible: only numeric variables
+            self.logger.info(
+                "Tuning QRF hyperparameters (numeric variables only)"
+            )
+            return self._tune_qrf_hyperparameters(
+                data, predictors, numeric_vars, n_cv_folds, n_trials
+            )
+        elif not numeric_vars:
+            # Only categorical variables
+            self.logger.info(
+                "Tuning RFC hyperparameters (categorical/boolean variables only)"
+            )
+            return self._tune_rfc_hyperparameters(
+                data, predictors, categorical_vars, n_cv_folds, n_trials
+            )
+        else:
+            # Mixed: tune both separately
+            self.logger.info(
+                "Tuning both QRF and RFC hyperparameters (mixed variable types)"
+            )
+            qrf_params = self._tune_qrf_hyperparameters(
+                data, predictors, numeric_vars, n_cv_folds, n_trials
+            )
+            rfc_params = self._tune_rfc_hyperparameters(
+                data, predictors, categorical_vars, n_cv_folds, n_trials
+            )
+            return {"qrf": qrf_params, "rfc": rfc_params}

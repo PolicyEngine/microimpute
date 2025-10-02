@@ -554,10 +554,12 @@ class Matching(Imputer):
         predictors: List[str],
         imputed_variables: List[str],
     ) -> Dict[str, Any]:
-        """Tune hyperparameters for the Matching model using Optuna.
+        """Tune hyperparameters for the Matching model using Optuna with CV.
+
+        Uses cross-validation and quantile loss for robust hyperparameter selection.
 
         Args:
-            X_train: DataFrame containing the training data.
+            data: DataFrame containing the training data.
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
 
@@ -565,13 +567,21 @@ class Matching(Imputer):
             Dictionary of tuned hyperparameters.
         """
         import optuna
-        from sklearn.model_selection import train_test_split
+        from sklearn.model_selection import KFold
+
+        from microimpute.comparisons.metrics import compute_loss
 
         optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-        # Create a validation split (80% train, 20% validation)
-        X_train, X_test = train_test_split(
-            data, test_size=0.2, random_state=self.seed
+        # Use same CV strategy as QRF: 3-fold CV with 10 trials
+        n_cv_folds = 3
+        n_trials = 10
+
+        # Set up CV folds
+        kf = KFold(n_splits=n_cv_folds, shuffle=True, random_state=self.seed)
+
+        self.logger.info(
+            f"Tuning Matching hyperparameters with {n_cv_folds}-fold CV and {n_trials} trials"
         )
 
         def objective(trial: optuna.Trial) -> float:
@@ -595,81 +605,103 @@ class Matching(Imputer):
                 "k": trial.suggest_int("k", 1, 10),
             }
 
-            # Track errors for all variables
-            var_errors = []
+            # Track errors across CV folds
+            fold_errors = []
 
-            for var in imputed_variables:
-                y_test = X_test[var]
-                X_test_var = X_test.copy().drop(var, axis=1)
+            # Perform CV
+            for fold_idx, (train_idx, val_idx) in enumerate(kf.split(data)):
+                X_train_fold = data.iloc[train_idx]
+                X_val_fold = data.iloc[val_idx]
 
-                # Determine if chunking is needed for hyperparameter tuning
-                chunk_size = 1000  # Smaller chunks for tuning
-                total_size = len(X_train) * len(X_test_var)
-                use_chunking = (
-                    len(X_test_var) > chunk_size
-                    or total_size > 25_000_000  # Lower threshold for tuning
-                )
+                # Track errors for all variables in this fold
+                var_errors = []
 
-                if use_chunking:
-                    # Perform chunked matching for hyperparameter tuning
-                    y_pred_chunks = []
-                    y_test_chunks = []
+                for var in imputed_variables:
+                    y_val = X_val_fold[var]
+                    X_val_var = X_val_fold.copy().drop(var, axis=1)
 
-                    for i in range(0, len(X_test_var), chunk_size):
-                        chunk_end = min(i + chunk_size, len(X_test_var))
-                        chunk_data = X_test_var.iloc[i:chunk_end]
-                        chunk_y_test = y_test.iloc[i:chunk_end]
+                    # Determine if chunking is needed for hyperparameter tuning
+                    chunk_size = 1000  # Smaller chunks for tuning
+                    total_size = len(X_train_fold) * len(X_val_var)
+                    use_chunking = (
+                        len(X_val_var) > chunk_size
+                        or total_size
+                        > 25_000_000  # Lower threshold for tuning
+                    )
 
+                    if use_chunking:
+                        # Perform chunked matching for hyperparameter tuning
+                        y_pred_chunks = []
+                        y_val_chunks = []
+
+                        for i in range(0, len(X_val_var), chunk_size):
+                            chunk_end = min(i + chunk_size, len(X_val_var))
+                            chunk_data = X_val_var.iloc[i:chunk_end]
+                            chunk_y_val = y_val.iloc[i:chunk_end]
+
+                            try:
+                                fused0, fused1 = self.matching_hotdeck(
+                                    receiver=chunk_data,
+                                    donor=X_train_fold,
+                                    matching_variables=predictors,
+                                    z_variables=[var],
+                                    **params,
+                                )
+                                y_pred_chunks.append(fused0[var].values)
+                                y_val_chunks.append(chunk_y_val.values)
+                            except Exception:
+                                # If chunk fails, use mean of training data as prediction
+                                mean_val = X_train_fold[var].mean()
+                                y_pred_chunks.append(
+                                    np.full(len(chunk_data), mean_val)
+                                )
+                                y_val_chunks.append(chunk_y_val.values)
+
+                        # Combine chunk results
+                        y_pred = np.concatenate(y_pred_chunks)
+                        y_val_combined = np.concatenate(y_val_chunks)
+                    else:
+                        # Perform single matching
                         try:
                             fused0, fused1 = self.matching_hotdeck(
-                                receiver=chunk_data,
-                                donor=X_train,
+                                receiver=X_val_var,
+                                donor=X_train_fold,
                                 matching_variables=predictors,
                                 z_variables=[var],
                                 **params,
                             )
-                            y_pred_chunks.append(fused0[var].values)
-                            y_test_chunks.append(chunk_y_test.values)
+                            y_pred = fused0[var].values
+                            y_val_combined = y_val.values
                         except Exception:
-                            # If chunk fails, use mean of training data as prediction
-                            mean_val = X_train[var].mean()
-                            y_pred_chunks.append(
-                                np.full(len(chunk_data), mean_val)
-                            )
-                            y_test_chunks.append(chunk_y_test.values)
+                            # If matching fails, use mean of training data as prediction
+                            mean_val = X_train_fold[var].mean()
+                            y_pred = np.full(len(X_val_var), mean_val)
+                            y_val_combined = y_val.values
 
-                    # Combine chunk results
-                    y_pred = np.concatenate(y_pred_chunks)
-                    y_test_combined = np.concatenate(y_test_chunks)
-                else:
-                    # Perform single matching
-                    try:
-                        fused0, fused1 = self.matching_hotdeck(
-                            receiver=X_test_var,
-                            donor=X_train,
-                            matching_variables=predictors,
-                            z_variables=[var],
-                            **params,
-                        )
-                        y_pred = fused0[var].values
-                        y_test_combined = y_test.values
-                    except Exception:
-                        # If matching fails, use mean of training data as prediction
-                        mean_val = X_train[var].mean()
-                        y_pred = np.full(len(X_test_var), mean_val)
-                        y_test_combined = y_test.values
+                    # Use quantile loss with median (q=0.5) for hyperparameter tuning
+                    _, quantile_loss_value = compute_loss(
+                        y_val_combined.flatten(),
+                        y_pred.flatten(),
+                        "quantile_loss",
+                        q=0.5,
+                    )
 
-                # Calculate error
-                # Normalize error by variable's standard deviation
-                std = np.std(y_test_combined.flatten())
-                mse = np.mean(
-                    (y_pred.flatten() - y_test_combined.flatten()) ** 2
-                )
-                normalized_mse = mse / (std**2) if std > 0 else mse
+                    # Normalize by variable's standard deviation
+                    std = np.std(y_val_combined.flatten())
+                    normalized_loss = (
+                        quantile_loss_value / std
+                        if std > 0
+                        else quantile_loss_value
+                    )
 
-                var_errors.append(normalized_mse)
+                    var_errors.append(normalized_loss)
 
-            return np.mean(var_errors)
+                # Average across variables for this fold
+                if var_errors:
+                    fold_errors.append(np.mean(var_errors))
+
+            # Return mean error across all CV folds
+            return np.mean(fold_errors) if fold_errors else float("inf")
 
         study = optuna.create_study(
             direction="minimize",
@@ -681,12 +713,16 @@ class Matching(Imputer):
 
         os.environ["PYTHONWARNINGS"] = "ignore"
 
-        study.optimize(objective, n_trials=30)
+        study.optimize(objective, n_trials=n_trials)
 
         best_value = study.best_value
-        self.logger.info(f"Lowest average normalized MSE: {best_value}")
+        self.logger.info(
+            f"Matching - Lowest average normalized quantile loss ({n_cv_folds}-fold CV): {best_value}"
+        )
 
         best_params = study.best_params
-        self.logger.info(f"Best hyperparameters found: {best_params}")
+        self.logger.info(
+            f"Matching - Best hyperparameters found: {best_params}"
+        )
 
         return best_params
