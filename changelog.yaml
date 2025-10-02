@@ -160,3 +160,10 @@
     changed:
     - Updated documentation to reflect new methods and log loss features.
   date: 2025-09-25 12:33:38
+- bump: minor
+  changes:
+    fixed:
+    - QRF hyperparameter tuning now correctly tunes QRF and RFC separately.
+    - QRF imputation now correctly handles categorical variables that become predictors
+      after imputation.
+  date: 2025-10-02 12:11:14

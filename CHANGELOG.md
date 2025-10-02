@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), 
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-10-02 12:11:14
+
+### Fixed
+
+- QRF hyperparameter tuning now correctly tunes QRF and RFC separately.
+- QRF imputation now correctly handles categorical variables that become predictors after imputation.
+
 ## [1.2.3] - 2025-09-25 12:33:38
 
 ### Added
@@ -191,6 +198,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[1.3.0]: https://github.com/PolicyEngine/microimpute/compare/1.2.3...1.3.0
 [1.2.3]: https://github.com/PolicyEngine/microimpute/compare/1.2.2...1.2.3
 [1.2.2]: https://github.com/PolicyEngine/microimpute/compare/1.2.1...1.2.2
 [1.2.1]: https://github.com/PolicyEngine/microimpute/compare/1.2.0...1.2.1
