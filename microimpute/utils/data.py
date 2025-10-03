@@ -28,6 +28,85 @@ logger = logging.getLogger(__name__)
 
 
 @validate_call(config=VALIDATE_CONFIG)
+def normalize_data(
+    data: pd.DataFrame,
+) -> Tuple[pd.DataFrame, dict]:
+    """Normalize numeric columns in a DataFrame.
+
+    Categorical and boolean columns are excluded from normalization
+    to prevent issues when they are later encoded as dummy variables.
+
+    Args:
+        data: DataFrame to normalize.
+
+    Returns:
+        Tuple of (normalized_data, normalization_params)
+        where normalization_params is a dict mapping column names
+        to {"mean": float, "std": float}.
+
+    Raises:
+        RuntimeError: If normalization fails.
+    """
+    logger.debug("Normalizing data")
+    try:
+        from microimpute.utils.type_handling import VariableTypeDetector
+
+        # Identify categorical columns to exclude from normalization
+        detector = VariableTypeDetector()
+        categorical_cols = []
+        for col in data.columns:
+            var_type, _ = detector.categorize_variable(data[col], col, logger)
+            if var_type in ["categorical", "numeric_categorical", "bool"]:
+                categorical_cols.append(col)
+
+        if categorical_cols:
+            logger.info(
+                f"Excluding categorical columns from normalization: {categorical_cols}"
+            )
+
+        # Get only numeric columns for normalization
+        numeric_cols = [
+            col for col in data.columns if col not in categorical_cols
+        ]
+
+        if not numeric_cols:
+            logger.warning("No numeric columns found for normalization")
+            return data.copy(), {}
+
+        # Normalize only numeric columns
+        data = data.copy()
+        mean = data[numeric_cols].mean(axis=0)
+        std = data[numeric_cols].std(axis=0)
+
+        # Check for constant columns (std=0)
+        constant_cols = std[std == 0].index.tolist()
+        if constant_cols:
+            logger.warning(f"Found constant columns (std=0): {constant_cols}")
+            # Handle constant columns by setting std to 1 to avoid division by zero
+            for col in constant_cols:
+                std[col] = 1
+
+        # Apply normalization only to numeric columns
+        data[numeric_cols] = (data[numeric_cols] - mean) / std
+        logger.debug(
+            f"Normalized {len(numeric_cols)} numeric columns successfully"
+        )
+
+        # Store normalization parameters only for numeric columns
+        normalization_params = {
+            col: {"mean": mean[col], "std": std[col]} for col in numeric_cols
+        }
+
+        logger.debug(f"Normalization parameters: {normalization_params}")
+
+        return data, normalization_params
+
+    except (TypeError, AttributeError) as e:
+        logger.error(f"Error during data normalization: {str(e)}")
+        raise RuntimeError("Failed to normalize data") from e
+
+
+@validate_call(config=VALIDATE_CONFIG)
 def preprocess_data(
     data: pd.DataFrame,
     full_data: Optional[bool] = False,
@@ -73,36 +152,7 @@ def preprocess_data(
         logger.warning(f"Data contains {missing_count} missing values")
 
     if normalize:
-        logger.debug("Normalizing data")
-        try:
-            mean = data.mean(axis=0)
-            std = data.std(axis=0)
-
-            # Check for constant columns (std=0)
-            constant_cols = std[std == 0].index.tolist()
-            if constant_cols:
-                logger.warning(
-                    f"Found constant columns (std=0): {constant_cols}"
-                )
-                # Handle constant columns by setting std to 1 to avoid division by zero
-                for col in constant_cols:
-                    std[col] = 1
-
-            # Apply normalization
-            data = (data - mean) / std
-            logger.debug("Data normalized successfully")
-
-            # Store normalization parameters
-            normalization_params = {
-                col: {"mean": mean[col], "std": std[col]}
-                for col in data.columns
-            }
-
-            logger.debug(f"Normalization parameters: {normalization_params}")
-
-        except (TypeError, AttributeError) as e:
-            logger.error(f"Error during data normalization: {str(e)}")
-            raise RuntimeError("Failed to normalize data") from e
+        data, normalization_params = normalize_data(data)
 
     if full_data and normalize:
         logger.info("Returning full preprocessed dataset")

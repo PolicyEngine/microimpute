@@ -223,19 +223,22 @@ def _evaluate_models_parallel(
 def _generate_imputations_for_all_models(
     model_classes: List[Type[Imputer]],
     best_method: str,
-    training_data: pd.DataFrame,
-    imputing_data: pd.DataFrame,
+    donor_data: pd.DataFrame,
+    receiver_data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
     weight_col: Optional[str],
     imputation_q: float,
     normalize_data: bool,
-    normalizing_params: Optional[dict],
+    train_size: float,
     tune_hyperparameters: bool,
     hyperparams: Optional[Dict[str, Any]],
     log_level: str,
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, Any]]:
     """Generate imputations for all models when impute_all=True.
+
+    Note: This function takes the original donor and receiver data and preprocesses
+    them fresh for each model to ensure proper encoding and normalization.
 
     Returns:
         Tuple of (imputations_dict, fitted_models_dict)
@@ -250,9 +253,9 @@ def _generate_imputations_for_all_models(
         if model_name == best_method:
             continue  # Skip the best method as it's already done
 
-        # Check if model can handle the variable types
+        # Check if model can handle the variable types using original data
         if not _can_model_handle_variables(
-            model_name, training_data, imputed_variables
+            model_name, donor_data, imputed_variables
         ):
             log.info(
                 f"Skipping {model_name} due to incompatible variable types."
@@ -260,6 +263,20 @@ def _generate_imputations_for_all_models(
             continue
 
         log.info(f"Generating imputations with {model_name}.")
+
+        # Preprocess data fresh for this model
+        training_data, imputing_data, normalizing_params = (
+            prepare_data_for_imputation(
+                donor_data,
+                receiver_data,
+                predictors,
+                imputed_variables,
+                weight_col,
+                normalize_data,
+                train_size,
+                1 - train_size,
+            )
+        )
 
         # Get model-specific hyperparameters if available
         model_hyperparams = None
@@ -556,14 +573,14 @@ def autoimpute(
                 _generate_imputations_for_all_models(
                     model_classes,
                     best_method,
-                    training_data,
-                    imputing_data,
+                    donor_data,
+                    receiver_data,
                     predictors,
-                    imputed_variables,
+                    original_imputed_variables,
                     weight_col,
                     imputation_q,
                     normalize_data,
-                    normalizing_params,
+                    train_size,
                     tune_hyperparameters,
                     best_hyperparams,
                     log_level,
