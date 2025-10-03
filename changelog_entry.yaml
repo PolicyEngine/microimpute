@@ -2,3 +2,5 @@
   changes:
     added:
     - Wasserstein distance and Total Variation Distance metrics for distributional similarity.
+    fixed:
+    - Bug in data preprocessing which attempted to normalize categorical variables.
