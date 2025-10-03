@@ -605,6 +605,17 @@ class Matching(Imputer):
                 "k": trial.suggest_int("k", 1, 10),
             }
 
+            # Detect variable types for appropriate metric selection
+            from microimpute.comparisons.metrics import (
+                get_metric_for_variable_type,
+            )
+
+            variable_metrics = {}
+            for var in imputed_variables:
+                variable_metrics[var] = get_metric_for_variable_type(
+                    data[var], var
+                )
+
             # Track errors across CV folds
             fold_errors = []
 
@@ -678,21 +689,29 @@ class Matching(Imputer):
                             y_pred = np.full(len(X_val_var), mean_val)
                             y_val_combined = y_val.values
 
-                    # Use quantile loss with median (q=0.5) for hyperparameter tuning
-                    _, quantile_loss_value = compute_loss(
-                        y_val_combined.flatten(),
-                        y_pred.flatten(),
-                        "quantile_loss",
-                        q=0.5,
-                    )
+                    # Use appropriate metric based on variable type
+                    metric = variable_metrics[var]
 
-                    # Normalize by variable's standard deviation
-                    std = np.std(y_val_combined.flatten())
-                    normalized_loss = (
-                        quantile_loss_value / std
-                        if std > 0
-                        else quantile_loss_value
-                    )
+                    if metric == "quantile_loss":
+                        _, loss_value = compute_loss(
+                            y_val_combined.flatten(),
+                            y_pred.flatten(),
+                            "quantile_loss",
+                            q=0.5,
+                        )
+                        # Normalize by variable's standard deviation
+                        std = np.std(y_val_combined.flatten())
+                        normalized_loss = (
+                            loss_value / std if std > 0 else loss_value
+                        )
+                    else:  # log_loss for categorical/boolean
+                        _, loss_value = compute_loss(
+                            y_val_combined.flatten(),
+                            y_pred.flatten(),
+                            "log_loss",
+                        )
+                        # Log loss is already normalized
+                        normalized_loss = loss_value
 
                     var_errors.append(normalized_loss)
 
