@@ -167,3 +167,12 @@
     - QRF imputation now correctly handles categorical variables that become predictors
       after imputation.
   date: 2025-10-02 12:11:14
+- bump: minor
+  changes:
+    added:
+    - Wasserstein distance and Total Variation Distance metrics for distributional
+      similarity.
+    fixed:
+    - Bug in data preprocessing which attempted to normalize categorical variables.
+    - Bug in loss metric used in Matching hyperparameter tuning.
+  date: 2025-10-04 01:32:02
