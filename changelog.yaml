@@ -176,3 +176,8 @@
     - Bug in data preprocessing which attempted to normalize categorical variables.
     - Bug in loss metric used in Matching hyperparameter tuning.
   date: 2025-10-04 01:32:02
+- bump: patch
+  changes:
+    fixed:
+    - Fixed pyproject.toml to avoid dependency versions updating with package.
+  date: 2025-10-04 02:27:16
