@@ -3,6 +3,7 @@
 This module contains utilities for evaluating imputation quality using various metrics:
 - Quantile loss for numerical variables
 - Log loss for categorical variables
+- Distributional similarity metrics (Wasserstein distance, Total Variation Distance)
 The module automatically detects which metric to use based on variable type.
 """
 
@@ -12,10 +13,12 @@ from typing import Dict, List, Literal, Optional, Tuple
 import numpy as np
 import pandas as pd
 from pydantic import validate_call
+from scipy.stats import wasserstein_distance
 from sklearn.metrics import log_loss as sklearn_log_loss
 
 from microimpute.comparisons.validation import (
     validate_columns_exist,
+    validate_dataframe_compatibility,
     validate_quantiles,
 )
 from microimpute.config import QUANTILES, VALIDATE_CONFIG
@@ -490,3 +493,166 @@ def compare_metrics(
     except (KeyError, TypeError, AttributeError) as e:
         log.error(f"Error in metrics comparison: {str(e)}")
         raise RuntimeError(f"Failed to compare metrics: {str(e)}") from e
+
+
+def total_variation_distance(
+    donor_values: np.ndarray, receiver_values: np.ndarray
+) -> float:
+    """Calculate Total Variation Distance between two categorical distributions.
+
+    Total Variation Distance (TVD) measures the maximum difference between
+    two probability distributions. For categorical variables, it is calculated as:
+    TVD = 0.5 * sum(|P(x) - Q(x)|) for all categories x
+
+    Args:
+        donor_values: Array of categorical values from donor data.
+        receiver_values: Array of categorical values from receiver data.
+
+    Returns:
+        Total variation distance value between 0 and 1, where 0 indicates
+        identical distributions and 1 indicates completely disjoint distributions.
+
+    Raises:
+        ValueError: If inputs are empty or invalid.
+    """
+    if len(donor_values) == 0 or len(receiver_values) == 0:
+        raise ValueError(
+            "Both donor and receiver values must be non-empty arrays"
+        )
+
+    # Get all unique categories from both distributions
+    all_categories = np.union1d(
+        np.unique(donor_values), np.unique(receiver_values)
+    )
+
+    # Calculate probability distributions
+    donor_counts = pd.Series(donor_values).value_counts(normalize=True)
+    receiver_counts = pd.Series(receiver_values).value_counts(normalize=True)
+
+    # Calculate TVD
+    tvd = 0.0
+    for category in all_categories:
+        p_donor = donor_counts.get(category, 0.0)
+        p_receiver = receiver_counts.get(category, 0.0)
+        tvd += abs(p_donor - p_receiver)
+
+    # TVD is half the sum of absolute differences
+    return tvd / 2.0
+
+
+@validate_call(config=VALIDATE_CONFIG)
+def compare_distributions(
+    donor_data: pd.DataFrame,
+    receiver_data: pd.DataFrame,
+    imputed_variables: List[str],
+) -> pd.DataFrame:
+    """Compare distributions between donor and receiver data for imputed variables.
+
+    Evaluates distributional similarity using appropriate metrics:
+    - Wasserstein Distance for numerical variables
+    - Total Variation Distance for categorical variables
+
+    Args:
+        donor_data: DataFrame containing original donor data.
+        receiver_data: DataFrame containing receiver data with imputations.
+        imputed_variables: List of variable names to compare.
+
+    Returns:
+        DataFrame with columns 'Variable', 'Metric', and 'Distance' containing
+        the distributional similarity metrics for each variable.
+
+    Raises:
+        ValueError: If variables don't exist in both DataFrames or if data is invalid.
+        RuntimeError: If distribution comparison fails.
+
+    Example:
+        >>> donor_df = pd.DataFrame({'income': [1000, 2000, 3000],
+        ...                          'region': ['A', 'B', 'A']})
+        >>> receiver_df = pd.DataFrame({'income': [1100, 1900, 3100],
+        ...                             'region': ['A', 'A', 'B']})
+        >>> result = compare_distributions(donor_df, receiver_df,
+        ...                                ['income', 'region'])
+        >>> print(result)
+           Variable                 Metric  Distance
+        0    income  wasserstein_distance  66.666667
+        1    region  total_variation_distance    0.166667
+    """
+    try:
+        log.info(
+            f"Comparing distributions for {len(imputed_variables)} variables"
+        )
+        log.info(f"Donor data shape: {donor_data.shape}")
+        log.info(f"Receiver data shape: {receiver_data.shape}")
+
+        # Validate inputs
+        validate_columns_exist(donor_data, imputed_variables, "donor_data")
+        validate_columns_exist(
+            receiver_data, imputed_variables, "receiver_data"
+        )
+
+        results = []
+
+        # Detect metric type and compute distance for each variable
+        detector = VariableTypeDetector()
+        for var in imputed_variables:
+            # Get values from both datasets
+            donor_values = donor_data[var].dropna().values
+            receiver_values = receiver_data[var].dropna().values
+
+            if len(donor_values) == 0 or len(receiver_values) == 0:
+                log.warning(
+                    f"Skipping variable '{var}' due to insufficient data "
+                    f"(donor: {len(donor_values)}, receiver: {len(receiver_values)})"
+                )
+                continue
+
+            # Detect variable type using donor data
+            var_type, _ = detector.categorize_variable(
+                donor_data[var], var, log
+            )
+
+            # Choose appropriate metric
+            if var_type in ["bool", "categorical", "numeric_categorical"]:
+                # Use Total Variation Distance for categorical
+                metric_name = "total_variation_distance"
+                distance = total_variation_distance(
+                    donor_values, receiver_values
+                )
+                log.debug(
+                    f"TVD for categorical variable '{var}': {distance:.6f}"
+                )
+            else:
+                # Use Wasserstein Distance for numerical
+                metric_name = "wasserstein_distance"
+                distance = wasserstein_distance(donor_values, receiver_values)
+                log.debug(
+                    f"Wasserstein distance for numerical variable '{var}': {distance:.6f}"
+                )
+
+            results.append(
+                {
+                    "Variable": var,
+                    "Metric": metric_name,
+                    "Distance": distance,
+                }
+            )
+
+        if not results:
+            raise ValueError(
+                "No valid distribution comparisons could be computed. "
+                "Check that variables have sufficient non-null data."
+            )
+
+        results_df = pd.DataFrame(results)
+        log.info(
+            f"Distribution comparison complete. Computed {len(results_df)} metrics."
+        )
+
+        return results_df
+
+    except ValueError as e:
+        # Re-raise validation errors
+        raise e
+    except Exception as e:
+        log.error(f"Error comparing distributions: {str(e)}")
+        raise RuntimeError(f"Failed to compare distributions: {str(e)}") from e

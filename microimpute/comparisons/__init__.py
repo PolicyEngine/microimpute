@@ -20,6 +20,7 @@ from microimpute.comparisons.imputations import get_imputations
 
 # Import loss/metric functions
 from microimpute.comparisons.metrics import (
+    compare_distributions,
     compare_metrics,
     compute_loss,
     get_metric_for_variable_type,
