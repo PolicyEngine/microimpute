@@ -308,29 +308,44 @@ class MethodComparisonResults:
         """Plot quantile loss comparison across methods."""
 
         try:
-            # Filter data for quantile loss only
+            # Filter data for quantile loss only - include only numeric quantiles between 0 and 1
             if "Metric" in self.comparison_data.columns:
-                melted_df = self.comparison_data[
-                    (self.comparison_data["Metric"] == "quantile_loss")
-                    & (
-                        ~self.comparison_data["Percentile"].isin(
-                            ["mean_quantile_loss", "mean_log_loss", "log_loss"]
-                        )
-                    )
+                # First filter for quantile_loss metric
+                quantile_data = self.comparison_data[
+                    self.comparison_data["Metric"] == "quantile_loss"
+                ].copy()
+
+                # Then filter for numeric quantiles only (between 0 and 1)
+                numeric_mask = pd.to_numeric(
+                    quantile_data["Percentile"], errors="coerce"
+                ).notna()
+                quantile_data = quantile_data[numeric_mask]
+
+                # Convert to numeric and filter to valid quantile range
+                quantile_data["Percentile"] = pd.to_numeric(
+                    quantile_data["Percentile"]
+                )
+                melted_df = quantile_data[
+                    (quantile_data["Percentile"] >= 0)
+                    & (quantile_data["Percentile"] <= 1)
                 ].copy()
             else:
-                # Backward compatibility
-                melted_df = self.comparison_data[
-                    (
-                        ~self.comparison_data["Percentile"].isin(
-                            [
-                                "mean_loss",
-                                "mean_quantile_loss",
-                                "mean_log_loss",
-                                "log_loss",
-                            ]
-                        )
-                    )
+                # Backward compatibility - filter for numeric quantiles
+                melted_df = self.comparison_data.copy()
+
+                # Filter for numeric percentiles only
+                numeric_mask = pd.to_numeric(
+                    melted_df["Percentile"], errors="coerce"
+                ).notna()
+                melted_df = melted_df[numeric_mask]
+
+                # Convert to numeric and filter to valid quantile range
+                melted_df["Percentile"] = pd.to_numeric(
+                    melted_df["Percentile"]
+                )
+                melted_df = melted_df[
+                    (melted_df["Percentile"] >= 0)
+                    & (melted_df["Percentile"] <= 1)
                 ].copy()
 
             melted_df = melted_df.rename(columns={"Loss": self.metric_name})
@@ -484,21 +499,38 @@ class MethodComparisonResults:
                 vertical_spacing=0.15,
             )
 
-            # Plot quantile loss
+            # Plot quantile loss - filter for numeric quantiles only
             if "Metric" in self.comparison_data.columns:
+                # Filter for quantile_loss metric
                 ql_df = self.comparison_data[
-                    (self.comparison_data["Metric"] == "quantile_loss")
-                    & (
-                        ~self.comparison_data["Percentile"].isin(
-                            ["mean_quantile_loss", "mean_log_loss"]
-                        )
-                    )
+                    self.comparison_data["Metric"] == "quantile_loss"
+                ].copy()
+
+                # Filter for numeric quantiles only (between 0 and 1)
+                numeric_mask = pd.to_numeric(
+                    ql_df["Percentile"], errors="coerce"
+                ).notna()
+                ql_df = ql_df[numeric_mask]
+
+                # Convert to numeric and filter to valid quantile range
+                ql_df["Percentile"] = pd.to_numeric(ql_df["Percentile"])
+                ql_df = ql_df[
+                    (ql_df["Percentile"] >= 0) & (ql_df["Percentile"] <= 1)
                 ]
             else:
-                ql_df = self.comparison_data[
-                    ~self.comparison_data["Percentile"].isin(
-                        ["mean_loss", "log_loss"]
-                    )
+                # Backward compatibility
+                ql_df = self.comparison_data.copy()
+
+                # Filter for numeric percentiles only
+                numeric_mask = pd.to_numeric(
+                    ql_df["Percentile"], errors="coerce"
+                ).notna()
+                ql_df = ql_df[numeric_mask]
+
+                # Convert to numeric and filter to valid quantile range
+                ql_df["Percentile"] = pd.to_numeric(ql_df["Percentile"])
+                ql_df = ql_df[
+                    (ql_df["Percentile"] >= 0) & (ql_df["Percentile"] <= 1)
                 ]
 
             if not ql_df.empty:
