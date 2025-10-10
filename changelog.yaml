@@ -181,3 +181,9 @@
     fixed:
     - Fixed pyproject.toml to avoid dependency versions updating with package.
   date: 2025-10-04 02:27:16
+- bump: minor
+  changes:
+    added:
+    - Predictor correlation and sensitivity analysis tools.
+    - Updated documentation with distributional similarity metrics and predictor analysis.
+  date: 2025-10-10 08:09:07
