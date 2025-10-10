@@ -195,6 +195,78 @@ class TestComputePredictorCorrelations:
                 method="invalid_method",
             )
 
+    def test_predictor_target_mutual_information(self, sample_mixed_data):
+        """Test computation of predictor-target mutual information."""
+        predictors = ["numeric_1", "numeric_2", "binary_1", "categorical_1"]
+        imputed_variables = ["target_numeric", "target_categorical"]
+
+        results = compute_predictor_correlations(
+            data=sample_mixed_data,
+            predictors=predictors,
+            imputed_variables=imputed_variables,
+            method="all",
+        )
+
+        # Check that predictor-target MI is computed
+        assert "predictor_target_mi" in results
+
+        # Check dimensions
+        assert results["predictor_target_mi"].shape == (
+            len(predictors),
+            len(imputed_variables),
+        )
+        assert list(results["predictor_target_mi"].index) == predictors
+        assert (
+            list(results["predictor_target_mi"].columns) == imputed_variables
+        )
+
+        # Check values are in valid range [0, 1] (normalized MI)
+        mi_values = results["predictor_target_mi"].values
+        assert np.all((mi_values >= 0) & (mi_values <= 1))
+
+        # Check that numeric_1 and numeric_2 have non-zero MI with target_numeric
+        # (since we created correlation in the fixture)
+        assert (
+            results["predictor_target_mi"].loc["numeric_1", "target_numeric"]
+            > 0
+        )
+        assert (
+            results["predictor_target_mi"].loc["numeric_2", "target_numeric"]
+            > 0
+        )
+
+        # Check that binary_1 has non-zero MI with target_numeric
+        # (it's part of the target calculation)
+        assert (
+            results["predictor_target_mi"].loc["binary_1", "target_numeric"]
+            > 0
+        )
+
+    def test_predictor_target_mi_only_with_mutual_info_method(
+        self, sample_mixed_data
+    ):
+        """Test that predictor-target MI is only computed when mutual_info is requested."""
+        predictors = ["numeric_1", "numeric_2"]
+        imputed_variables = ["target_numeric"]
+
+        # Test with pearson only - should not include predictor-target MI
+        results_pearson = compute_predictor_correlations(
+            data=sample_mixed_data,
+            predictors=predictors,
+            imputed_variables=imputed_variables,
+            method="pearson",
+        )
+        assert "predictor_target_mi" not in results_pearson
+
+        # Test with mutual_info - should include predictor-target MI
+        results_mi = compute_predictor_correlations(
+            data=sample_mixed_data,
+            predictors=predictors,
+            imputed_variables=imputed_variables,
+            method="mutual_info",
+        )
+        assert "predictor_target_mi" in results_mi
+
 
 class TestLeaveOneOutAnalysis:
     """Test suite for leave_one_out_analysis function."""

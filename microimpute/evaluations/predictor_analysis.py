@@ -43,6 +43,7 @@ log = logging.getLogger(__name__)
 def compute_predictor_correlations(
     data: pd.DataFrame,
     predictors: List[str],
+    imputed_variables: Optional[List[str]] = None,
     method: str = "all",
 ) -> Dict[str, pd.DataFrame]:
     """Compute correlation matrices between predictors using multiple methods.
@@ -51,9 +52,15 @@ def compute_predictor_correlations(
     Pearson correlation, Spearman correlation, and mutual information.
     Categorical variables are automatically encoded for correlation analysis.
 
+    If imputed_variables are provided, also computes mutual information
+    between each predictor and each target variable to identify which
+    predictors are most informative for imputation.
+
     Args:
         data: DataFrame containing the data.
         predictors: List of predictor column names to analyze.
+        imputed_variables: Optional list of target variables to compute
+            predictor-target mutual information.
         method: Type of correlation to compute. Options are:
             - "all": Compute all correlation types (default)
             - "pearson": Only Pearson correlation
@@ -65,6 +72,8 @@ def compute_predictor_correlations(
             - "pearson": Pearson correlation matrix (if requested)
             - "spearman": Spearman correlation matrix (if requested)
             - "mutual_info": Normalized mutual information matrix (if requested)
+            - "predictor_target_mi": DataFrame of MI between predictors and targets
+                (only if imputed_variables provided and mutual_info requested)
 
     Raises:
         ValueError: If predictors are not found in data or method is invalid.
@@ -73,17 +82,27 @@ def compute_predictor_correlations(
         >>> data = pd.DataFrame({
         ...     'age': [25, 30, 35, 40],
         ...     'income': [30000, 45000, 55000, 70000],
-        ...     'education': ['HS', 'BS', 'MS', 'PhD']
+        ...     'education': ['HS', 'BS', 'MS', 'PhD'],
+        ...     'health_score': [7, 8, 6, 9]
         ... })
         >>> correlations = compute_predictor_correlations(
-        ...     data, ['age', 'income', 'education']
+        ...     data,
+        ...     predictors=['age', 'income', 'education'],
+        ...     imputed_variables=['health_score']
         ... )
-        >>> print(correlations['pearson'])
+        >>> print(correlations['predictor_target_mi'])
     """
     # Validate inputs
     missing_predictors = set(predictors) - set(data.columns)
     if missing_predictors:
         raise ValueError(f"Predictors not found in data: {missing_predictors}")
+
+    if imputed_variables:
+        missing_targets = set(imputed_variables) - set(data.columns)
+        if missing_targets:
+            raise ValueError(
+                f"Target variables not found in data: {missing_targets}"
+            )
 
     valid_methods = ["all", "pearson", "spearman", "mutual_info"]
     if method not in valid_methods:
@@ -157,6 +176,65 @@ def compute_predictor_correlations(
                     mi_matrix.iloc[j, i] = mi_normalized
 
         results["mutual_info"] = mi_matrix
+
+    # Compute predictor-target mutual information if requested
+    if imputed_variables and method in ["all", "mutual_info"]:
+        log.info(
+            f"Computing mutual information between {len(predictors)} predictors and {len(imputed_variables)} targets"
+        )
+
+        # Initialize predictor-target MI matrix
+        pred_target_mi = pd.DataFrame(
+            index=predictors, columns=imputed_variables, dtype=float
+        )
+
+        # Prepare target variables - encode if categorical
+        targets_encoded = {}
+        target_is_categorical = {}
+
+        for target in imputed_variables:
+            var_type, _ = detector.categorize_variable(
+                data[target], target, log
+            )
+            target_is_categorical[target] = var_type in [
+                "categorical",
+                "numeric_categorical",
+                "bool",
+            ]
+
+            if target_is_categorical[target]:
+                # Encode categorical targets
+                le = LabelEncoder()
+                targets_encoded[target] = le.fit_transform(
+                    data[target].astype(str)
+                )
+            else:
+                targets_encoded[target] = data[target].values
+
+        # Compute MI between each predictor and each target
+        for pred in predictors:
+            for target in imputed_variables:
+                # Use encoded predictor values
+                pred_values = data_encoded[pred].values
+                target_values = targets_encoded[target]
+
+                # Compute mutual information
+                mi_value = _compute_mutual_information(
+                    pred_values, target_values, target_is_categorical[target]
+                )
+
+                # Optionally normalize by target entropy for comparability
+                target_entropy = _compute_entropy(target_values)
+                if target_entropy > 0:
+                    mi_normalized = mi_value / target_entropy
+                else:
+                    mi_normalized = 0.0
+
+                pred_target_mi.loc[pred, target] = mi_normalized
+
+        results["predictor_target_mi"] = pred_target_mi
+
+        log.info(f"Predictor-target MI computation complete")
 
     return results
 
@@ -309,10 +387,10 @@ def progressive_predictor_inclusion(
     imputed_variables: List[str],
     model_class: Type[Imputer],
     weight_col: Optional[Union[str, np.ndarray, pd.Series]] = None,
-    quantiles: List[float] = QUANTILES,
-    train_size: float = TRAIN_SIZE,
+    quantiles: Optional[List[float]] = QUANTILES,
+    train_size: Optional[float] = TRAIN_SIZE,
     max_predictors: Optional[int] = None,
-    random_state: int = RANDOM_STATE,
+    random_state: Optional[int] = RANDOM_STATE,
 ) -> Dict[str, Any]:
     """Add predictors one by one to find the optimal subset and ordering.
 
