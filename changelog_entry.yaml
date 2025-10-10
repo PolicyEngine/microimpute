@@ -1,0 +1,4 @@
+- bump: patch
+  changes:
+    fixed:
+    - Fixed pyproject.toml to avoid dependency versions updating with package again.
