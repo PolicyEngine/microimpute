@@ -39,13 +39,14 @@ jobs:
           pip install -e .
 
       - name: Run Build Datasets test
+        env:
+          HUGGING_FACE_TOKEN: ${{ secrets.HUGGING_FACE_TOKEN }}
         run: |
           cd policyengine-us-data
           # Download required data files
           TEST_LITE=True make download
           # Build datasets - this will test microimpute integration
           TEST_LITE=True make data
-        continue-on-error: true  # Optional: don't block PRs, just warn
 
       - name: Post comment on failure
         if: failure()
