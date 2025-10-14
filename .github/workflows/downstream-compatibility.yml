@@ -1,0 +1,58 @@
+name: Downstream Compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test-policyengine-us-data:
+    name: Test policyengine-us-data compatibility
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout microimpute
+        uses: actions/checkout@v4
+        with:
+          path: microimpute
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install microimpute from current branch
+        run: |
+          cd microimpute
+          pip install -e .
+
+      - name: Checkout policyengine-us-data
+        uses: actions/checkout@v4
+        with:
+          repository: PolicyEngine/policyengine-us-data
+          path: policyengine-us-data
+
+      - name: Install policyengine-us-data dependencies
+        run: |
+          cd policyengine-us-data
+          pip install -e .
+
+      - name: Run Build Datasets test
+        run: |
+          cd policyengine-us-data
+          # Run just the dataset build tests that use microimpute
+          pytest tests/ -k "test_puf" -v --tb=short
+        continue-on-error: true  # Optional: don't block PRs, just warn
+
+      - name: Post comment on failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: '⚠️ This change may break policyengine-us-data. Please check the [Build Datasets test results](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}).'
+            })
