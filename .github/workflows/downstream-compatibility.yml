@@ -41,8 +41,10 @@ jobs:
       - name: Run Build Datasets test
         run: |
           cd policyengine-us-data
-          # Run just the dataset build tests that use microimpute
-          pytest tests/ -k "test_puf" -v --tb=short
+          # Download required data files
+          TEST_LITE=True make download
+          # Build datasets - this will test microimpute integration
+          TEST_LITE=True make data
         continue-on-error: true  # Optional: don't block PRs, just warn
 
       - name: Post comment on failure
