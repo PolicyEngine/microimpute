@@ -104,15 +104,22 @@ class Imputer(ABC):
             )
 
     def identify_target_types(
-        self, data: pd.DataFrame, imputed_variables: List[str]
+        self,
+        data: pd.DataFrame,
+        imputed_variables: List[str],
+        not_numeric_categorical: Optional[List[str]] = None,
     ) -> None:
         """Identify and track variable types for imputation targets.
 
         Args:
             data: DataFrame containing the data.
             imputed_variables: List of variables to be imputed.
+            not_numeric_categorical: Optional list of variable names that should
+                be treated as numeric even if they would normally be detected as
+                numeric_categorical.
         """
         detector = VariableTypeDetector()
+        not_numeric_categorical = not_numeric_categorical or []
 
         for var in imputed_variables:
             if var not in data.columns:
@@ -133,7 +140,10 @@ class Imputer(ABC):
                 continue
 
             var_type, categories = detector.categorize_variable(
-                data[var], var, self.logger
+                data[var],
+                var,
+                self.logger,
+                force_numeric=(var in not_numeric_categorical),
             )
 
             if var_type == "bool":
@@ -163,6 +173,7 @@ class Imputer(ABC):
         data: pd.DataFrame,
         predictors: List[str],
         imputed_variables: List[str],
+        not_numeric_categorical: Optional[List[str]] = None,
     ) -> Tuple[pd.DataFrame, List[str], List[str], Dict[str, Any]]:
         """Preprocess predictors only - convert categorical predictors to dummies.
         Imputation targets remain in original form for classification.
@@ -171,6 +182,9 @@ class Imputer(ABC):
             data: DataFrame containing the data.
             predictors: List of predictor column names.
             imputed_variables: List of variables to impute (kept in original form).
+            not_numeric_categorical: Optional list of variable names that should
+                be treated as numeric even if they would normally be detected as
+                numeric_categorical.
 
         Returns:
             Tuple of (processed_data, updated_predictors, imputed_variables, empty_dict)
@@ -182,7 +196,10 @@ class Imputer(ABC):
             processor = DummyVariableProcessor(self.logger)
             processed_data, updated_predictors = (
                 processor.preprocess_predictors(
-                    data, predictors, imputed_variables
+                    data,
+                    predictors,
+                    imputed_variables,
+                    not_numeric_categorical,
                 )
             )
 
@@ -204,6 +221,7 @@ class Imputer(ABC):
         imputed_variables: List[str],
         weight_col: Optional[Union[str, np.ndarray, pd.Series]] = None,
         skip_missing: bool = False,
+        not_numeric_categorical: Optional[List[str]] = None,
         **kwargs: Any,
     ) -> Any:  # Returns ImputerResults
         """Fit the model to the training data.
@@ -214,6 +232,9 @@ class Imputer(ABC):
             imputed_variables: List of column names to impute.
             weight_col: Optional name of the column or column array/series containing sampling weights. When provided, `X_train` will be sampled with replacement using this column as selection probabilities before fitting the model.
             skip_missing: If True, skip variables missing from training data with warning. If False, raise error for missing variables.
+            not_numeric_categorical: Optional list of variable names that should
+                be treated as numeric even if they would normally be detected as
+                numeric_categorical.
             **kwargs: Additional model-specific parameters.
 
         Returns:
@@ -261,10 +282,14 @@ class Imputer(ABC):
             raise ValueError("Weights must be positive")
 
         # Identify target types BEFORE preprocessing
-        self.identify_target_types(X_train, imputed_variables)
+        self.identify_target_types(
+            X_train, imputed_variables, not_numeric_categorical
+        )
 
         X_train, predictors, imputed_variables, imputed_vars_dummy_info = (
-            self.preprocess_data_types(X_train, predictors, imputed_variables)
+            self.preprocess_data_types(
+                X_train, predictors, imputed_variables, not_numeric_categorical
+            )
         )
 
         if weights is not None:

@@ -158,9 +158,14 @@ class _QRFModel:
         """
         self.output_column = y.name
 
+        # Remove random_state from kwargs if present, since we set it explicitly
+        qrf_kwargs_filtered = {
+            k: v for k, v in qrf_kwargs.items() if k != "random_state"
+        }
+
         # Create and fit model
         self.qrf = RandomForestQuantileRegressor(
-            random_state=self.seed, **qrf_kwargs
+            random_state=self.seed, **qrf_kwargs_filtered
         )
         self.qrf.fit(X, y.values.ravel())
 

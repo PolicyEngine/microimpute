@@ -2,3 +2,4 @@
   changes:
     fixed:
     - Fixed QRF to encode categorical imputed variables that become predictors correctly.
+    - Added `not_numeric_categorical` parameter to control whether discrete numeric variables are treated as categorical.
