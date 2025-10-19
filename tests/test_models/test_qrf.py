@@ -964,6 +964,239 @@ def test_qrf_hyperparameter_tuning_with_cv_folds() -> None:
     model.logger.removeHandler(handler)
 
 
+def test_qrf_sequential_imputation_discrete_numeric_categorical() -> None:
+    """Test sequential imputation with discrete numeric values (0-6) treated as numeric_categorical.
+
+    This test specifically validates the fix for GitHub issue #133 where dummy encoding
+    during sequential imputation was failing for discrete numeric variables.
+    """
+    np.random.seed(42)
+
+    # Create DONOR dataset with discrete values 0-6
+    n_samples_donor = 200
+
+    # Create three variables with discrete values from 0 to 6
+    # These will be detected as numeric_categorical due to low unique count and equal spacing
+    base = np.random.choice([0, 1, 2, 3, 4, 5, 6], size=n_samples_donor)
+
+    var1 = base + np.random.choice([-1, 0, 1], size=n_samples_donor)
+    var1 = np.clip(var1, 0, 6).astype(float)
+
+    var2 = base + np.random.choice([-1, 0, 1], size=n_samples_donor)
+    var2 = np.clip(var2, 0, 6).astype(float)
+
+    var3 = base + np.random.choice([-1, 0, 1], size=n_samples_donor)
+    var3 = np.clip(var3, 0, 6).astype(float)
+
+    # Create predictor features
+    feature1 = np.random.randn(n_samples_donor)
+    feature2 = np.random.randn(n_samples_donor) * 2 + 1
+    feature3 = np.random.choice([0, 1], size=n_samples_donor)
+
+    # Create DONOR DataFrame
+    donor_df = pd.DataFrame(
+        {
+            "var1": var1,
+            "var2": var2,
+            "var3": var3,
+            "feature1": feature1,
+            "feature2": feature2,
+            "feature3": feature3,
+        }
+    )
+
+    # Create RECEIVER dataset (missing var1, var2, var3 entirely)
+    n_samples_receiver = 50
+    receiver_df = pd.DataFrame(
+        {
+            "feature1": np.random.randn(n_samples_receiver),
+            "feature2": np.random.randn(n_samples_receiver) * 2 + 1,
+            "feature3": np.random.choice([0, 1], size=n_samples_receiver),
+        }
+    )
+
+    # Initialize and fit QRF model
+    model = QRF(log_level="WARNING")
+
+    predictors = ["feature1", "feature2", "feature3"]
+    imputed_variables = ["var1", "var2", "var3"]
+
+    # This should work without errors after the fix for issue #133
+    fitted_model = model.fit(
+        X_train=donor_df,
+        predictors=predictors,
+        imputed_variables=imputed_variables,
+        n_estimators=30,
+        random_state=42,
+    )
+
+    # Predict should also work without dummy encoding errors
+    imputed_vars_df = fitted_model.predict(receiver_df)
+
+    # Validate results
+    assert isinstance(imputed_vars_df, pd.DataFrame)
+    assert imputed_vars_df.shape == (n_samples_receiver, 3)
+    assert set(imputed_vars_df.columns) == {"var1", "var2", "var3"}
+
+    # Check that all imputed values are within the expected range [0, 6]
+    for col in ["var1", "var2", "var3"]:
+        assert imputed_vars_df[col].min() >= 0, f"{col} has values below 0"
+        assert imputed_vars_df[col].max() <= 6, f"{col} has values above 6"
+
+    # Test that sequential imputation is actually happening
+    # var2 and var3 should use var1 as a predictor
+    # Fit a model with just var1 to compare
+    single_model = QRF(log_level="WARNING")
+    single_fitted = single_model.fit(
+        X_train=donor_df,
+        predictors=predictors,
+        imputed_variables=["var1"],
+        n_estimators=30,
+        random_state=42,
+    )
+
+    single_pred = single_fitted.predict(receiver_df)
+
+    # var1 predictions should be the same in both models
+    # (since var1 is imputed first in both cases with same predictors)
+    assert np.allclose(
+        imputed_vars_df["var1"].values, single_pred["var1"].values, rtol=1e-5
+    ), "First variable in sequential should match single imputation"
+
+
+def test_qrf_not_numeric_categorical_override() -> None:
+    """Test that not_numeric_categorical parameter correctly overrides automatic detection.
+
+    Variables with <10 unique equally-spaced values normally get treated as categorical,
+    but this parameter should force them to be treated as numeric.
+    """
+    np.random.seed(42)
+    n_samples = 200
+
+    # Create data with discrete values that would normally be treated as categorical
+    # var1 and var2 have values 0-5 (6 unique, equally spaced -> normally categorical)
+    # var3 is continuous
+    donor_df = pd.DataFrame(
+        {
+            "predictor1": np.random.randn(n_samples),
+            "predictor2": np.random.randn(n_samples),
+            "discrete_var1": np.random.choice(
+                [0, 1, 2, 3, 4, 5], n_samples
+            ).astype(float),
+            "discrete_var2": np.random.choice(
+                [0, 1, 2, 3, 4, 5], n_samples
+            ).astype(float),
+            "continuous_var": np.random.randn(n_samples) * 5 + 10,
+        }
+    )
+
+    # Create receiver dataset without the imputed variables
+    receiver_df = pd.DataFrame(
+        {"predictor1": np.random.randn(50), "predictor2": np.random.randn(50)}
+    )
+
+    # Test 1: Default behavior - discrete vars should be treated as categorical
+    model_default = QRF(log_level="WARNING")
+    fitted_default = model_default.fit(
+        X_train=donor_df,
+        predictors=["predictor1", "predictor2"],
+        imputed_variables=["discrete_var1", "discrete_var2", "continuous_var"],
+        n_estimators=20,
+        random_state=42,
+    )
+
+    # Check that discrete vars were treated as categorical
+    assert (
+        "discrete_var1" in model_default.categorical_targets
+    ), "discrete_var1 should be categorical by default"
+    assert (
+        "discrete_var2" in model_default.categorical_targets
+    ), "discrete_var2 should be categorical by default"
+    assert (
+        "continuous_var" in model_default.numeric_targets
+    ), "continuous_var should be numeric"
+
+    # Test 2: Override discrete_var1 to be numeric, keep discrete_var2 as categorical
+    model_override = QRF(log_level="WARNING")
+    fitted_override = model_override.fit(
+        X_train=donor_df,
+        predictors=["predictor1", "predictor2"],
+        imputed_variables=["discrete_var1", "discrete_var2", "continuous_var"],
+        not_numeric_categorical=[
+            "discrete_var1"
+        ],  # Force discrete_var1 to be numeric
+        n_estimators=20,
+        random_state=42,
+    )
+
+    # Check that discrete_var1 is now numeric, but discrete_var2 is still categorical
+    assert (
+        "discrete_var1" not in model_override.categorical_targets
+    ), "discrete_var1 should NOT be categorical with override"
+    assert (
+        "discrete_var1" in model_override.numeric_targets
+    ), "discrete_var1 should be numeric with override"
+    assert (
+        "discrete_var2" in model_override.categorical_targets
+    ), "discrete_var2 should still be categorical"
+    assert (
+        "continuous_var" in model_override.numeric_targets
+    ), "continuous_var should still be numeric"
+
+    # Test 3: Predictions should work with both models
+    predictions_default = fitted_default.predict(receiver_df)
+    predictions_override = fitted_override.predict(receiver_df)
+
+    assert predictions_default.shape == (50, 3)
+    assert predictions_override.shape == (50, 3)
+
+    # discrete_var1 predictions should be different between models
+    # (one uses classification, one uses regression)
+    assert not np.allclose(
+        predictions_default["discrete_var1"].values,
+        predictions_override["discrete_var1"].values,
+        rtol=1e-5,
+    ), "discrete_var1 predictions should differ between categorical and numeric treatment"
+
+    # Test 4: Override for predictors as well
+    # Create data where a predictor has discrete values
+    donor_df_pred = pd.DataFrame(
+        {
+            "discrete_predictor": np.random.choice(
+                [10, 20, 30, 40], n_samples
+            ).astype(float),
+            "normal_predictor": np.random.randn(n_samples),
+            "target": np.random.randn(n_samples) * 2 + 5,
+        }
+    )
+
+    receiver_df_pred = pd.DataFrame(
+        {
+            "discrete_predictor": np.random.choice(
+                [10, 20, 30, 40], 30
+            ).astype(float),
+            "normal_predictor": np.random.randn(30),
+        }
+    )
+
+    model_pred = QRF(log_level="WARNING")
+    fitted_pred = model_pred.fit(
+        X_train=donor_df_pred,
+        predictors=["discrete_predictor", "normal_predictor"],
+        imputed_variables=["target"],
+        not_numeric_categorical=[
+            "discrete_predictor"
+        ],  # Force predictor to stay numeric
+        n_estimators=20,
+        random_state=42,
+    )
+
+    # The model should still work and predict
+    predictions_pred = fitted_pred.predict(receiver_df_pred)
+    assert predictions_pred.shape == (30, 1)
+    assert "target" in predictions_pred.columns
+
+
 def test_qrf_hyperparameter_tuning_improves_performance() -> None:
     """Test that tuned hyperparameters perform better than untuned model."""
     from microimpute.comparisons.metrics import compute_loss

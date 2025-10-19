@@ -3,7 +3,7 @@
 This module contains utilities for evaluating imputation quality using various metrics:
 - Quantile loss for numerical variables
 - Log loss for categorical variables
-- Distributional similarity metrics (Wasserstein distance, Total Variation Distance)
+- Distributional similarity metrics (Wasserstein distance, KL Divergence)
 The module automatically detects which metric to use based on variable type.
 """
 
@@ -13,6 +13,7 @@ from typing import Dict, List, Literal, Optional, Tuple
 import numpy as np
 import pandas as pd
 from pydantic import validate_call
+from scipy.special import rel_entr
 from scipy.stats import wasserstein_distance
 from sklearn.metrics import log_loss as sklearn_log_loss
 
@@ -495,25 +496,35 @@ def compare_metrics(
         raise RuntimeError(f"Failed to compare metrics: {str(e)}") from e
 
 
-def total_variation_distance(
+def kl_divergence(
     donor_values: np.ndarray, receiver_values: np.ndarray
 ) -> float:
-    """Calculate Total Variation Distance between two categorical distributions.
+    """Calculate Kullback-Leibler (KL) Divergence between two categorical distributions.
 
-    Total Variation Distance (TVD) measures the maximum difference between
-    two probability distributions. For categorical variables, it is calculated as:
-    TVD = 0.5 * sum(|P(x) - Q(x)|) for all categories x
+    KL divergence measures the difference between two probability distributions.
+    For categorical variables, it is calculated as:
+    KL(P||Q) = sum(P(x) * log(P(x) / Q(x))) for all categories x
+
+    This implementation uses the donor distribution as P (reference) and
+    receiver distribution as Q (approximation), measuring how well the
+    receiver distribution approximates the donor distribution.
 
     Args:
-        donor_values: Array of categorical values from donor data.
-        receiver_values: Array of categorical values from receiver data.
+        donor_values: Array of categorical values from donor data (reference distribution P).
+        receiver_values: Array of categorical values from receiver data (approximation Q).
 
     Returns:
-        Total variation distance value between 0 and 1, where 0 indicates
-        identical distributions and 1 indicates completely disjoint distributions.
+        KL divergence value >= 0, where 0 indicates identical distributions
+        and larger values indicate greater divergence. Note: KL divergence is
+        unbounded and can be infinite if Q(x) = 0 for some x where P(x) > 0.
 
     Raises:
         ValueError: If inputs are empty or invalid.
+
+    Note:
+        - KL divergence is not symmetric: KL(P||Q) != KL(Q||P)
+        - To handle zero probabilities, a small epsilon is added to avoid log(0)
+        - Uses scipy.special.rel_entr for numerical stability
     """
     if len(donor_values) == 0 or len(receiver_values) == 0:
         raise ValueError(
@@ -529,15 +540,22 @@ def total_variation_distance(
     donor_counts = pd.Series(donor_values).value_counts(normalize=True)
     receiver_counts = pd.Series(receiver_values).value_counts(normalize=True)
 
-    # Calculate TVD
-    tvd = 0.0
-    for category in all_categories:
-        p_donor = donor_counts.get(category, 0.0)
-        p_receiver = receiver_counts.get(category, 0.0)
-        tvd += abs(p_donor - p_receiver)
+    # Create probability arrays for all categories
+    p_donor = np.array([donor_counts.get(cat, 0.0) for cat in all_categories])
+    q_receiver = np.array(
+        [receiver_counts.get(cat, 0.0) for cat in all_categories]
+    )
 
-    # TVD is half the sum of absolute differences
-    return tvd / 2.0
+    # Add small epsilon to avoid log(0) and division by zero
+    epsilon = 1e-10
+    q_receiver = np.maximum(q_receiver, epsilon)
+
+    # Calculate KL divergence using scipy.special.kl_div
+    # kl_div(p, q) computes p * log(p/q) element-wise
+    kl_values = rel_entr(p_donor, q_receiver)
+
+    # Sum over all categories to get total KL divergence
+    return np.sum(kl_values)
 
 
 @validate_call(config=VALIDATE_CONFIG)
@@ -550,7 +568,7 @@ def compare_distributions(
 
     Evaluates distributional similarity using appropriate metrics:
     - Wasserstein Distance for numerical variables
-    - Total Variation Distance for categorical variables
+    - KL Divergence for categorical variables
 
     Args:
         donor_data: DataFrame containing original donor data.
@@ -575,7 +593,7 @@ def compare_distributions(
         >>> print(result)
            Variable                 Metric  Distance
         0    income  wasserstein_distance  66.666667
-        1    region  total_variation_distance    0.166667
+        1    region          kl_divergence    0.166667
     """
     try:
         log.info(
@@ -613,13 +631,11 @@ def compare_distributions(
 
             # Choose appropriate metric
             if var_type in ["bool", "categorical", "numeric_categorical"]:
-                # Use Total Variation Distance for categorical
-                metric_name = "total_variation_distance"
-                distance = total_variation_distance(
-                    donor_values, receiver_values
-                )
+                # Use KL Divergence for categorical
+                metric_name = "kl_divergence"
+                distance = kl_divergence(donor_values, receiver_values)
                 log.debug(
-                    f"TVD for categorical variable '{var}': {distance:.6f}"
+                    f"KL divergence for categorical variable '{var}': {distance:.6f}"
                 )
             else:
                 # Use Wasserstein Distance for numerical

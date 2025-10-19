@@ -57,10 +57,20 @@ class VariableTypeDetector:
 
     @staticmethod
     def categorize_variable(
-        series: pd.Series, col_name: str, logger: logging.Logger
+        series: pd.Series,
+        col_name: str,
+        logger: logging.Logger,
+        force_numeric: bool = False,
     ) -> Tuple[str, Optional[List]]:
         """
         Categorize a variable and return its type and categories if applicable.
+
+        Args:
+            series: The data series to categorize
+            col_name: Name of the column for logging
+            logger: Logger instance
+            force_numeric: If True, treat the variable as numeric even if it
+                would normally be detected as numeric_categorical
 
         Returns:
             Tuple of (variable_type, categories)
@@ -73,12 +83,25 @@ class VariableTypeDetector:
         if VariableTypeDetector.is_categorical_variable(series):
             return "categorical", series.unique().tolist()
 
-        if VariableTypeDetector.is_numeric_categorical_variable(series):
+        # Check if it would normally be numeric_categorical
+        if (
+            not force_numeric
+            and VariableTypeDetector.is_numeric_categorical_variable(series)
+        ):
             categories = [float(i) for i in series.unique().tolist()]
             logger.info(
                 f"Treating numeric variable '{col_name}' as categorical due to low unique count and equal spacing"
             )
             return "numeric_categorical", categories
+
+        # If force_numeric is True or it's not numeric_categorical, treat as numeric
+        if (
+            force_numeric
+            and VariableTypeDetector.is_numeric_categorical_variable(series)
+        ):
+            logger.info(
+                f"Variable '{col_name}' forced to be treated as numeric (override numeric_categorical detection)"
+            )
 
         return "numeric", None
 
@@ -98,12 +121,21 @@ class DummyVariableProcessor:
         data: pd.DataFrame,
         predictors: List[str],
         imputed_variables: List[str],
+        not_numeric_categorical: Optional[List[str]] = None,
     ) -> Tuple[pd.DataFrame, List[str]]:
         """
         Process predictor variables and pre-compute dummy encodings.
 
         For predictors: converts categoricals to dummies and adds to dataframe.
         For imputed_variables: pre-computes dummy info but keeps original form.
+
+        Args:
+            data: DataFrame containing the data
+            predictors: List of predictor column names
+            imputed_variables: List of variables to impute
+            not_numeric_categorical: Optional list of variable names that should
+                be treated as numeric even if they would normally be detected as
+                numeric_categorical.
 
         Returns:
             Tuple of (processed_data, updated_predictors)
@@ -112,6 +144,7 @@ class DummyVariableProcessor:
         all_columns = list(set(predictors + imputed_variables))
         data = data[all_columns].copy()
         detector = VariableTypeDetector()
+        not_numeric_categorical = not_numeric_categorical or []
 
         # Identify categorical predictors (not imputed targets)
         categorical_predictors = []
@@ -119,7 +152,10 @@ class DummyVariableProcessor:
             if col not in data.columns:
                 continue
             var_type, categories = detector.categorize_variable(
-                data[col], col, self.logger
+                data[col],
+                col,
+                self.logger,
+                force_numeric=(col in not_numeric_categorical),
             )
             if var_type in ["categorical", "numeric_categorical"]:
                 categorical_predictors.append(col)
@@ -132,7 +168,10 @@ class DummyVariableProcessor:
             if col not in data.columns:
                 continue
             var_type, categories = detector.categorize_variable(
-                data[col], col, self.logger
+                data[col],
+                col,
+                self.logger,
+                force_numeric=(col in not_numeric_categorical),
             )
             if var_type in ["categorical", "numeric_categorical"]:
                 # Create dummy columns to determine structure

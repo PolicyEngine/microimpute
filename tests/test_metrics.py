@@ -16,8 +16,8 @@ from microimpute.comparisons.metrics import (
     compare_distributions,
     compute_loss,
     get_metric_for_variable_type,
+    kl_divergence,
     log_loss,
-    total_variation_distance,
 )
 from microimpute.config import QUANTILES
 from microimpute.evaluations.cross_validation import cross_validate_model
@@ -1017,50 +1017,65 @@ def test_probability_ordering_with_real_model() -> None:
 # === Distribution Comparison Tests ===
 
 
-def test_total_variation_distance_identical() -> None:
-    """Test TVD between identical distributions."""
+def test_kl_divergence_identical() -> None:
+    """Test KL divergence between identical distributions."""
     values = np.array(["A", "B", "C", "A", "B", "C"])
-    tvd = total_variation_distance(values, values)
-    assert tvd == 0.0, "TVD should be 0 for identical distributions"
+    kl = kl_divergence(values, values)
+    assert np.isclose(
+        kl, 0.0, atol=1e-10
+    ), "KL divergence should be 0 for identical distributions"
 
 
-def test_total_variation_distance_disjoint() -> None:
-    """Test TVD between completely disjoint distributions."""
+def test_kl_divergence_disjoint() -> None:
+    """Test KL divergence between completely disjoint distributions."""
     donor = np.array(["A", "A", "A", "A"])
     receiver = np.array(["B", "B", "B", "B"])
-    tvd = total_variation_distance(donor, receiver)
-    assert tvd == 1.0, "TVD should be 1 for disjoint distributions"
+    kl = kl_divergence(donor, receiver)
+    # KL divergence should be very large (approaching infinity) for disjoint distributions
+    assert (
+        kl > 10
+    ), "KL divergence should be very large for disjoint distributions"
 
 
-def test_total_variation_distance_partial_overlap() -> None:
-    """Test TVD with partial distribution overlap."""
+def test_kl_divergence_partial_overlap() -> None:
+    """Test KL divergence with partial distribution overlap."""
     # Donor: 75% A, 25% B
     donor = np.array(["A", "A", "A", "B"])
     # Receiver: 50% A, 50% B
     receiver = np.array(["A", "A", "B", "B"])
-    tvd = total_variation_distance(donor, receiver)
-    # Expected: 0.5 * (|0.75-0.50| + |0.25-0.50|) = 0.5 * (0.25 + 0.25) = 0.25
-    assert np.isclose(tvd, 0.25), f"Expected TVD ~0.25, got {tvd}"
+    kl = kl_divergence(donor, receiver)
+    # KL(P||Q) = 0.75*log(0.75/0.50) + 0.25*log(0.25/0.50)
+    #          = 0.75*log(1.5) + 0.25*log(0.5)
+    #          ≈ 0.75*0.405 + 0.25*(-0.693)
+    #          ≈ 0.304 - 0.173 ≈ 0.131
+    assert (
+        kl > 0
+    ), "KL divergence should be positive for different distributions"
+    assert (
+        kl < 1
+    ), f"KL divergence should be reasonable for similar distributions, got {kl}"
 
 
-def test_total_variation_distance_different_categories() -> None:
-    """Test TVD when distributions have different category sets."""
+def test_kl_divergence_different_categories() -> None:
+    """Test KL divergence when distributions have different category sets."""
     donor = np.array(["A", "B", "A", "B"])
     receiver = np.array(["B", "C", "B", "C"])
-    tvd = total_variation_distance(donor, receiver)
+    kl = kl_divergence(donor, receiver)
     # Donor: A=0.5, B=0.5, C=0.0
-    # Receiver: A=0.0, B=0.5, C=0.5
-    # TVD = 0.5 * (|0.5-0| + |0.5-0.5| + |0-0.5|) = 0.5 * (0.5 + 0 + 0.5) = 0.5
-    assert np.isclose(tvd, 0.5), f"Expected TVD ~0.5, got {tvd}"
+    # Receiver: A=0.0+ε, B=0.5, C=0.5  (ε added to avoid log(0))
+    # KL divergence should be large due to A having 0 probability in receiver
+    assert (
+        kl > 5
+    ), f"KL divergence should be large when categories are missing, got {kl}"
 
 
-def test_total_variation_distance_empty_input() -> None:
-    """Test TVD raises error with empty inputs."""
+def test_kl_divergence_empty_input() -> None:
+    """Test KL divergence raises error with empty inputs."""
     with pytest.raises(ValueError, match="non-empty"):
-        total_variation_distance(np.array([]), np.array(["A"]))
+        kl_divergence(np.array([]), np.array(["A"]))
 
     with pytest.raises(ValueError, match="non-empty"):
-        total_variation_distance(np.array(["A"]), np.array([]))
+        kl_divergence(np.array(["A"]), np.array([]))
 
 
 def test_compare_distributions_numerical_only() -> None:
@@ -1124,12 +1139,11 @@ def test_compare_distributions_categorical_only() -> None:
 
     # Check structure
     assert len(results) == 2
-    assert all(results["Metric"] == "total_variation_distance")
+    assert all(results["Metric"] == "kl_divergence")
     assert set(results["Variable"]) == {"region", "status"}
 
-    # TVD should be between 0 and 1
+    # KL divergence should be non-negative (can be > 1)
     assert all(results["Distance"] >= 0)
-    assert all(results["Distance"] <= 1)
 
 
 def test_compare_distributions_mixed_types() -> None:
@@ -1167,9 +1181,9 @@ def test_compare_distributions_mixed_types() -> None:
     numerical_vars = results[results["Metric"] == "wasserstein_distance"][
         "Variable"
     ].tolist()
-    categorical_vars = results[
-        results["Metric"] == "total_variation_distance"
-    ]["Variable"].tolist()
+    categorical_vars = results[results["Metric"] == "kl_divergence"][
+        "Variable"
+    ].tolist()
 
     assert "income" in numerical_vars
     assert "age" in numerical_vars

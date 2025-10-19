@@ -27,11 +27,14 @@ from microimpute.comparisons.imputations import get_imputations
 
 # Import comparison and metric utilities
 from microimpute.comparisons.metrics import (
+    compare_distributions,
     compare_metrics,
     compute_loss,
     get_metric_for_variable_type,
+    kl_divergence,
     log_loss,
     quantile_loss,
+    wasserstein_distance,
 )
 
 # Import validation utilities

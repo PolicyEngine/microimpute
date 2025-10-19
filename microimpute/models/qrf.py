@@ -158,9 +158,14 @@ class _QRFModel:
         """
         self.output_column = y.name
 
+        # Remove random_state from kwargs if present, since we set it explicitly
+        qrf_kwargs_filtered = {
+            k: v for k, v in qrf_kwargs.items() if k != "random_state"
+        }
+
         # Create and fit model
         self.qrf = RandomForestQuantileRegressor(
-            random_state=self.seed, **qrf_kwargs
+            random_state=self.seed, **qrf_kwargs_filtered
         )
         self.qrf.fit(X, y.values.ravel())
 
@@ -249,6 +254,49 @@ class QRFResults(ImputerResults):
         self.constant_targets = constant_targets or {}
         self.dummy_processor = dummy_processor
 
+    def _get_encoded_predictors(
+        self, current_predictors: List[str]
+    ) -> List[str]:
+        """Get properly encoded predictor columns for sequential imputation.
+
+        Args:
+            current_predictors: List of predictor variable names
+
+        Returns:
+            List of encoded predictor column names
+        """
+        if self.dummy_processor:
+            return self.dummy_processor.get_sequential_predictor_columns(
+                current_predictors
+            )
+        else:
+            return current_predictors
+
+    def _encode_imputed_variable(
+        self, data: pd.DataFrame, variable: str
+    ) -> pd.DataFrame:
+        """Encode a categorical imputed variable for use as predictor in subsequent iterations.
+
+        Args:
+            data: DataFrame containing the imputed variable
+            variable: Name of the variable that was just imputed
+
+        Returns:
+            DataFrame with encoded variable (adds dummy columns if categorical)
+        """
+        if (
+            self.dummy_processor
+            and variable in self.dummy_processor.imputed_var_dummy_mapping
+        ):
+            data = self.dummy_processor.sequential_imputed_predictor_encoding(
+                data, variable
+            )
+            self.logger.debug(
+                f"  Encoded '{variable}' for use in sequential imputation"
+            )
+
+        return data
+
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
         self,
@@ -318,12 +366,9 @@ class QRFResults(ImputerResults):
                     )
 
                     # Get properly encoded predictor columns
-                    if self.dummy_processor:
-                        encoded_predictors = self.dummy_processor.get_sequential_predictor_columns(
-                            var_predictors
-                        )
-                    else:
-                        encoded_predictors = var_predictors
+                    encoded_predictors = self._get_encoded_predictors(
+                        var_predictors
+                    )
 
                     self.logger.debug(
                         f"var_predictors for {variable}: {var_predictors}"
@@ -390,15 +435,16 @@ class QRFResults(ImputerResults):
                     X_test_augmented[variable] = imputed_values
 
                     # Encode categorical/boolean imputed variable for next iteration
+                    X_test_augmented = self._encode_imputed_variable(
+                        X_test_augmented, variable
+                    )
+
+                    # Track the dummy columns that were added
                     if (
                         self.dummy_processor
                         and variable
                         in self.dummy_processor.imputed_var_dummy_mapping
                     ):
-                        X_test_augmented = self.dummy_processor.sequential_imputed_predictor_encoding(
-                            X_test_augmented, variable
-                        )
-                        # Track the dummy columns that were added
                         var_info = (
                             self.dummy_processor.imputed_var_dummy_mapping[
                                 variable
@@ -487,6 +533,68 @@ class QRF(Imputer):
                 self.logger.info(
                     f"Batch processing enabled with batch_size={batch_size}"
                 )
+
+    def _get_encoded_predictors(
+        self,
+        current_predictors: List[str],
+        dummy_processor: Optional[Any] = None,
+    ) -> List[str]:
+        """Get properly encoded predictor columns for sequential imputation.
+
+        This helper ensures consistent encoding of categorical predictors across
+        all code paths (batch, non-batch, hyperparameter tuning, etc.).
+
+        Args:
+            current_predictors: List of predictor variable names
+            dummy_processor: Optional DummyVariableProcessor instance
+
+        Returns:
+            List of encoded predictor column names
+        """
+        if dummy_processor is None:
+            dummy_processor = getattr(self, "dummy_processor", None)
+
+        if dummy_processor:
+            return dummy_processor.get_sequential_predictor_columns(
+                current_predictors
+            )
+        else:
+            return current_predictors
+
+    def _encode_imputed_variable(
+        self,
+        data: pd.DataFrame,
+        variable: str,
+        dummy_processor: Optional[Any] = None,
+    ) -> pd.DataFrame:
+        """Encode a categorical imputed variable for use as predictor in subsequent iterations.
+
+        This helper ensures consistent encoding of imputed categorical variables
+        across all code paths.
+
+        Args:
+            data: DataFrame containing the imputed variable
+            variable: Name of the variable that was just imputed
+            dummy_processor: Optional DummyVariableProcessor instance
+
+        Returns:
+            DataFrame with encoded variable (adds dummy columns if categorical)
+        """
+        if dummy_processor is None:
+            dummy_processor = getattr(self, "dummy_processor", None)
+
+        if (
+            dummy_processor
+            and variable in dummy_processor.imputed_var_dummy_mapping
+        ):
+            data = dummy_processor.sequential_imputed_predictor_encoding(
+                data, variable
+            )
+            self.logger.debug(
+                f"  Encoded '{variable}' for use in sequential imputation"
+            )
+
+        return data
 
     def _create_model_for_variable(self, variable: str, **kwargs) -> Any:
         """Create the appropriate model (classifier or regressor) based on variable type."""
@@ -681,12 +789,9 @@ class QRF(Imputer):
                             dummy_processor = getattr(
                                 self, "dummy_processor", None
                             )
-                            if dummy_processor:
-                                encoded_predictors = dummy_processor.get_sequential_predictor_columns(
-                                    current_predictors
-                                )
-                            else:
-                                encoded_predictors = current_predictors
+                            encoded_predictors = self._get_encoded_predictors(
+                                current_predictors, dummy_processor
+                            )
 
                             # Log detailed pre-imputation information
                             self.logger.info(
@@ -734,17 +839,9 @@ class QRF(Imputer):
                                 self.models[variable] = model
 
                                 # Encode categorical/boolean imputed variable for next iteration
-                                if (
-                                    dummy_processor
-                                    and variable
-                                    in dummy_processor.imputed_var_dummy_mapping
-                                ):
-                                    X_train = dummy_processor.sequential_imputed_predictor_encoding(
-                                        X_train, variable
-                                    )
-                                    self.logger.debug(
-                                        f"  Encoded '{variable}' for use in sequential imputation"
-                                    )
+                                X_train = self._encode_imputed_variable(
+                                    X_train, variable, dummy_processor
+                                )
 
                             except Exception as e:
                                 self.logger.error(
@@ -858,12 +955,20 @@ class QRF(Imputer):
                             predictors, imputed_variables, i
                         )
 
+                        # Get properly encoded predictor columns
+                        dummy_processor = getattr(
+                            self, "dummy_processor", None
+                        )
+                        encoded_predictors = self._get_encoded_predictors(
+                            current_predictors, dummy_processor
+                        )
+
                         # Log detailed pre-imputation information
                         self.logger.info(
                             f"[{i+1}/{len(imputed_variables)}] Starting imputation for '{variable}'"
                         )
                         self.logger.info(
-                            f"  Features: {len(current_predictors)} predictors"
+                            f"  Features: {len(encoded_predictors)} predictors"
                         )
                         self.logger.info(
                             f"  Memory usage: {self._get_memory_usage_info()}"
@@ -875,7 +980,7 @@ class QRF(Imputer):
                         try:
                             self._fit_model(
                                 model,
-                                X_train[current_predictors],
+                                X_train[encoded_predictors],
                                 X_train[variable],
                                 variable,
                                 **qrf_kwargs,
@@ -902,6 +1007,11 @@ class QRF(Imputer):
                                 )
 
                             self.models[variable] = model
+
+                            # Encode categorical/boolean imputed variable for next iteration
+                            X_train = self._encode_imputed_variable(
+                                X_train, variable, dummy_processor
+                            )
 
                         except Exception as e:
                             self.logger.error(
@@ -1107,14 +1217,9 @@ class QRF(Imputer):
 
                     # Get properly encoded predictor columns
                     dummy_processor = getattr(self, "dummy_processor", None)
-                    if dummy_processor:
-                        encoded_predictors = (
-                            dummy_processor.get_sequential_predictor_columns(
-                                current_predictors
-                            )
-                        )
-                    else:
-                        encoded_predictors = current_predictors
+                    encoded_predictors = self._get_encoded_predictors(
+                        current_predictors, dummy_processor
+                    )
 
                     # Only fit and evaluate numeric variables
                     if var in numeric_vars:
@@ -1159,12 +1264,12 @@ class QRF(Imputer):
                         var_errors.append(normalized_loss)
                     else:
                         # Categorical variable - encode it for use as predictor in next iterations
-                        if dummy_processor and var in X_train_fold.columns:
-                            X_train_augmented = dummy_processor.sequential_imputed_predictor_encoding(
-                                X_train_augmented, var
+                        if var in X_train_fold.columns:
+                            X_train_augmented = self._encode_imputed_variable(
+                                X_train_augmented, var, dummy_processor
                             )
-                            X_val_augmented = dummy_processor.sequential_imputed_predictor_encoding(
-                                X_val_augmented, var
+                            X_val_augmented = self._encode_imputed_variable(
+                                X_val_augmented, var, dummy_processor
                             )
 
                 # Average across variables for this fold
@@ -1277,14 +1382,9 @@ class QRF(Imputer):
 
                     # Get properly encoded predictor columns
                     dummy_processor = getattr(self, "dummy_processor", None)
-                    if dummy_processor:
-                        encoded_predictors = (
-                            dummy_processor.get_sequential_predictor_columns(
-                                current_predictors
-                            )
-                        )
-                    else:
-                        encoded_predictors = current_predictors
+                    encoded_predictors = self._get_encoded_predictors(
+                        current_predictors, dummy_processor
+                    )
 
                     # Only fit and evaluate categorical/boolean variables
                     if var in categorical_vars:
@@ -1353,13 +1453,12 @@ class QRF(Imputer):
                         var_errors.append(log_loss_value)
 
                         # Encode the categorical variable for use as predictor in next iterations
-                        if dummy_processor:
-                            X_train_augmented = dummy_processor.sequential_imputed_predictor_encoding(
-                                X_train_augmented, var
-                            )
-                            X_val_augmented = dummy_processor.sequential_imputed_predictor_encoding(
-                                X_val_augmented, var
-                            )
+                        X_train_augmented = self._encode_imputed_variable(
+                            X_train_augmented, var, dummy_processor
+                        )
+                        X_val_augmented = self._encode_imputed_variable(
+                            X_val_augmented, var, dummy_processor
+                        )
                     else:
                         # Numeric variable - just add it to augmented data (already there from fold data)
                         pass
