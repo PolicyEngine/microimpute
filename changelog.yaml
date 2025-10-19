@@ -192,3 +192,11 @@
     fixed:
     - Fixed pyproject.toml to avoid dependency versions updating with package again.
   date: 2025-10-10 08:33:23
+- bump: patch
+  changes:
+    fixed:
+    - Fixed QRF to encode categorical imputed variables that become predictors correctly.
+    - Added `not_numeric_categorical` parameter to control whether discrete numeric
+      variables are treated as categorical.
+    - Replaced Total Variation Distance with KL-divergence.
+  date: 2025-10-19 10:08:29
