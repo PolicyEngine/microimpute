@@ -964,6 +964,106 @@ def test_qrf_hyperparameter_tuning_with_cv_folds() -> None:
     model.logger.removeHandler(handler)
 
 
+def test_qrf_sequential_imputation_discrete_numeric_categorical() -> None:
+    """Test sequential imputation with discrete numeric values (0-6) treated as numeric_categorical.
+
+    This test specifically validates the fix for GitHub issue #133 where dummy encoding
+    during sequential imputation was failing for discrete numeric variables.
+    """
+    np.random.seed(42)
+
+    # Create DONOR dataset with discrete values 0-6
+    n_samples_donor = 200
+
+    # Create three variables with discrete values from 0 to 6
+    # These will be detected as numeric_categorical due to low unique count and equal spacing
+    base = np.random.choice([0, 1, 2, 3, 4, 5, 6], size=n_samples_donor)
+
+    var1 = base + np.random.choice([-1, 0, 1], size=n_samples_donor)
+    var1 = np.clip(var1, 0, 6).astype(float)
+
+    var2 = base + np.random.choice([-1, 0, 1], size=n_samples_donor)
+    var2 = np.clip(var2, 0, 6).astype(float)
+
+    var3 = base + np.random.choice([-1, 0, 1], size=n_samples_donor)
+    var3 = np.clip(var3, 0, 6).astype(float)
+
+    # Create predictor features
+    feature1 = np.random.randn(n_samples_donor)
+    feature2 = np.random.randn(n_samples_donor) * 2 + 1
+    feature3 = np.random.choice([0, 1], size=n_samples_donor)
+
+    # Create DONOR DataFrame
+    donor_df = pd.DataFrame(
+        {
+            "var1": var1,
+            "var2": var2,
+            "var3": var3,
+            "feature1": feature1,
+            "feature2": feature2,
+            "feature3": feature3,
+        }
+    )
+
+    # Create RECEIVER dataset (missing var1, var2, var3 entirely)
+    n_samples_receiver = 50
+    receiver_df = pd.DataFrame(
+        {
+            "feature1": np.random.randn(n_samples_receiver),
+            "feature2": np.random.randn(n_samples_receiver) * 2 + 1,
+            "feature3": np.random.choice([0, 1], size=n_samples_receiver),
+        }
+    )
+
+    # Initialize and fit QRF model
+    model = QRF(log_level="WARNING")
+
+    predictors = ["feature1", "feature2", "feature3"]
+    imputed_variables = ["var1", "var2", "var3"]
+
+    # This should work without errors after the fix for issue #133
+    fitted_model = model.fit(
+        X_train=donor_df,
+        predictors=predictors,
+        imputed_variables=imputed_variables,
+        n_estimators=30,
+        random_state=42,
+    )
+
+    # Predict should also work without dummy encoding errors
+    imputed_vars_df = fitted_model.predict(receiver_df)
+
+    # Validate results
+    assert isinstance(imputed_vars_df, pd.DataFrame)
+    assert imputed_vars_df.shape == (n_samples_receiver, 3)
+    assert set(imputed_vars_df.columns) == {"var1", "var2", "var3"}
+
+    # Check that all imputed values are within the expected range [0, 6]
+    for col in ["var1", "var2", "var3"]:
+        assert imputed_vars_df[col].min() >= 0, f"{col} has values below 0"
+        assert imputed_vars_df[col].max() <= 6, f"{col} has values above 6"
+
+    # Test that sequential imputation is actually happening
+    # var2 and var3 should use var1 as a predictor
+    # Fit a model with just var1 to compare
+    single_model = QRF(log_level="WARNING")
+    single_fitted = single_model.fit(
+        X_train=donor_df,
+        predictors=predictors,
+        imputed_variables=["var1"],
+        n_estimators=30,
+        random_state=42,
+    )
+
+    single_pred = single_fitted.predict(receiver_df)
+
+    # var1 predictions should be the same in both models
+    # (since var1 is imputed first in both cases with same predictors)
+    assert np.allclose(
+        imputed_vars_df["var1"].values, single_pred["var1"].values, rtol=1e-5
+    ), "First variable in sequential should match single imputation"
+
+
 def test_qrf_hyperparameter_tuning_improves_performance() -> None:
     """Test that tuned hyperparameters perform better than untuned model."""
     from microimpute.comparisons.metrics import compute_loss

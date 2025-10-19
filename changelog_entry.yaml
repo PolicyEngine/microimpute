@@ -1,0 +1,4 @@
+- bump: patch
+  changes:
+    fixed:
+    - Fixed QRF to encode categorical imputed variables that become predictors correctly.
