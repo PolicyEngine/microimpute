@@ -1,7 +1,0 @@
-- bump: minor
-  changes:
-    added:
-    - Created microimputation-dashboard directory with initial dashboard components.
-    - File upload component to load microimputation results.
-    - Designed structure required for micorimputation_results.csv to load onto dashboard.
-    - Created `format_csv` function to format results for dashboard compatibility. 
