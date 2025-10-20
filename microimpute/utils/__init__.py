@@ -10,6 +10,7 @@ Key components:
     - nnd_hotdeck_using_rpy2: R-based nearest neighbor hot deck imputation (optional)
 """
 
+from microimpute.utils.dashboard_formatter import format_csv
 from microimpute.utils.data import preprocess_data, unnormalize_predictions
 from microimpute.utils.type_handling import VariableTypeDetector
 

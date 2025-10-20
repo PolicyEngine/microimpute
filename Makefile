@@ -33,3 +33,21 @@ changelog:
 	bump-version changelog.yaml pyproject.toml
 	rm changelog_entry.yaml || true
 	touch changelog_entry.yaml
+
+# Dashboard commands
+dashboard-install:
+	cd microimputation-dashboard && npm install
+
+dashboard-dev:
+	cd microimputation-dashboard && npm run dev
+
+dashboard-build:
+	cd microimputation-dashboard && npm run build
+
+dashboard-start:
+	cd microimputation-dashboard && npm run start
+
+dashboard: dashboard-install dashboard-dev
+
+dashboard-clean:
+	cd microimputation-dashboard && rm -rf node_modules .next out

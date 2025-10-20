@@ -65,6 +65,16 @@ jobs:
         run: |
           python -m pytest tests/test_smoke_qrf.py -v
           python -m pytest tests/test_basic.py -v
+      - name: Run pipeline example
+        if: matrix.python-version == '3.13'
+        run: |
+          python examples/pipeline.py
+      - name: Upload microimputation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: microimputation-results-${{ github.sha }}
+          path: microimputation-dashboard/public/microimputation_results.csv
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v3
         with:

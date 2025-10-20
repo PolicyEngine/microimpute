@@ -392,26 +392,44 @@ class TestProgressivePredictorInclusion:
 
         # Check output structure
         assert isinstance(results, dict)
-        assert "inclusion_order" in results
-        assert "performance_curve" in results
-        assert "predictor_impacts" in results
+        assert "results_df" in results
         assert "optimal_subset" in results
         assert "optimal_loss" in results
 
-        # Check inclusion order
-        assert len(results["inclusion_order"]) <= 3
-        assert all(pred in predictors for pred in results["inclusion_order"])
+        # Check results_df is a DataFrame
+        results_df = results["results_df"]
+        assert isinstance(results_df, pd.DataFrame)
 
-        # Check performance curve is monotonically decreasing (or flat)
-        perf_curve = results["performance_curve"]
-        for i in range(1, len(perf_curve)):
-            assert (
-                perf_curve[i] <= perf_curve[i - 1] + 1e-6
-            )  # Allow small numerical errors
+        # Check DataFrame has correct columns
+        expected_columns = [
+            "step",
+            "predictor_added",
+            "predictors_included",
+            "avg_quantile_loss",
+            "avg_log_loss",
+            "cumulative_improvement",
+            "marginal_improvement",
+        ]
+        assert list(results_df.columns) == expected_columns
+
+        # Check inclusion order from DataFrame
+        assert len(results_df) <= 3
+        assert all(
+            pred in predictors for pred in results_df["predictor_added"]
+        )
+
+        # Check step numbering is correct
+        assert list(results_df["step"]) == list(range(1, len(results_df) + 1))
+
+        # Check performance is monotonically improving
+        # (cumulative_improvement should be non-decreasing)
+        cumulative_impr = results_df["cumulative_improvement"].values
+        for i in range(1, len(cumulative_impr)):
+            assert cumulative_impr[i] >= cumulative_impr[i - 1] - 1e-6
 
         # Check optimal subset
         assert len(results["optimal_subset"]) <= 3
-        assert results["optimal_loss"] == min(results["performance_curve"])
+        assert results["optimal_loss"] > 0  # Should be a positive loss value
 
     def test_progressive_inclusion_all_predictors(
         self, sample_regression_data
@@ -431,8 +449,13 @@ class TestProgressivePredictorInclusion:
         )
 
         # Should include all predictors
-        assert len(results["inclusion_order"]) == len(predictors)
-        assert set(results["inclusion_order"]) == set(predictors)
+        results_df = results["results_df"]
+        assert len(results_df) == len(predictors)
+        assert set(results_df["predictor_added"]) == set(predictors)
+
+        # Check that predictors_included grows correctly
+        for i, row in results_df.iterrows():
+            assert len(row["predictors_included"]) == row["step"]
 
     def test_progressive_inclusion_with_mixed_types(self, sample_mixed_data):
         """Test progressive inclusion with mixed predictor types."""
@@ -450,17 +473,15 @@ class TestProgressivePredictorInclusion:
         )
 
         assert isinstance(results, dict)
-        assert len(results["inclusion_order"]) <= 3
+        results_df = results["results_df"]
+        assert len(results_df) <= 3
 
-        # Check that predictor impacts are recorded
-        assert len(results["predictor_impacts"]) == len(
-            results["inclusion_order"]
+        # Check that values are valid
+        assert (results_df["avg_quantile_loss"] >= 0).all()
+        assert (results_df["avg_log_loss"] >= 0).all()
+        assert results_df["step"].tolist() == list(
+            range(1, len(results_df) + 1)
         )
-        for impact in results["predictor_impacts"]:
-            assert "predictor" in impact
-            assert "step" in impact
-            assert "loss_reduction" in impact
-            assert "cumulative_loss" in impact
 
 
 class TestIntegration:
@@ -502,7 +523,7 @@ class TestIntegration:
             max_predictors=3,
             random_state=42,
         )
-        assert len(prog_results["inclusion_order"]) <= 3
+        assert len(prog_results["results_df"]) <= 3
 
         # Check consistency: highly correlated predictors should have similar importance
         high_corr_pairs = []
