@@ -262,7 +262,7 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
 if __name__ == "__main__":
     # Run the full pipeline
     results_df = run_full_pipeline(
-        output_path="/Users/movil1/Desktop/PYTHONJOBS/PolicyEngine/microimpute/microimputation-dashboard/public/microimputation_results.csv"
+        output_path="microimputation-dashboard/public/microimputation_results.csv"
     )
 
     # Display a preview of the results
