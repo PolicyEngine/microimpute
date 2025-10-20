@@ -264,7 +264,3 @@ if __name__ == "__main__":
     results_df = run_full_pipeline(
         output_path="microimputation-dashboard/public/microimputation_results.csv"
     )
-
-    # Display a preview of the results
-    print("Preview of formatted results (first 10 rows):")
-    print(results_df.head(10))

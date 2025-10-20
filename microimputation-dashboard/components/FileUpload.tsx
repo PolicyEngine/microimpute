@@ -312,7 +312,7 @@ export default function FileUpload({
 
         try {
           JSON.parse(additionalInfo);
-        } catch (e) {
+        } catch {
           throw new Error(
             `Invalid CSV format: Row ${i + 1} contains invalid JSON in the 'additional_info' column. ` +
             `Value: "${additionalInfo.substring(0, 50)}${additionalInfo.length > 50 ? '...' : ''}"`

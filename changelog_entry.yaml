@@ -1,0 +1,4 @@
+- bump: patch
+  changes:
+    fixed:
+    - Add suspense to fix vercel deployment issue.
