@@ -410,9 +410,9 @@ def progressive_predictor_inclusion(
 
     Returns:
         Dictionary containing:
-            - inclusion_order: List of predictors in order of inclusion
-            - performance_curve: List of losses at each inclusion step
-            - predictor_impacts: List of dicts with detailed impact information
+            - results_df: DataFrame with columns ['step', 'predictor_added',
+              'predictors_included', 'avg_quantile_loss', 'avg_log_loss',
+              'cumulative_improvement', 'marginal_improvement']
             - optimal_subset: Predictors in the best performing subset
             - optimal_loss: Loss of the optimal subset
 
@@ -423,7 +423,8 @@ def progressive_predictor_inclusion(
         ...     imputed_variables=['health_score'],
         ...     model_class=QRF
         ... )
-        >>> print(f"Optimal order: {results['inclusion_order']}")
+        >>> print(f"Optimal subset: {results['optimal_subset']}")
+        >>> print(results['results_df'])
     """
     if max_predictors is None:
         max_predictors = len(predictors)
@@ -433,17 +434,12 @@ def progressive_predictor_inclusion(
         data, train_size=train_size, random_state=random_state
     )
 
-    results = {
-        "inclusion_order": [],
-        "performance_curve": [],
-        "predictor_impacts": [],
-        "optimal_subset": [],
-        "optimal_loss": float("inf"),
-    }
-
+    # Track results for DataFrame
+    df_rows = []
     remaining_predictors = predictors.copy()
     selected_predictors = []
     previous_loss = float("inf")
+    first_loss = None
     best_overall_loss = float("inf")
     best_subset = []
 
@@ -492,18 +488,28 @@ def progressive_predictor_inclusion(
             selected_predictors.append(best_predictor)
             remaining_predictors.remove(best_predictor)
 
-            improvement = previous_loss - best_step_loss
+            # Track first loss for cumulative improvement calculation
+            if first_loss is None:
+                first_loss = best_step_loss
 
-            results["inclusion_order"].append(best_predictor)
-            results["performance_curve"].append(best_step_loss)
-            results["predictor_impacts"].append(
+            # Calculate improvements
+            marginal_improvement = (
+                previous_loss - best_step_loss
+                if previous_loss != float("inf")
+                else 0.0
+            )
+            cumulative_improvement = first_loss - best_step_loss
+
+            # Add row to DataFrame
+            df_rows.append(
                 {
-                    "predictor": best_predictor,
                     "step": step + 1,
-                    "loss_reduction": improvement,
-                    "cumulative_loss": best_step_loss,
-                    "quantile_loss": best_losses_detail["quantile_loss"],
-                    "log_loss": best_losses_detail.get("log_loss", 0),
+                    "predictor_added": best_predictor,
+                    "predictors_included": selected_predictors.copy(),
+                    "avg_quantile_loss": best_losses_detail["quantile_loss"],
+                    "avg_log_loss": best_losses_detail.get("log_loss", 0),
+                    "cumulative_improvement": cumulative_improvement,
+                    "marginal_improvement": marginal_improvement,
                 }
             )
 
@@ -516,16 +522,20 @@ def progressive_predictor_inclusion(
 
             log.info(
                 f"Step {step + 1}: Added '{best_predictor}', "
-                f"loss = {best_step_loss:.6f} (improvement: {improvement:.6f})"
+                f"loss = {best_step_loss:.6f} (improvement: {marginal_improvement:.6f})"
             )
         else:
             log.warning(f"No valid predictor found at step {step + 1}")
             break
 
-    results["optimal_subset"] = best_subset
-    results["optimal_loss"] = best_overall_loss
+    # Create DataFrame from rows
+    results_df = pd.DataFrame(df_rows)
 
-    return results
+    return {
+        "results_df": results_df,
+        "optimal_subset": best_subset,
+        "optimal_loss": best_overall_loss,
+    }
 
 
 # Helper functions

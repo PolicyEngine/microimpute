@@ -147,6 +147,9 @@ export default function FileUpload({
     const csvFile = zipContents.files[csvFiles[0]];
     const csvContent = await csvFile.async('text');
 
+    // Validate CSV format
+    validateCSVFormat(csvContent);
+
     return csvContent;
   }, []);
 
@@ -230,6 +233,95 @@ export default function FileUpload({
     }
   }, [deeplinkParams, isLoadingFromDeeplink, loadDeeplinkArtifacts]);
 
+  function validateCSVFormat(content: string): void {
+    // Expected column names for microimputation dashboard
+    const EXPECTED_COLUMNS = [
+      'type',
+      'method',
+      'variable',
+      'quantile',
+      'metric_name',
+      'metric_value',
+      'split',
+      'additional_info'
+    ];
+
+    const lines = content.trim().split('\n');
+
+    // Parse header
+    const header = lines[0].split(',').map(col => col.trim());
+
+    // Check if all expected columns are present
+    const missingColumns = EXPECTED_COLUMNS.filter(col => !header.includes(col));
+    if (missingColumns.length > 0) {
+      throw new Error(
+        `Invalid CSV format: Missing required columns: ${missingColumns.join(', ')}. ` +
+        `Expected columns: ${EXPECTED_COLUMNS.join(', ')}`
+      );
+    }
+
+    // Check for extra columns
+    const extraColumns = header.filter(col => !EXPECTED_COLUMNS.includes(col));
+    if (extraColumns.length > 0) {
+      throw new Error(
+        `Invalid CSV format: Unexpected columns found: ${extraColumns.join(', ')}. ` +
+        `Expected columns: ${EXPECTED_COLUMNS.join(', ')}`
+      );
+    }
+
+    // Check column order matches expected
+    const columnOrderMismatch = EXPECTED_COLUMNS.some((col, idx) => header[idx] !== col);
+    if (columnOrderMismatch) {
+      throw new Error(
+        `Invalid CSV format: Columns are not in the expected order. ` +
+        `Expected order: ${EXPECTED_COLUMNS.join(', ')}`
+      );
+    }
+
+    // Find the index of additional_info column
+    const additionalInfoIndex = header.indexOf('additional_info');
+
+    // Validate JSON format in additional_info column for a sample of rows
+    // We'll check the first 10 data rows to avoid processing large files
+    const maxRowsToCheck = Math.min(10, lines.length - 1);
+
+    for (let i = 1; i <= maxRowsToCheck; i++) {
+      const line = lines[i];
+      if (!line.trim()) continue; // Skip empty lines
+
+      // Parse CSV row (basic parsing - doesn't handle quoted commas)
+      const columns = line.split(',');
+
+      if (columns.length !== EXPECTED_COLUMNS.length) {
+        throw new Error(
+          `Invalid CSV format: Row ${i + 1} has ${columns.length} columns, ` +
+          `but ${EXPECTED_COLUMNS.length} columns are expected.`
+        );
+      }
+
+      let additionalInfo = columns[additionalInfoIndex]?.trim();
+
+      if (additionalInfo) {
+        // Handle CSV quote escaping: pandas doubles quotes when writing to CSV
+        // e.g., {"key": "value"} becomes "{""key"": ""value""}" in the CSV
+        // Remove outer quotes if present and unescape inner quotes
+        if (additionalInfo.startsWith('"') && additionalInfo.endsWith('"')) {
+          additionalInfo = additionalInfo.slice(1, -1); // Remove outer quotes
+          additionalInfo = additionalInfo.replace(/""/g, '"'); // Unescape doubled quotes
+        }
+
+        try {
+          JSON.parse(additionalInfo);
+        } catch (e) {
+          throw new Error(
+            `Invalid CSV format: Row ${i + 1} contains invalid JSON in the 'additional_info' column. ` +
+            `Value: "${additionalInfo.substring(0, 50)}${additionalInfo.length > 50 ? '...' : ''}"`
+          );
+        }
+      }
+    }
+  }
+
   async function processFile(file: globalThis.File) {
     setIsLoading(true);
     try {
@@ -245,6 +337,9 @@ export default function FileUpload({
       if (lines.length < 2) {
         throw new Error('The file must contain at least a header row and one data row.');
       }
+
+      // Validate CSV format (columns and JSON)
+      validateCSVFormat(content);
 
       onFileLoad(content, file.name);
       setLoadedFile(file.name);
@@ -404,6 +499,9 @@ export default function FileUpload({
         throw new Error('The downloaded file must contain at least a header row and one data row.');
       }
 
+      // Validate CSV format (columns and JSON)
+      validateCSVFormat(content);
+
       const filename = url.pathname.split('/').pop() || 'remote-file.csv';
       onFileLoad(content, filename);
       setLoadedFile(filename);
@@ -429,14 +527,17 @@ export default function FileUpload({
     setError('');
 
     try {
-      const response = await fetch('/microimpute_results.csv');
+      const response = await fetch('/microimputation_results.csv');
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
       const content = await response.text();
 
-      onFileLoad(content, 'microimpute_results.csv');
-      setLoadedFile('microimpute_results.csv');
+      // Validate CSV format (columns and JSON)
+      validateCSVFormat(content);
+
+      onFileLoad(content, 'microimputation_results.csv');
+      setLoadedFile('microimputation_results.csv');
     } catch (err) {
       setError(`Failed to load sample data: ${err instanceof Error ? err.message : 'Unknown error'}`);
     } finally {
@@ -742,6 +843,9 @@ export default function FileUpload({
       if (lines.length < 2) {
         throw new Error('The CSV must contain at least a header row and one data row');
       }
+
+      // Validate CSV format (columns and JSON)
+      validateCSVFormat(csvContent);
 
       // Success! Load the CSV into the dashboard with commit info
       const commitShort = selectedCommit.slice(0, 8);
@@ -1184,12 +1288,12 @@ export default function FileUpload({
               <div className="flex-1">
                 <h3 className="text-lg font-medium text-blue-900 mb-2">Load sample imputation data</h3>
                 <p className="text-blue-700 mb-4">
-                  Try the dashboard with sample microimpute results to explore the visualization features.
+                  Try the dashboard with sample microimputation results to explore the visualization features.
                 </p>
                 <ul className="text-sm text-blue-600 mb-4 space-y-1">
                   <li>• Shows imputation results for various variables</li>
-                  <li>• Demonstrates different imputation methods</li>
-                  <li>• Includes confidence scores and validation metrics</li>
+                  <li>• Benchmarks different imputation methods</li>
+                  <li>• Includes validation metrics</li>
                 </ul>
                 <button
                   onClick={handleSampleLoad}

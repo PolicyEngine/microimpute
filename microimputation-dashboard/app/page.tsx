@@ -100,7 +100,7 @@ export default function Home() {
           <div className="flex justify-between items-center py-6">
             <div className="flex items-center space-x-3">
               <h1 className="text-3xl font-bold text-gray-900">
-                MicroImpute Dashboard
+                Microimpute Dashboard
               </h1>
               <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">
                 Beta

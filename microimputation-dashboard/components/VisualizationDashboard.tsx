@@ -28,7 +28,7 @@ export default function VisualizationDashboard({
         <h2 className="text-3xl font-bold text-gray-900 mb-4">Visualization Dashboard</h2>
         <p className="text-xl text-gray-600 mb-2">Coming Soon...</p>
         <p className="text-gray-500">
-          The visualization components for microimpute results will be implemented here.
+          The visualization components for microimputation results will be implemented here.
         </p>
         <div className="mt-8 p-4 bg-gray-50 rounded">
           <p className="text-sm text-gray-600">
