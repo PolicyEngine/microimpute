@@ -208,3 +208,8 @@
     - Designed structure required for micorimputation_results.csv to load onto dashboard.
     - Created `format_csv` function to format results for dashboard compatibility.
   date: 2025-10-20 08:34:22
+- bump: patch
+  changes:
+    fixed:
+    - Add suspense to fix vercel deployment issue.
+  date: 2025-10-21 03:20:28
