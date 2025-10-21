@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import FileUpload from '@/components/FileUpload';
 import VisualizationDashboard from '@/components/VisualizationDashboard';
@@ -8,7 +8,7 @@ import { parseImputationCSV } from '@/utils/csvParser';
 import { ImputationDataPoint } from '@/types/imputation';
 import { parseDeeplinkParams, GitHubArtifactInfo } from '@/utils/deeplinks';
 
-export default function Home() {
+function HomeContent() {
   const [data, setData] = useState<ImputationDataPoint[]>([]);
   const [fileName, setFileName] = useState<string>('');
   const [showDashboard, setShowDashboard] = useState(false);
@@ -171,5 +171,20 @@ export default function Home() {
         </div>
       </footer>
     </main>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="inline-block animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4" />
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    }>
+      <HomeContent />
+    </Suspense>
   );
 }
