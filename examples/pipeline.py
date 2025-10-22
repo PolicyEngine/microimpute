@@ -75,9 +75,22 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
     donor_data = diabetes_data.iloc[donor_indices].reset_index(drop=True)
     receiver_data = diabetes_data.iloc[receiver_indices].reset_index(drop=True)
 
+    # Create a categorical risk_factor variable based on cholesterol levels (s4)
+    # Categorize into low, medium, high based on s4 values
+    def categorize_risk(s4_value):
+        if s4_value < -0.02:
+            return "low"
+        elif s4_value < 0.02:
+            return "medium"
+        else:
+            return "high"
+
+    donor_data["risk_factor"] = donor_data["s4"].apply(categorize_risk)
+    receiver_data["risk_factor"] = receiver_data["s4"].apply(categorize_risk)
+
     # Define predictors and variables to impute
     predictors = ["age", "sex", "bmi", "bp"]
-    imputed_variables = ["s1", "s4"]
+    imputed_variables = ["s1", "s4", "risk_factor"]
 
     # Remove imputed variables from receiver data
     receiver_data_without_targets = receiver_data.drop(
@@ -88,6 +101,8 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
     print(f"Receiver data shape: {receiver_data_without_targets.shape}")
     print(f"Predictors: {predictors}")
     print(f"Variables to impute: {imputed_variables}")
+    print(f"Risk factor distribution in donor data:")
+    print(donor_data["risk_factor"].value_counts())
     print()
 
     # ========================================================================
@@ -245,6 +260,8 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
     print(f"  - Best imputation method: {best_method_name}")
     print(f"  - Number of predictors analyzed: {len(predictors)}")
     print(f"  - Number of imputed variables: {len(imputed_variables)}")
+    print(f"    - Numerical variables: s1, s4")
+    print(f"    - Categorical variables: risk_factor")
     print()
     print("Output CSV contains:")
     for result_type in formatted_df["type"].unique():

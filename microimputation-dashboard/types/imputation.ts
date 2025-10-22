@@ -1,13 +1,13 @@
 // Type definitions for microimputation data
 export interface ImputationDataPoint {
-  // Add fields based on what microimpute outputs
-  // These are placeholder fields that will be updated based on actual CSV structure
-  id?: string;
-  variable?: string;
-  original_value?: number;
-  imputed_value?: number;
-  method?: string;
-  confidence?: number;
+  type: string; // e.g., "benchmark_loss", "distribution_distance", "predictor_correlation"
+  method: string; // e.g., "QRF", "OLS", "QuantReg", "Matching"
+  variable: string; // e.g., "quantile_loss_mean_all", "log_loss_mean_all", or actual variable names
+  quantile: string | number; // numeric (0.05, 0.1, etc.), "mean", or "N/A"
+  metric_name: string; // e.g., "quantile_loss", "log_loss"
+  metric_value: number | null; // numeric value of the metric
+  split: string; // e.g., "train", "test", "full"
+  additional_info: string; // JSON-formatted string with metadata
   [key: string]: any; // Allow additional fields
 }
 

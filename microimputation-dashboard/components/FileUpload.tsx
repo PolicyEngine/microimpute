@@ -538,15 +538,15 @@ export default function FileUpload({
     try {
       const response = await fetch(`/api/github/branches?repo=${encodeURIComponent(githubRepo)}`);
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Repository not found. Please check the repository name and ensure it is accessible.');
-        } else if (response.status === 403) {
-          throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
-        }
+        if (!response.ok) {
+          if (response.status === 404) {
+            throw new Error('Repository not found. Please check the repository name and ensure it is accessible.');
+          } else if (response.status === 403) {
+            throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
+          }
         const errorData = await response.json();
         throw new Error(errorData.error || `Failed to fetch branches: ${response.status}`);
-      }
+        }
 
       const allBranches: GitHubBranch[] = await response.json();
       setGithubBranches(allBranches);
