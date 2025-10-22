@@ -50,7 +50,7 @@ export default function PerVariableCharts({
         typeof d.quantile === 'number' && d.quantile >= 0 && d.quantile <= 1
     );
 
-    const quantileMap = new Map<number, Record<string, any>>();
+    const quantileMap = new Map<number, Record<string, string | number | null>>();
 
     numericData.forEach((d) => {
       const quantile = Number(d.quantile);
@@ -62,7 +62,7 @@ export default function PerVariableCharts({
     });
 
     return Array.from(quantileMap.values()).sort(
-      (a, b) => parseFloat(a.quantile) - parseFloat(b.quantile)
+      (a, b) => parseFloat(a.quantile as string) - parseFloat(b.quantile as string)
     );
   }, [variableData, metricType]);
 
@@ -104,7 +104,7 @@ export default function PerVariableCharts({
       {metricType === 'quantile_loss' && quantileChartData.length > 0 && (
         <div>
           <h4 className="text-lg font-semibold mb-4 text-gray-700">
-            Quantile Loss by Method for "{variable}"
+            Quantile Loss by Method for &quot;{variable}&quot;
           </h4>
           <ResponsiveContainer width="100%" height={400}>
             <BarChart data={quantileChartData}>
@@ -153,7 +153,7 @@ export default function PerVariableCharts({
       {metricType === 'log_loss' && logLossChartData.length > 0 && (
         <div>
           <h4 className="text-lg font-semibold mb-4 text-gray-700">
-            Log Loss by Method for "{variable}"
+            Log Loss by Method for &quot;{variable}&quot;
           </h4>
           <ResponsiveContainer width="100%" height={400}>
             <BarChart data={logLossChartData}>

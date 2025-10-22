@@ -401,7 +401,7 @@ export default function FileUpload({
     }
 
     let url: URL;
-    let finalUrl = urlInput.trim();
+    const finalUrl = urlInput.trim();
 
     try {
       url = new URL(finalUrl);

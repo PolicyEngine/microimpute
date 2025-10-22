@@ -11,7 +11,6 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
-  ReferenceLine,
 } from 'recharts';
 import { ImputationDataPoint } from '@/types/imputation';
 import { getMethodColor } from '@/utils/colors';
@@ -60,7 +59,7 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
     if (quantileLossData.length === 0) return [];
 
     // Group by quantile
-    const quantileMap = new Map<number, Record<string, any>>();
+    const quantileMap = new Map<number, Record<string, string | number | null>>();
 
     quantileLossData.forEach(d => {
       const quantile = Number(d.quantile);
@@ -72,7 +71,7 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
     });
 
     return Array.from(quantileMap.values()).sort(
-      (a, b) => parseFloat(a.quantile) - parseFloat(b.quantile)
+      (a, b) => parseFloat(a.quantile as string) - parseFloat(b.quantile as string)
     );
   }, [quantileLossData]);
 

@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
         // Remove duplicates and sort by creation date (newest first)
         const uniqueArtifacts = allArtifacts
             .filter(
-                (artifact: { name: string }, index: number, self: any[]) =>
+                (artifact: { name: string }, index: number, self: Array<{ name: string }>) =>
                     index ===
                     self.findIndex((a: { name: string }) => a.name === artifact.name)
             )
