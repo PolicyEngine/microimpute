@@ -75,61 +75,32 @@ export default function FileUpload({
   const [selectedSecondArtifact, setSelectedSecondArtifact] = useState('');
 
   // Helper function to load a single artifact from deeplink parameters
-  const loadArtifactFromDeeplink = useCallback(async (artifactInfo: GitHubArtifactInfo, githubToken: string): Promise<string> => {
-    // First, get the artifacts for the specific commit
-    const [owner, repo] = artifactInfo.repo.split('/');
-    const runsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/runs?head_sha=${artifactInfo.commit}`, {
-      headers: {
-        'Authorization': `Bearer ${githubToken}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'PolicyEngine-Dashboard/1.0'
-      }
-    });
+  const loadArtifactFromDeeplink = useCallback(async (artifactInfo: GitHubArtifactInfo): Promise<string> => {
+    // Get artifacts for the specific commit using API route
+    const artifactsResponse = await fetch(
+      `/api/github/artifacts?repo=${encodeURIComponent(artifactInfo.repo)}&commit=${encodeURIComponent(artifactInfo.commit)}`
+    );
 
-    if (!runsResponse.ok) {
-      throw new Error(`Failed to fetch workflow runs: ${runsResponse.status} ${runsResponse.statusText}`);
+    if (!artifactsResponse.ok) {
+      throw new Error(`Failed to fetch artifacts: ${artifactsResponse.status}`);
     }
 
-    const runsData = await runsResponse.json();
-    const completedRuns = runsData.workflow_runs.filter((run: { status: string }) => run.status === 'completed');
-
-    if (completedRuns.length === 0) {
-      throw new Error('No completed workflow runs found for this commit');
-    }
+    const artifacts = await artifactsResponse.json();
 
     // Find the artifact by name
-    let targetArtifact = null;
-    for (const run of completedRuns) {
-      const artifactsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/runs/${run.id}/artifacts`, {
-        headers: {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'PolicyEngine-Dashboard/1.0'
-        }
-      });
-
-      if (artifactsResponse.ok) {
-        const artifactsData = await artifactsResponse.json();
-        targetArtifact = artifactsData.artifacts.find((artifact: { name: string }) => artifact.name === artifactInfo.artifact);
-        if (targetArtifact) break;
-      }
-    }
+    const targetArtifact = artifacts.find((artifact: { name: string }) => artifact.name === artifactInfo.artifact);
 
     if (!targetArtifact) {
       throw new Error(`Artifact "${artifactInfo.artifact}" not found for commit ${artifactInfo.commit}`);
     }
 
-    // Download and extract the artifact
-    const downloadResponse = await fetch(targetArtifact.archive_download_url, {
-      headers: {
-        'Authorization': `Bearer ${githubToken}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'PolicyEngine-Dashboard/1.0'
-      }
-    });
+    // Download and extract the artifact using API route
+    const downloadResponse = await fetch(
+      `/api/github/download?url=${encodeURIComponent(targetArtifact.archive_download_url)}`
+    );
 
     if (!downloadResponse.ok) {
-      throw new Error(`Failed to download artifact: ${downloadResponse.status} ${downloadResponse.statusText}`);
+      throw new Error(`Failed to download artifact: ${downloadResponse.status}`);
     }
 
     const zipBuffer = await downloadResponse.arrayBuffer();
@@ -155,12 +126,6 @@ export default function FileUpload({
 
   // Load GitHub artifacts directly from deeplink parameters
   const loadDeeplinkArtifacts = useCallback(async (primary: GitHubArtifactInfo, secondary?: GitHubArtifactInfo) => {
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoading(true);
     setError('');
 
@@ -168,11 +133,11 @@ export default function FileUpload({
       setError('🔄 Loading data from GitHub artifacts...');
 
       // Load primary artifact
-      const primaryData = await loadArtifactFromDeeplink(primary, githubToken);
+      const primaryData = await loadArtifactFromDeeplink(primary);
 
       if (secondary && onCompareLoad) {
         // Load secondary artifact for comparison
-        const secondaryData = await loadArtifactFromDeeplink(secondary, githubToken);
+        const secondaryData = await loadArtifactFromDeeplink(secondary);
 
         // Generate display names with commit info
         const primaryDisplayName = `${primary.repo}@${primary.branch} (${primary.commit.substring(0, 7)}) - ${primary.artifact}`;
@@ -436,14 +401,24 @@ export default function FileUpload({
     }
 
     let url: URL;
+    let finalUrl = urlInput.trim();
+
     try {
-      url = new URL(urlInput.trim());
+      url = new URL(finalUrl);
     } catch {
       setError('Invalid URL format. Please enter a valid URL (e.g., https://example.com/data.csv).');
       return;
     }
 
-    if (!url.pathname.toLowerCase().endsWith('.csv') && !urlInput.toLowerCase().includes('csv')) {
+    // Handle Google Drive URLs
+    if (url.hostname === 'drive.google.com') {
+      setError(
+        'Google Drive links are not supported due to CORS restrictions. Please download the file and use the "Drop file" tab instead or host the file on a different public server.'
+      );
+      return;
+    }
+
+    if (!url.pathname.toLowerCase().endsWith('.csv') && !finalUrl.toLowerCase().includes('csv')) {
       setError('URL should point to a CSV file. Please ensure the URL ends with .csv or contains CSV data.');
       return;
     }
@@ -460,7 +435,7 @@ export default function FileUpload({
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30_000); // 30 s timeout
 
-      const response = await fetch(urlInput.trim(), {
+      const response = await fetch(finalUrl, {
         signal: controller.signal,
         headers: { Accept: 'text/csv, text/plain, */*' }
       });
@@ -557,62 +532,23 @@ export default function FileUpload({
       return;
     }
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoadingGithubData(true);
     setError('');
 
     try {
-      // Fetch all branches with pagination support
-      const allBranches: GitHubBranch[] = [];
-      let page = 1;
-      const perPage = 100; // Maximum allowed by GitHub API
+      const response = await fetch(`/api/github/branches?repo=${encodeURIComponent(githubRepo)}`);
 
-      while (true) {
-        const response = await fetch(`https://api.github.com/repos/${githubRepo}/branches?per_page=${perPage}&page=${page}`, {
-          headers: {
-            'Authorization': `Bearer ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'PolicyEngine-Dashboard/1.0'
-          }
-        });
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error('Repository not found. Please check the repository name and ensure it is accessible.');
-          } else if (response.status === 403) {
-            throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
-          }
-          throw new Error(`Failed to fetch branches: ${response.status} ${response.statusText}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Repository not found. Please check the repository name and ensure it is accessible.');
+        } else if (response.status === 403) {
+          throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
         }
-
-        const branches: GitHubBranch[] = await response.json();
-
-        if (branches.length === 0) {
-          // No more branches to fetch
-          break;
-        }
-
-        allBranches.push(...branches);
-
-        // If we got fewer branches than requested, we've reached the end
-        if (branches.length < perPage) {
-          break;
-        }
-
-        page++;
-
-        // Safety check to prevent infinite loops (GitHub repos rarely have more than 1000 branches)
-        if (page > 10) {
-          console.warn('Stopped fetching branches after 10 pages (1000 branches) to prevent excessive API calls');
-          break;
-        }
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch branches: ${response.status}`);
       }
 
+      const allBranches: GitHubBranch[] = await response.json();
       setGithubBranches(allBranches);
 
       // Auto-select main/master branch if available
@@ -631,28 +567,20 @@ export default function FileUpload({
   async function fetchGithubCommits(branch: string) {
     if (!githubRepo.trim() || !branch) return;
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoadingGithubData(true);
     try {
-      const response = await fetch(`https://api.github.com/repos/${githubRepo}/commits?sha=${branch}&per_page=20`, {
-        headers: {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'PolicyEngine-Dashboard/1.0'
-        }
-      });
+      const response = await fetch(
+        `/api/github/commits?repo=${encodeURIComponent(githubRepo)}&branch=${encodeURIComponent(branch)}`
+      );
+
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error('Branch not found or repository is private.');
         } else if (response.status === 403) {
           throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
         }
-        throw new Error(`Failed to fetch commits: ${response.status} ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch commits: ${response.status}`);
       }
 
       const commits: GitHubCommit[] = await response.json();
@@ -673,97 +601,31 @@ export default function FileUpload({
   async function fetchGithubArtifacts(commitSha: string) {
     if (!githubRepo.trim() || !commitSha) return;
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoadingGithubData(true);
     setAvailableArtifacts([]);
     setSelectedArtifact('');
 
     try {
-      const [owner, repo] = githubRepo.split('/');
-
-      // Get workflow runs for the commit
-      const runsResponse = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/actions/runs?head_sha=${commitSha}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'PolicyEngine-Dashboard/1.0'
-          }
-        }
+      const response = await fetch(
+        `/api/github/artifacts?repo=${encodeURIComponent(githubRepo)}&commit=${encodeURIComponent(commitSha)}`
       );
 
-      if (!runsResponse.ok) {
-        if (runsResponse.status === 403) {
+      if (!response.ok) {
+        if (response.status === 403) {
           throw new Error(`GitHub API rate limit exceeded or token permissions insufficient (403). Please try again later or check your token permissions.`);
-        } else if (runsResponse.status === 404) {
+        } else if (response.status === 404) {
           throw new Error(`Repository or commit not found (404). Please check the repository name and commit SHA.`);
-        } else {
-          throw new Error(`Failed to fetch workflow runs: ${runsResponse.status} ${runsResponse.statusText}`);
         }
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch artifacts: ${response.status}`);
       }
 
-      const runsData = await runsResponse.json();
-      const runs = runsData.workflow_runs;
+      const uniqueArtifacts: GitHubArtifact[] = await response.json();
 
-      if (!runs || runs.length === 0) {
-        setError('No workflow runs found for this commit.');
-        return;
-      }
-
-      // Collect all imputation artifacts from completed runs
-      const allArtifacts: GitHubArtifact[] = [];
-
-      for (const run of runs) {
-        if (run.status !== 'completed') continue;
-
-        try {
-          const artifactsResponse = await fetch(
-            `https://api.github.com/repos/${owner}/${repo}/actions/runs/${run.id}/artifacts`,
-            {
-              headers: {
-                'Authorization': `Bearer ${githubToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'PolicyEngine-Dashboard/1.0'
-              }
-            }
-          );
-
-          if (!artifactsResponse.ok) continue;
-
-          const artifactsData = await artifactsResponse.json();
-          const artifacts = artifactsData.artifacts;
-
-          // Filter for imputation artifacts
-          const imputationArtifacts = artifacts.filter((artifact: GitHubArtifact) =>
-            artifact.name.toLowerCase().includes('impute') ||
-            artifact.name.toLowerCase().includes('imputation') ||
-            artifact.name.toLowerCase().includes('result') ||
-            artifact.name.toLowerCase().includes('.csv')
-          );
-
-          allArtifacts.push(...imputationArtifacts);
-        } catch {
-          continue;
-        }
-      }
-
-      if (allArtifacts.length === 0) {
+      if (uniqueArtifacts.length === 0) {
         setError('No imputation artifacts found for this commit.');
         return;
       }
-
-      // Remove duplicates and sort by creation date (newest first)
-      const uniqueArtifacts = allArtifacts
-        .filter((artifact, index, self) =>
-          index === self.findIndex(a => a.name === artifact.name)
-        )
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       setAvailableArtifacts(uniqueArtifacts);
 
@@ -791,25 +653,15 @@ export default function FileUpload({
       return;
     }
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoading(true);
     setError('');
 
     try {
       setError('🔄 Downloading and extracting CSV from artifact...');
 
-      const downloadResponse = await fetch(artifact.archive_download_url, {
-        headers: {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'PolicyEngine-Dashboard/1.0'
-        }
-      });
+      const downloadResponse = await fetch(
+        `/api/github/download?url=${encodeURIComponent(artifact.archive_download_url)}`
+      );
 
       if (!downloadResponse.ok) {
         throw new Error(`Failed to download artifact: ${downloadResponse.status}`);
@@ -887,28 +739,20 @@ export default function FileUpload({
   async function fetchSecondBranchCommits(branch: string) {
     if (!githubRepo.trim() || !branch) return;
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoadingGithubData(true);
     try {
-      const response = await fetch(`https://api.github.com/repos/${githubRepo}/commits?sha=${branch}&per_page=20`, {
-        headers: {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'PolicyEngine-Dashboard/1.0'
-        }
-      });
+      const response = await fetch(
+        `/api/github/commits?repo=${encodeURIComponent(githubRepo)}&branch=${encodeURIComponent(branch)}`
+      );
+
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error('Branch not found or repository is private.');
         } else if (response.status === 403) {
           throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
         }
-        throw new Error(`Failed to fetch commits: ${response.status} ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch commits: ${response.status}`);
       }
 
       const commits: GitHubCommit[] = await response.json();
@@ -929,97 +773,31 @@ export default function FileUpload({
   async function fetchSecondArtifacts(commitSha: string) {
     if (!githubRepo.trim() || !commitSha) return;
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoadingGithubData(true);
     setSecondArtifacts([]);
     setSelectedSecondArtifact('');
 
     try {
-      const [owner, repo] = githubRepo.split('/');
-
-      // Get workflow runs for the commit
-      const runsResponse = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/actions/runs?head_sha=${commitSha}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'PolicyEngine-Dashboard/1.0'
-          }
-        }
+      const response = await fetch(
+        `/api/github/artifacts?repo=${encodeURIComponent(githubRepo)}&commit=${encodeURIComponent(commitSha)}`
       );
 
-      if (!runsResponse.ok) {
-        if (runsResponse.status === 403) {
+      if (!response.ok) {
+        if (response.status === 403) {
           throw new Error(`GitHub API rate limit exceeded or token permissions insufficient (403). Please try again later or check your token permissions.`);
-        } else if (runsResponse.status === 404) {
+        } else if (response.status === 404) {
           throw new Error(`Repository or commit not found (404). Please check the repository name and commit SHA.`);
-        } else {
-          throw new Error(`Failed to fetch workflow runs: ${runsResponse.status} ${runsResponse.statusText}`);
         }
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch artifacts: ${response.status}`);
       }
 
-      const runsData = await runsResponse.json();
-      const runs = runsData.workflow_runs;
+      const uniqueArtifacts: GitHubArtifact[] = await response.json();
 
-      if (!runs || runs.length === 0) {
-        setError('No workflow runs found for this commit.');
-        return;
-      }
-
-      // Collect all imputation artifacts from completed runs
-      const allArtifacts: GitHubArtifact[] = [];
-
-      for (const run of runs) {
-        if (run.status !== 'completed') continue;
-
-        try {
-          const artifactsResponse = await fetch(
-            `https://api.github.com/repos/${owner}/${repo}/actions/runs/${run.id}/artifacts`,
-            {
-              headers: {
-                'Authorization': `Bearer ${githubToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'PolicyEngine-Dashboard/1.0'
-              }
-            }
-          );
-
-          if (!artifactsResponse.ok) continue;
-
-          const artifactsData = await artifactsResponse.json();
-          const artifacts = artifactsData.artifacts;
-
-          // Filter for imputation artifacts
-          const imputationArtifacts = artifacts.filter((artifact: GitHubArtifact) =>
-            artifact.name.toLowerCase().includes('impute') ||
-            artifact.name.toLowerCase().includes('imputation') ||
-            artifact.name.toLowerCase().includes('result') ||
-            artifact.name.toLowerCase().includes('.csv')
-          );
-
-          allArtifacts.push(...imputationArtifacts);
-        } catch {
-          continue;
-        }
-      }
-
-      if (allArtifacts.length === 0) {
+      if (uniqueArtifacts.length === 0) {
         setError('No imputation artifacts found for this commit.');
         return;
       }
-
-      // Remove duplicates and sort by creation date (newest first)
-      const uniqueArtifacts = allArtifacts
-        .filter((artifact, index, self) =>
-          index === self.findIndex(a => a.name === artifact.name)
-        )
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       setSecondArtifacts(uniqueArtifacts);
 
@@ -1049,12 +827,6 @@ export default function FileUpload({
       return;
     }
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoading(true);
     setError('');
 
@@ -1063,20 +835,8 @@ export default function FileUpload({
 
       // Download both artifacts
       const [firstDownload, secondDownload] = await Promise.all([
-        fetch(firstArtifact.archive_download_url, {
-          headers: {
-            'Authorization': `Bearer ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'PolicyEngine-Dashboard/1.0'
-          }
-        }),
-        fetch(secondArtifact.archive_download_url, {
-          headers: {
-            'Authorization': `Bearer ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'PolicyEngine-Dashboard/1.0'
-          }
-        })
+        fetch(`/api/github/download?url=${encodeURIComponent(firstArtifact.archive_download_url)}`),
+        fetch(`/api/github/download?url=${encodeURIComponent(secondArtifact.archive_download_url)}`)
       ]);
 
       if (!firstDownload.ok || !secondDownload.ok) {
@@ -1176,7 +936,11 @@ export default function FileUpload({
       {/* Tab navigation */}
       <div className="flex border-b border-gray-200 mb-6">
         <button
-          onClick={() => setActiveTab('drop')}
+          onClick={() => {
+            setActiveTab('drop');
+            setError('');
+            setLoadedFile('');
+          }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'drop'
               ? 'border-blue-500 text-blue-600'
@@ -1187,7 +951,11 @@ export default function FileUpload({
           Drop file
         </button>
         <button
-          onClick={() => setActiveTab('url')}
+          onClick={() => {
+            setActiveTab('url');
+            setError('');
+            setLoadedFile('');
+          }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'url'
               ? 'border-blue-500 text-blue-600'
@@ -1198,7 +966,11 @@ export default function FileUpload({
           URL
         </button>
         <button
-          onClick={() => setActiveTab('github')}
+          onClick={() => {
+            setActiveTab('github');
+            setError('');
+            setLoadedFile('');
+          }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'github'
               ? 'border-blue-500 text-blue-600'
@@ -1209,7 +981,11 @@ export default function FileUpload({
           GitHub
         </button>
         <button
-          onClick={() => setActiveTab('sample')}
+          onClick={() => {
+            setActiveTab('sample');
+            setError('');
+            setLoadedFile('');
+          }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'sample'
               ? 'border-blue-500 text-blue-600'
@@ -1265,7 +1041,7 @@ export default function FileUpload({
                 value={urlInput}
                 onChange={e => setUrlInput(e.target.value)}
                 placeholder="https://example.com/data.csv"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
               />
               <button
                 onClick={handleUrlLoad}
@@ -1332,8 +1108,8 @@ export default function FileUpload({
                       type="text"
                       value={githubRepo}
                       onChange={(e) => setGithubRepo(e.target.value)}
-                      placeholder="PolicyEngine/microimpute"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="policyengine/microimpute"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                     />
                     <button
                       onClick={fetchGithubBranches}
@@ -1386,7 +1162,7 @@ export default function FileUpload({
                         setSelectedBranch(e.target.value);
                         fetchGithubCommits(e.target.value);
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                     >
                       <option value="">Select a branch</option>
                       {githubBranches.map((branch) => (
@@ -1411,7 +1187,7 @@ export default function FileUpload({
                         setSelectedCommit(e.target.value);
                         fetchGithubArtifacts(e.target.value);
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                     >
                       <option value="">Select a commit</option>
                       {githubCommits.map((commit) => (
@@ -1441,7 +1217,7 @@ export default function FileUpload({
                       id="github-artifact"
                       value={selectedArtifact}
                       onChange={(e) => setSelectedArtifact(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                     >
                       <option value="">Select an artifact</option>
                       {availableArtifacts.map((artifact) => (
@@ -1477,7 +1253,7 @@ export default function FileUpload({
                           setSelectedSecondBranch(e.target.value);
                           fetchSecondBranchCommits(e.target.value);
                         }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                       >
                         <option value="">Select a branch</option>
                         {githubBranches.map((branch) => (
@@ -1501,7 +1277,7 @@ export default function FileUpload({
                             setSelectedSecondCommit(e.target.value);
                             fetchSecondArtifacts(e.target.value);
                           }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                         >
                           <option value="">Select a commit</option>
                           {secondCommits.map((commit) => (
@@ -1531,7 +1307,7 @@ export default function FileUpload({
                           id="github-second-artifact"
                           value={selectedSecondArtifact}
                           onChange={(e) => setSelectedSecondArtifact(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                         >
                           <option value="">Select an artifact</option>
                           {secondArtifacts.map((artifact) => (

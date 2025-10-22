@@ -51,7 +51,7 @@ jobs:
         run: |
           python examples/pipeline.py
       - name: Upload microimputation results
-        if: always()
+        if: always() && matrix.python-version == '3.13'
         uses: actions/upload-artifact@v4
         with:
           name: microimputation-results-${{ github.sha }}

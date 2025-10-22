@@ -1,0 +1,4 @@
+- bump: minor
+  changes:
+    added:
+    - Links to dashboard in README.md and documentation.
