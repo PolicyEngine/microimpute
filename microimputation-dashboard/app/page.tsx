@@ -13,18 +13,7 @@ function HomeContent() {
   const [fileName, setFileName] = useState<string>('');
   const [showDashboard, setShowDashboard] = useState(false);
   const [isLoadingFromDeeplink, setIsLoadingFromDeeplink] = useState(false);
-  const [githubArtifactInfo, setGithubArtifactInfo] = useState<{
-    primary: GitHubArtifactInfo | null;
-    secondary?: GitHubArtifactInfo | null;
-  } | null>(null);
-
-  // Comparison mode state
-  const [comparisonData, setComparisonData] = useState<{
-    data1: ImputationDataPoint[];
-    filename1: string;
-    data2: ImputationDataPoint[];
-    filename2: string;
-  } | null>(null);
+  const [githubArtifactInfo, setGithubArtifactInfo] = useState<GitHubArtifactInfo | null>(null);
 
   const searchParams = useSearchParams();
   const deeplinkParams = parseDeeplinkParams(searchParams);
@@ -40,32 +29,14 @@ function HomeContent() {
       const parsedData = parseImputationCSV(csvContent);
       setData(parsedData);
       setFileName(filename);
-      setComparisonData(null); // Clear comparison data when loading single file
     } catch (error) {
       console.error('Error parsing CSV:', error);
       alert('Failed to parse CSV file. Please check the file format.');
     }
   };
 
-  const handleCompareLoad = (content1: string, filename1: string, content2: string, filename2: string) => {
-    try {
-      const data1 = parseImputationCSV(content1);
-      const data2 = parseImputationCSV(content2);
-      setComparisonData({
-        data1,
-        filename1,
-        data2,
-        filename2
-      });
-      setData([]); // Clear single data when loading comparison
-    } catch (error) {
-      console.error('Error parsing comparison CSVs:', error);
-      alert('Failed to parse one or both CSV files. Please check the file formats.');
-    }
-  };
-
   const handleViewDashboard = () => {
-    if (data.length > 0 || comparisonData) {
+    if (data.length > 0) {
       setShowDashboard(true);
     }
   };
@@ -74,21 +45,20 @@ function HomeContent() {
     setShowDashboard(false);
     setData([]);
     setFileName('');
-    setComparisonData(null);
     setGithubArtifactInfo(null);
   };
 
-  const handleDeeplinkLoadComplete = (primary: GitHubArtifactInfo | null, secondary?: GitHubArtifactInfo | null) => {
+  const handleDeeplinkLoadComplete = (primary: GitHubArtifactInfo | null) => {
     setIsLoadingFromDeeplink(false);
     if (primary) {
-      setGithubArtifactInfo({ primary, secondary: secondary || undefined });
+      setGithubArtifactInfo(primary);
       setShowDashboard(true);
     }
   };
 
-  const handleGithubLoad = (primary: GitHubArtifactInfo | null, secondary?: GitHubArtifactInfo | null) => {
+  const handleGithubLoad = (primary: GitHubArtifactInfo | null) => {
     if (primary) {
-      setGithubArtifactInfo({ primary, secondary: secondary || undefined });
+      setGithubArtifactInfo(primary);
     }
   };
 
@@ -125,7 +95,6 @@ function HomeContent() {
           <FileUpload
             onFileLoad={handleFileLoad}
             onViewDashboard={handleViewDashboard}
-            onCompareLoad={handleCompareLoad}
             deeplinkParams={deeplinkParams}
             isLoadingFromDeeplink={isLoadingFromDeeplink}
             onDeeplinkLoadComplete={handleDeeplinkLoadComplete}
@@ -133,12 +102,8 @@ function HomeContent() {
           />
         ) : (
           <VisualizationDashboard
-            data={comparisonData ? comparisonData.data1 : data}
-            fileName={comparisonData ? comparisonData.filename1 : fileName}
-            comparisonData={comparisonData ? {
-              data: comparisonData.data2,
-              filename: comparisonData.filename2
-            } : undefined}
+            data={data}
+            fileName={fileName}
             githubArtifactInfo={githubArtifactInfo}
           />
         )}

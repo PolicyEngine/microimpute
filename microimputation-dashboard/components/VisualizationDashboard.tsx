@@ -10,20 +10,12 @@ import VisualizationTabs from './VisualizationTabs';
 interface VisualizationDashboardProps {
   data: ImputationDataPoint[];
   fileName: string;
-  comparisonData?: {
-    data: ImputationDataPoint[];
-    filename: string;
-  };
-  githubArtifactInfo?: {
-    primary: GitHubArtifactInfo | null;
-    secondary?: GitHubArtifactInfo | null;
-  } | null;
+  githubArtifactInfo?: GitHubArtifactInfo | null;
 }
 
 export default function VisualizationDashboard({
   data,
   fileName,
-  comparisonData,
 }: VisualizationDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -143,11 +135,6 @@ export default function VisualizationDashboard({
           {dataAnalysis.categoricalVars.length > 0 && (
             <p className="text-sm text-gray-600 mt-1">
               Categorical variables: <strong>{dataAnalysis.categoricalVars.length}</strong>
-            </p>
-          )}
-          {comparisonData && (
-            <p className="text-sm text-gray-600 mt-1">
-              Comparison file: <strong>{comparisonData.filename}</strong> ({comparisonData.data.length} records)
             </p>
           )}
         </div>
