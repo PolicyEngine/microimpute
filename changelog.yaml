@@ -213,3 +213,9 @@
     fixed:
     - Add suspense to fix vercel deployment issue.
   date: 2025-10-21 03:20:28
+- bump: minor
+  changes:
+    added:
+    - Links to dashboard in README.md and documentation.
+    - First dashboard visualizations.
+  date: 2025-10-24 16:06:59

@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "microimpute"
-version = "1.6.1"
+version = "1.7.0"
 description = "Benchmarking imputation methods for microdata"
 readme = "README.md"
 authors = [
@@ -19,7 +19,7 @@ dependencies = [
     "numpy>=2.0.0,<3.0.0",
     "pandas>=2.2.0,<3.0.0",
     "plotly>=5.24.0,<6.0.0",
-    "scikit-learn>=1.6.1,<2.0.0",
+    "scikit-learn>=1.7.0,<2.0.0",
     "scipy>=1.16.0,<1.17.0",
     "requests>=2.32.0,<3.0.0",
     "tqdm>=4.65.0,<5.0.0",
