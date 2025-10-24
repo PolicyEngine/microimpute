@@ -148,7 +148,7 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
               <strong>How this works:</strong> This analysis adds predictors one at a time,
               choosing the predictor that improves performance the most at each step. This
               step-by-step approach is efficient but doesn't test
-              every possible combination of predictors.
+              every possible combination of predictors. Note that this analysis may differ depending on the model type passed when using the `progressive_predictor_inclusion` function that produced these results.
             </p>
             <p className="text-sm text-gray-700">
               <strong>Reading the chart:</strong> The bars show cumulative improvement from
@@ -175,6 +175,10 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
                     <strong>Cumulative improvement:</strong>{' '}
                     <span className="font-semibold text-green-700">
                       {(bestCombination.cumulativeImprovement * 100).toFixed(3)}%
+                    </span>
+                    {' '}
+                    <span className="text-xs text-gray-600">
+                      (relative to the first predictor added, which was the best single predictor)
                     </span>
                   </p>
                 </div>

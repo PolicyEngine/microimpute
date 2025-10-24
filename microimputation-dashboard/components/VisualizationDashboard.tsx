@@ -8,6 +8,7 @@ import PerVariableCharts from './PerVariableCharts';
 import VisualizationTabs from './VisualizationTabs';
 import PredictorCorrelationMatrix from './PredictorCorrelationMatrix';
 import PredictorOrderingRobustness from './PredictorOrderingRobustness';
+import ImputationResults from './ImputationResults';
 import { Share } from 'lucide-react';
 
 interface VisualizationDashboardProps {
@@ -75,14 +76,215 @@ export default function VisualizationDashboard({
       categoricalVars.push(...Array.from(llVars));
     }
 
+    // Check for actual distribution distance data (wasserstein or kl_divergence)
+    const distributionData = data.filter(d => d.type === 'distribution_distance');
+    const hasWasserstein = distributionData.some(d => d.metric_name === 'wasserstein_distance' && d.metric_value !== null);
+    const hasKLDivergence = distributionData.some(d => d.metric_name === 'kl_divergence' && d.metric_value !== null);
+    const hasDistributionDistance = hasWasserstein || hasKLDivergence;
+
+    // Check for predictor correlation data
+    const correlationData = data.filter(d => d.type === 'predictor_correlation');
+    const hasPredictorCorrelation = correlationData.length > 0 && correlationData.some(d => d.metric_value !== null);
+
+    // Check for predictor ordering/importance data
+    const progressiveData = data.filter(d => d.type === 'progressive_inclusion');
+    const importanceData = data.filter(d => d.type === 'predictor_importance');
+    const hasPredictorOrdering = (progressiveData.length > 0 && progressiveData.some(d => d.metric_value !== null)) ||
+                                   (importanceData.length > 0 && importanceData.some(d => d.metric_value !== null));
+
+    // Find imputed variables (from distribution_distance data)
+    const imputedVars = new Set<string>();
+    distributionData.forEach(d => {
+      if (d.variable && d.metric_value !== null) {
+        imputedVars.add(d.variable);
+      }
+    });
+
+    // Calculate best performing model
+    let bestModel = '';
+    let avgLoss = 0;
+
+    if (hasBenchmarkLoss) {
+      const benchmarkData = data.filter(d => d.type === 'benchmark_loss');
+      const methods = Array.from(new Set(benchmarkData.map(d => d.method)));
+
+      // Calculate weighted combined rank for each method (same logic as BenchmarkLossCharts)
+      const quantileRanks = new Map<string, number>();
+      const logLossRanks = new Map<string, number>();
+      const quantileVarCounts = new Map<string, Set<string>>();
+      const logLossVarCounts = new Map<string, Set<string>>();
+
+      methods.forEach(method => {
+        const quantileData = benchmarkData.filter(
+          d => d.method === method && d.metric_name === 'quantile_loss' && d.split === 'test' &&
+               d.quantile === 'mean' && !d.variable.includes('_mean_all') && d.metric_value !== null
+        );
+        const logLossData = benchmarkData.filter(
+          d => d.method === method && d.metric_name === 'log_loss' && d.split === 'test' &&
+               d.quantile === 'mean' && !d.variable.includes('_mean_all') && d.metric_value !== null
+        );
+
+        if (quantileData.length > 0) {
+          const avgQuantile = quantileData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / quantileData.length;
+          quantileRanks.set(method, avgQuantile);
+          quantileVarCounts.set(method, new Set(quantileData.map(d => d.variable)));
+        }
+
+        if (logLossData.length > 0) {
+          const avgLogLoss = logLossData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / logLossData.length;
+          logLossRanks.set(method, avgLogLoss);
+          logLossVarCounts.set(method, new Set(logLossData.map(d => d.variable)));
+        }
+      });
+
+      // Rank methods by their average losses
+      const rankedQuantile = Array.from(quantileRanks.entries()).sort((a, b) => a[1] - b[1]);
+      const rankedLogLoss = Array.from(logLossRanks.entries()).sort((a, b) => a[1] - b[1]);
+
+      const combinedRanks = new Map<string, number>();
+      methods.forEach(method => {
+        const qRank = rankedQuantile.findIndex(([m]) => m === method) + 1;
+        const lRank = rankedLogLoss.findIndex(([m]) => m === method) + 1;
+        const nQuantileVars = quantileVarCounts.get(method)?.size || 0;
+        const nLogLossVars = logLossVarCounts.get(method)?.size || 0;
+        const totalVars = nQuantileVars + nLogLossVars;
+
+        if (totalVars > 0) {
+          let weightedRank = 0;
+          if (qRank > 0) {
+            weightedRank += nQuantileVars * qRank;
+          }
+          if (lRank > 0) {
+            weightedRank += nLogLossVars * lRank;
+          }
+          combinedRanks.set(method, weightedRank / totalVars);
+        }
+      });
+
+      const sortedMethods = Array.from(combinedRanks.entries()).sort((a, b) => a[1] - b[1]);
+      if (sortedMethods.length > 0) {
+        bestModel = sortedMethods[0][0];
+
+        // Calculate average loss for best model
+        const bestMethodData = benchmarkData.filter(
+          d => d.method === bestModel && d.split === 'test' &&
+               d.quantile === 'mean' && !d.variable.includes('_mean_all') && d.metric_value !== null
+        );
+        if (bestMethodData.length > 0) {
+          avgLoss = bestMethodData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / bestMethodData.length;
+        }
+      }
+    }
+
+    // Calculate quality scores by variable for model performance
+    let modelExcellent = 0;
+    let modelGood = 0;
+    let modelPoor = 0;
+    let modelScore = 0;
+    let modelQuality = '';
+
+    if (hasBenchmarkLoss && bestModel) {
+      const benchmarkData = data.filter(d => d.type === 'benchmark_loss');
+      const bestModelVars = benchmarkData.filter(
+        d => d.method === bestModel && d.split === 'test' &&
+             d.quantile === 'mean' && !d.variable.includes('_mean_all') && d.metric_value !== null
+      );
+
+      bestModelVars.forEach(d => {
+        const loss = d.metric_value ?? 0;
+        if (loss < 0.02) modelExcellent++;
+        else if (loss < 0.05) modelGood++;
+        else modelPoor++;
+      });
+
+      const totalModelVars = modelExcellent + modelGood + modelPoor;
+      if (totalModelVars > 0) {
+        modelScore = ((modelExcellent * 100) + (modelGood * 75)) / totalModelVars;
+        if (modelScore >= 90) modelQuality = 'Excellent';
+        else if (modelScore >= 70) modelQuality = 'Good';
+        else modelQuality = 'Needs improvement';
+      }
+    }
+
+    // Calculate quality scores by variable for distributional accuracy
+    let distExcellent = 0;
+    let distGood = 0;
+    let distPoor = 0;
+    let distScore = 0;
+    let distQuality = '';
+
+    distributionData.forEach(d => {
+      const value = d.metric_value ?? 0;
+      // Different thresholds for Wasserstein vs KL-divergence
+      if (d.metric_name === 'wasserstein_distance') {
+        if (value < 0.01) distExcellent++;
+        else if (value < 0.05) distGood++;
+        else distPoor++;
+      } else if (d.metric_name === 'kl_divergence') {
+        if (value < 0.1) distExcellent++;
+        else if (value < 0.5) distGood++;
+        else distPoor++;
+      }
+    });
+
+    const totalDistVars = distExcellent + distGood + distPoor;
+    if (totalDistVars > 0) {
+      distScore = ((distExcellent * 100) + (distGood * 75)) / totalDistVars;
+      if (distScore >= 90) distQuality = 'Excellent';
+      else if (distScore >= 70) distQuality = 'Good';
+      else distQuality = 'Needs improvement';
+    }
+
+    // Calculate overall quality (weighted average)
+    let overallScore = 0;
+    let overallQuality = '';
+    let overallColor = '';
+    const hasModelScore = modelScore > 0;
+    const hasDistScore = distScore > 0;
+
+    if (hasModelScore && hasDistScore) {
+      overallScore = (modelScore + distScore) / 2;
+    } else if (hasModelScore) {
+      overallScore = modelScore;
+    } else if (hasDistScore) {
+      overallScore = distScore;
+    }
+
+    if (overallScore >= 90) {
+      overallQuality = 'Excellent quality';
+      overallColor = 'text-green-700 bg-green-50 border-green-500';
+    } else if (overallScore >= 70) {
+      overallQuality = 'Good quality';
+      overallColor = 'text-yellow-700 bg-yellow-50 border-yellow-500';
+    } else if (overallScore > 0) {
+      overallQuality = 'Needs improvement';
+      overallColor = 'text-red-700 bg-red-50 border-red-500';
+    }
+
     return {
       hasBenchmarkLoss,
-      hasDistributionDistance: types.has('distribution_distance'),
-      hasPredictorCorrelation: types.has('predictor_correlation'),
-      hasPredictorOrdering: types.has('progressive_inclusion') || types.has('predictor_importance'),
+      hasDistributionDistance,
+      hasPredictorCorrelation,
+      hasPredictorOrdering,
       numericalVars,
       categoricalVars,
       hasPerVariableData: numericalVars.length > 0 || categoricalVars.length > 0,
+      imputedVars: Array.from(imputedVars).sort(),
+      bestModel,
+      avgLoss,
+      overallScore,
+      overallQuality,
+      overallColor,
+      modelScore,
+      modelQuality,
+      modelExcellent,
+      modelGood,
+      modelPoor,
+      distScore,
+      distQuality,
+      distExcellent,
+      distGood,
+      distPoor,
     };
   }, [data]);
 
@@ -92,6 +294,13 @@ export default function VisualizationDashboard({
 
     if (dataAnalysis.hasBenchmarkLoss) {
       tabsList.push({ id: 'overview', label: 'Model benchmarking' });
+    }
+
+    if (dataAnalysis.hasDistributionDistance) {
+      tabsList.push({
+        id: 'imputation',
+        label: 'Imputation results',
+      });
     }
 
     if (dataAnalysis.numericalVars.length > 0) {
@@ -201,27 +410,12 @@ export default function VisualizationDashboard({
         </div>
       </div>
 
-      {/* Data Info */}
+      {/* Imputation Summary */}
       <div className="bg-white rounded-lg shadow-lg p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-3">Dataset Overview</h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className="p-4 bg-gray-50 rounded">
-            <p className="text-sm text-gray-600">Total Records</p>
-            <p className="text-2xl font-bold text-gray-900">{data.length}</p>
-          </div>
-          {dataAnalysis.numericalVars.length > 0 && (
-            <div className="p-4 bg-gray-50 rounded">
-              <p className="text-sm text-gray-600">Numerical Variables</p>
-              <p className="text-2xl font-bold text-gray-900">{dataAnalysis.numericalVars.length}</p>
-            </div>
-          )}
-          {dataAnalysis.categoricalVars.length > 0 && (
-            <div className="p-4 bg-gray-50 rounded">
-              <p className="text-sm text-gray-600">Categorical Variables</p>
-              <p className="text-2xl font-bold text-gray-900">{dataAnalysis.categoricalVars.length}</p>
-            </div>
-          )}
-        </div>
+        <h2 className="text-xl font-semibold text-gray-900 mb-1">Imputation summary</h2>
+        <p className="text-sm text-gray-600 mb-4">
+          Assessment of the quality of the imputations produced by the best-performing (or the only selected) model
+        </p>
       </div>
 
       {/* Tabs Navigation */}
@@ -280,6 +474,11 @@ export default function VisualizationDashboard({
         {/* Predictor Ordering and Robustness Tab */}
         {activeTab === 'ordering' && (
           <PredictorOrderingRobustness data={data} />
+        )}
+
+        {/* Imputation Results Tab */}
+        {activeTab === 'imputation' && (
+          <ImputationResults data={data} />
         )}
       </div>
     </div>
