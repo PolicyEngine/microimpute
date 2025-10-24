@@ -107,7 +107,6 @@ export default function VisualizationDashboard({
 
     // Calculate best performing model (same logic as BenchmarkLossCharts)
     let bestModel = '';
-    let avgLoss = 0;
 
     if (hasBenchmarkLoss) {
       const benchmarkData = data.filter(d => d.type === 'benchmark_loss');
@@ -321,7 +320,6 @@ export default function VisualizationDashboard({
       hasPerVariableData: numericalVars.length > 0 || categoricalVars.length > 0,
       imputedVars: Array.from(imputedVars).sort(),
       bestModel,
-      avgLoss,
       overallScore,
       overallQuality,
       overallColor,
