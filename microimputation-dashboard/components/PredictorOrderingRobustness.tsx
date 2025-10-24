@@ -147,7 +147,7 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
             <p className="text-sm text-gray-700 mb-2">
               <strong>How this works:</strong> This analysis adds predictors one at a time,
               choosing the predictor that improves performance the most at each step. This
-              step-by-step approach is efficient but doesn't test
+              step-by-step approach is efficient but doesn&apos;t test
               every possible combination of predictors. Note that this analysis may differ depending on the model type passed when using the `progressive_predictor_inclusion` function that produced these results.
             </p>
             <p className="text-sm text-gray-700">
@@ -282,7 +282,7 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
             <p className="text-sm text-gray-700 mb-2">
               <strong>What this shows:</strong> This analysis measures how much performance
               degrades when each predictor is removed. Predictors that cause large performance
-              drops when removed are critical to the model's accuracy.
+              drops when removed are critical to the model&apos;s accuracy.
             </p>
             <p className="text-sm text-gray-700">
               <strong>Reading the chart:</strong> Positive values (bars pointing right) indicate

@@ -210,13 +210,13 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
           <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-md">
             <p className="text-sm text-gray-700 mb-2">
               <strong>What is KL-divergence?</strong> Kullback-Leibler divergence measures how much
-              one probability distribution differs from another. It quantifies the "information lost"
+              one probability distribution differs from another. It quantifies the &quot;information lost&quot;
               when using the imputed distribution to approximate the true distribution.
             </p>
             <p className="text-sm text-gray-700 mb-2">
               <strong>Why use it for categorical variables?</strong> KL-divergence is particularly
               useful for categorical data because it compares probability distributions across
-              categories. It's sensitive to differences in how probabilities are distributed across
+              categories. It&apos;s sensitive to differences in how probabilities are distributed across
               all possible categories.
             </p>
             <p className="text-sm text-gray-700">

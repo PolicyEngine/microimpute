@@ -428,7 +428,7 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
             <strong>What is mutual information?</strong> Mutual information measures how much information one variable provides about another. Unlike correlation, it captures both linear and non-linear relationships between variables. Values range from 0 (independent variables) to higher positive values (strong dependency).
           </p>
           <p className="text-sm text-gray-700 mb-3">
-            <strong>Why measure it for imputed variables?</strong> Mutual information between predictors and imputed variables reveals which predictors are most informative for imputation. High mutual information indicates that a predictor strongly influences the imputed variable's distribution, making it crucial for accurate imputation. This helps validate that your imputation models are using the most relevant predictors and can identify when key predictive relationships exist in your data.
+            <strong>Why measure it for imputed variables?</strong> Mutual information between predictors and imputed variables reveals which predictors are most informative for imputation. High mutual information indicates that a predictor strongly influences the imputed variable&apos;s distribution, making it crucial for accurate imputation. This helps validate that your imputation models are using the most relevant predictors and can identify when key predictive relationships exist in your data.
           </p>
 
           {/* Color scale within explanation box */}
