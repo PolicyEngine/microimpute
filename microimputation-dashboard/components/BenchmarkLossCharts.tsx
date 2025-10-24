@@ -238,7 +238,7 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
       quantileTrainTestRatio,
       logLossTrainTestRatio,
     };
-  }, [methods, quantileLossData, logLossChartData, benchmarkData]);
+  }, [methods, quantileLossData, logLossData, logLossChartData, benchmarkData]);
 
   // Set default selected method to best model
   useMemo(() => {

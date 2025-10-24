@@ -49,6 +49,11 @@ export default function VisualizationDashboard({
     const numericalVars: string[] = [];
     const categoricalVars: string[] = [];
 
+    // Get all unique methods from benchmark data
+    const allMethods = hasBenchmarkLoss
+      ? Array.from(new Set(data.filter(d => d.type === 'benchmark_loss').map(d => d.method)))
+      : [];
+
     if (hasBenchmarkLoss) {
       const benchmarkData = data.filter(d => d.type === 'benchmark_loss');
 
@@ -100,7 +105,7 @@ export default function VisualizationDashboard({
       }
     });
 
-    // Calculate best performing model
+    // Calculate best performing model (same logic as BenchmarkLossCharts)
     let bestModel = '';
     let avgLoss = 0;
 
@@ -108,72 +113,117 @@ export default function VisualizationDashboard({
       const benchmarkData = data.filter(d => d.type === 'benchmark_loss');
       const methods = Array.from(new Set(benchmarkData.map(d => d.method)));
 
-      // Calculate weighted combined rank for each method (same logic as BenchmarkLossCharts)
-      const quantileRanks = new Map<string, number>();
-      const logLossRanks = new Map<string, number>();
+      // Filter quantile and log loss data (matching BenchmarkLossCharts logic)
+      const quantileLossData = benchmarkData.filter(
+        d => d.metric_name === 'quantile_loss' &&
+             d.split === 'test' &&
+             typeof d.quantile === 'number' &&
+             d.quantile >= 0 &&
+             d.quantile <= 1
+      );
+
+      const logLossData = benchmarkData.filter(
+        d => d.metric_name === 'log_loss' &&
+             d.split === 'test' &&
+             d.metric_value !== null
+      );
+
+      // Calculate average quantile loss per method
+      const quantileLossAvg = new Map<string, number>();
       const quantileVarCounts = new Map<string, Set<string>>();
+
+      if (quantileLossData.length > 0) {
+        const methodSums = new Map<string, { sum: number; count: number }>();
+        quantileLossData.forEach(d => {
+          if (d.metric_value !== null) {
+            if (!methodSums.has(d.method)) {
+              methodSums.set(d.method, { sum: 0, count: 0 });
+            }
+            const entry = methodSums.get(d.method)!;
+            entry.sum += d.metric_value;
+            entry.count += 1;
+
+            if (!quantileVarCounts.has(d.method)) {
+              quantileVarCounts.set(d.method, new Set());
+            }
+            quantileVarCounts.get(d.method)!.add(d.variable);
+          }
+        });
+        methodSums.forEach((value, method) => {
+          quantileLossAvg.set(method, value.sum / value.count);
+        });
+      }
+
+      // Calculate average log loss per method
+      const logLossAvg = new Map<string, number>();
       const logLossVarCounts = new Map<string, Set<string>>();
 
-      methods.forEach(method => {
-        const quantileData = benchmarkData.filter(
-          d => d.method === method && d.metric_name === 'quantile_loss' && d.split === 'test' &&
-               d.quantile === 'mean' && !d.variable.includes('_mean_all') && d.metric_value !== null
-        );
-        const logLossData = benchmarkData.filter(
-          d => d.method === method && d.metric_name === 'log_loss' && d.split === 'test' &&
-               d.quantile === 'mean' && !d.variable.includes('_mean_all') && d.metric_value !== null
-        );
+      if (logLossData.length > 0) {
+        const methodSums = new Map<string, { sum: number; count: number }>();
+        logLossData.forEach(d => {
+          if (d.metric_value !== null) {
+            if (!methodSums.has(d.method)) {
+              methodSums.set(d.method, { sum: 0, count: 0 });
+            }
+            const entry = methodSums.get(d.method)!;
+            entry.sum += d.metric_value;
+            entry.count += 1;
 
-        if (quantileData.length > 0) {
-          const avgQuantile = quantileData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / quantileData.length;
-          quantileRanks.set(method, avgQuantile);
-          quantileVarCounts.set(method, new Set(quantileData.map(d => d.variable)));
-        }
+            if (!logLossVarCounts.has(d.method)) {
+              logLossVarCounts.set(d.method, new Set());
+            }
+            logLossVarCounts.get(d.method)!.add(d.variable);
+          }
+        });
+        methodSums.forEach((value, method) => {
+          logLossAvg.set(method, value.sum / value.count);
+        });
+      }
 
-        if (logLossData.length > 0) {
-          const avgLogLoss = logLossData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / logLossData.length;
-          logLossRanks.set(method, avgLogLoss);
-          logLossVarCounts.set(method, new Set(logLossData.map(d => d.variable)));
-        }
-      });
+      // Rank methods by each metric (lower is better)
+      const rankMethods = (avgMap: Map<string, number>): Map<string, number> => {
+        const sorted = Array.from(avgMap.entries()).sort((a, b) => a[1] - b[1]);
+        const ranks = new Map<string, number>();
+        sorted.forEach(([method], index) => {
+          ranks.set(method, index + 1);
+        });
+        return ranks;
+      };
 
-      // Rank methods by their average losses
-      const rankedQuantile = Array.from(quantileRanks.entries()).sort((a, b) => a[1] - b[1]);
-      const rankedLogLoss = Array.from(logLossRanks.entries()).sort((a, b) => a[1] - b[1]);
+      const quantileRanks = rankMethods(quantileLossAvg);
+      const logLossRanks = rankMethods(logLossAvg);
 
+      // Calculate weighted combined rank
       const combinedRanks = new Map<string, number>();
       methods.forEach(method => {
-        const qRank = rankedQuantile.findIndex(([m]) => m === method) + 1;
-        const lRank = rankedLogLoss.findIndex(([m]) => m === method) + 1;
+        const qRank = quantileRanks.get(method);
+        const lRank = logLossRanks.get(method);
         const nQuantileVars = quantileVarCounts.get(method)?.size || 0;
         const nLogLossVars = logLossVarCounts.get(method)?.size || 0;
         const totalVars = nQuantileVars + nLogLossVars;
 
         if (totalVars > 0) {
           let weightedRank = 0;
-          if (qRank > 0) {
+          if (qRank !== undefined) {
             weightedRank += nQuantileVars * qRank;
           }
-          if (lRank > 0) {
+          if (lRank !== undefined) {
             weightedRank += nLogLossVars * lRank;
           }
           combinedRanks.set(method, weightedRank / totalVars);
+        } else {
+          combinedRanks.set(method, Infinity);
         }
       });
 
-      const sortedMethods = Array.from(combinedRanks.entries()).sort((a, b) => a[1] - b[1]);
-      if (sortedMethods.length > 0) {
-        bestModel = sortedMethods[0][0];
-
-        // Calculate average loss for best model
-        const bestMethodData = benchmarkData.filter(
-          d => d.method === bestModel && d.split === 'test' &&
-               d.quantile === 'mean' && !d.variable.includes('_mean_all') && d.metric_value !== null
-        );
-        if (bestMethodData.length > 0) {
-          avgLoss = bestMethodData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / bestMethodData.length;
+      // Find best method (lowest combined rank)
+      let bestRank = Infinity;
+      combinedRanks.forEach((rank, method) => {
+        if (rank < bestRank) {
+          bestRank = rank;
+          bestModel = method;
         }
-      }
+      });
     }
 
     // Calculate quality scores by variable for model performance
@@ -285,6 +335,7 @@ export default function VisualizationDashboard({
       distExcellent,
       distGood,
       distPoor,
+      allMethods,
     };
   }, [data]);
 
@@ -416,6 +467,68 @@ export default function VisualizationDashboard({
         <p className="text-sm text-gray-600 mb-4">
           Assessment of the quality of the imputations produced by the best-performing (or the only selected) model
         </p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+          {/* Imputed Variables Section */}
+          <div className="border border-gray-200 rounded-md p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+              Imputed Variables
+            </h3>
+            {dataAnalysis.imputedVars.length > 0 ? (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-600 mb-2">
+                  {dataAnalysis.imputedVars.length} variable{dataAnalysis.imputedVars.length !== 1 ? 's' : ''} imputed
+                </p>
+                <ul className="space-y-1 max-h-40 overflow-y-auto">
+                  {dataAnalysis.imputedVars.map((variable) => (
+                    <li key={variable} className="text-sm font-mono text-gray-900 bg-gray-50 px-2 py-1 rounded">
+                      {variable}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 italic">
+                No imputed variable information available in the CSV
+              </p>
+            )}
+          </div>
+
+          {/* Best Model Section */}
+          <div className="border border-gray-200 rounded-md p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
+              {dataAnalysis.allMethods.length === 1 ? 'Imputation Model' : 'Best Performing Model'}
+            </h3>
+            {dataAnalysis.bestModel ? (
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-bold text-blue-700">
+                    {dataAnalysis.bestModel}
+                  </span>
+                  {dataAnalysis.allMethods.length === 1 && (
+                    <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded">
+                      Only model
+                    </span>
+                  )}
+                  {dataAnalysis.allMethods.length > 1 && (
+                    <span className="text-xs text-green-700 bg-green-50 px-2 py-0.5 rounded">
+                      Best of {dataAnalysis.allMethods.length}
+                    </span>
+                  )}
+                </div>
+                {dataAnalysis.allMethods.length > 1 && (
+                  <p className="text-xs text-gray-600">
+                    Selected based on combined performance across all cross-validation loss metrics
+                  </p>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500 italic">
+                No model information available in the CSV
+              </p>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Tabs Navigation */}

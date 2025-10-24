@@ -96,10 +96,10 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
           {/* Explanation */}
           <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
             <p className="text-sm text-gray-700 mb-2">
-              <strong>What is Wasserstein distance?</strong> Also known as "Earth Mover's Distance,"
-              this metric measures how much "work" is needed to transform one probability distribution
+              <strong>What is Wasserstein distance?</strong> Also known as &quot;Earth Mover&apos;s Distance&quot;,
+              this metric measures how much &quot;work&quot; is needed to transform one probability distribution
               into another. Think of it as the minimum cost to rearrange one pile of dirt to match
-              another pile's shape.
+              another pile&apos;s shape.
             </p>
             <p className="text-sm text-gray-700 mb-2">
               <strong>Why use it for imputation?</strong> Wasserstein distance is ideal for numerical
