@@ -6,6 +6,7 @@ import { GitHubArtifactInfo, createShareableUrl } from '@/utils/deeplinks';
 import BenchmarkLossCharts from './BenchmarkLossCharts';
 import PerVariableCharts from './PerVariableCharts';
 import VisualizationTabs from './VisualizationTabs';
+import PredictorCorrelationMatrix from './PredictorCorrelationMatrix';
 import { Share } from 'lucide-react';
 
 interface VisualizationDashboardProps {
@@ -88,7 +89,7 @@ export default function VisualizationDashboard({
     const tabsList = [];
 
     if (dataAnalysis.hasBenchmarkLoss) {
-      tabsList.push({ id: 'overview', label: 'Overview' });
+      tabsList.push({ id: 'overview', label: 'Model benchmarking' });
     }
 
     if (dataAnalysis.numericalVars.length > 0) {
@@ -104,6 +105,13 @@ export default function VisualizationDashboard({
         id: 'categorical',
         label: 'Categorical Variables',
         count: dataAnalysis.categoricalVars.length,
+      });
+    }
+
+    if (dataAnalysis.hasPredictorCorrelation) {
+      tabsList.push({
+        id: 'correlation',
+        label: 'Predictor correlation',
       });
     }
 
@@ -253,6 +261,11 @@ export default function VisualizationDashboard({
               </div>
             ))}
           </div>
+        )}
+
+        {/* Predictor Correlation Tab */}
+        {activeTab === 'correlation' && (
+          <PredictorCorrelationMatrix data={data} />
         )}
       </div>
     </div>
