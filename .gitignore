@@ -76,6 +76,7 @@ celerybeat.pid
 
 # Ignore Data Files
 *.csv
+!microimputation-dashboard/**/*.csv
 *.jpg
 *.html
 *.h5

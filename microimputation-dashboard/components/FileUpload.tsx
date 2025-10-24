@@ -8,11 +8,10 @@ import { DeeplinkParams, GitHubArtifactInfo } from '@/utils/deeplinks';
 interface FileUploadProps {
   onFileLoad: (content: string, filename: string) => void;
   onViewDashboard: () => void;
-  onCompareLoad?: (content1: string, filename1: string, content2: string, filename2: string) => void;
   deeplinkParams?: DeeplinkParams | null;
   isLoadingFromDeeplink?: boolean;
-  onDeeplinkLoadComplete?: (primary: GitHubArtifactInfo | null, secondary?: GitHubArtifactInfo | null | undefined) => void;
-  onGithubLoad?: (primary: GitHubArtifactInfo | null, secondary?: GitHubArtifactInfo | null) => void;
+  onDeeplinkLoadComplete?: (primary: GitHubArtifactInfo | null) => void;
+  onGithubLoad?: (primary: GitHubArtifactInfo | null) => void;
 }
 
 interface GitHubCommit {
@@ -43,7 +42,6 @@ interface GitHubArtifact {
 export default function FileUpload({
   onFileLoad,
   onViewDashboard,
-  onCompareLoad,
   deeplinkParams,
   isLoadingFromDeeplink,
   onDeeplinkLoadComplete,
@@ -66,70 +64,33 @@ export default function FileUpload({
   const [selectedArtifact, setSelectedArtifact] = useState('');
   const [isLoadingGithubData, setIsLoadingGithubData] = useState(false);
 
-  // Comparison mode state
-  const [comparisonMode, setComparisonMode] = useState(false);
-  const [selectedSecondBranch, setSelectedSecondBranch] = useState('');
-  const [secondCommits, setSecondCommits] = useState<GitHubCommit[]>([]);
-  const [selectedSecondCommit, setSelectedSecondCommit] = useState('');
-  const [secondArtifacts, setSecondArtifacts] = useState<GitHubArtifact[]>([]);
-  const [selectedSecondArtifact, setSelectedSecondArtifact] = useState('');
-
   // Helper function to load a single artifact from deeplink parameters
-  const loadArtifactFromDeeplink = useCallback(async (artifactInfo: GitHubArtifactInfo, githubToken: string): Promise<string> => {
-    // First, get the artifacts for the specific commit
-    const [owner, repo] = artifactInfo.repo.split('/');
-    const runsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/runs?head_sha=${artifactInfo.commit}`, {
-      headers: {
-        'Authorization': `Bearer ${githubToken}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'PolicyEngine-Dashboard/1.0'
-      }
-    });
+  const loadArtifactFromDeeplink = useCallback(async (artifactInfo: GitHubArtifactInfo): Promise<string> => {
+    // Get artifacts for the specific commit using API route
+    const artifactsResponse = await fetch(
+      `/api/github/artifacts?repo=${encodeURIComponent(artifactInfo.repo)}&commit=${encodeURIComponent(artifactInfo.commit)}`
+    );
 
-    if (!runsResponse.ok) {
-      throw new Error(`Failed to fetch workflow runs: ${runsResponse.status} ${runsResponse.statusText}`);
+    if (!artifactsResponse.ok) {
+      throw new Error(`Failed to fetch artifacts: ${artifactsResponse.status}`);
     }
 
-    const runsData = await runsResponse.json();
-    const completedRuns = runsData.workflow_runs.filter((run: { status: string }) => run.status === 'completed');
-
-    if (completedRuns.length === 0) {
-      throw new Error('No completed workflow runs found for this commit');
-    }
+    const artifacts = await artifactsResponse.json();
 
     // Find the artifact by name
-    let targetArtifact = null;
-    for (const run of completedRuns) {
-      const artifactsResponse = await fetch(`https://api.github.com/repos/${owner}/${repo}/actions/runs/${run.id}/artifacts`, {
-        headers: {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'PolicyEngine-Dashboard/1.0'
-        }
-      });
-
-      if (artifactsResponse.ok) {
-        const artifactsData = await artifactsResponse.json();
-        targetArtifact = artifactsData.artifacts.find((artifact: { name: string }) => artifact.name === artifactInfo.artifact);
-        if (targetArtifact) break;
-      }
-    }
+    const targetArtifact = artifacts.find((artifact: { name: string }) => artifact.name === artifactInfo.artifact);
 
     if (!targetArtifact) {
       throw new Error(`Artifact "${artifactInfo.artifact}" not found for commit ${artifactInfo.commit}`);
     }
 
-    // Download and extract the artifact
-    const downloadResponse = await fetch(targetArtifact.archive_download_url, {
-      headers: {
-        'Authorization': `Bearer ${githubToken}`,
-        'Accept': 'application/vnd.github.v3+json',
-        'User-Agent': 'PolicyEngine-Dashboard/1.0'
-      }
-    });
+    // Download and extract the artifact using API route
+    const downloadResponse = await fetch(
+      `/api/github/download?url=${encodeURIComponent(targetArtifact.archive_download_url)}`
+    );
 
     if (!downloadResponse.ok) {
-      throw new Error(`Failed to download artifact: ${downloadResponse.status} ${downloadResponse.statusText}`);
+      throw new Error(`Failed to download artifact: ${downloadResponse.status}`);
     }
 
     const zipBuffer = await downloadResponse.arrayBuffer();
@@ -154,13 +115,7 @@ export default function FileUpload({
   }, []);
 
   // Load GitHub artifacts directly from deeplink parameters
-  const loadDeeplinkArtifacts = useCallback(async (primary: GitHubArtifactInfo, secondary?: GitHubArtifactInfo) => {
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
+  const loadDeeplinkArtifacts = useCallback(async (primary: GitHubArtifactInfo) => {
     setIsLoading(true);
     setError('');
 
@@ -168,28 +123,16 @@ export default function FileUpload({
       setError('🔄 Loading data from GitHub artifacts...');
 
       // Load primary artifact
-      const primaryData = await loadArtifactFromDeeplink(primary, githubToken);
+      const primaryData = await loadArtifactFromDeeplink(primary);
 
-      if (secondary && onCompareLoad) {
-        // Load secondary artifact for comparison
-        const secondaryData = await loadArtifactFromDeeplink(secondary, githubToken);
-
-        // Generate display names with commit info
-        const primaryDisplayName = `${primary.repo}@${primary.branch} (${primary.commit.substring(0, 7)}) - ${primary.artifact}`;
-        const secondaryDisplayName = `${secondary.repo}@${secondary.branch} (${secondary.commit.substring(0, 7)}) - ${secondary.artifact}`;
-
-        onCompareLoad(primaryData, primaryDisplayName, secondaryData, secondaryDisplayName);
-        setLoadedFile(`Comparison: ${primaryDisplayName} vs ${secondaryDisplayName}`);
-      } else {
-        // Single artifact load
-        const displayName = `${primary.repo}@${primary.branch} (${primary.commit.substring(0, 7)}) - ${primary.artifact}`;
-        onFileLoad(primaryData, displayName);
-        setLoadedFile(displayName);
-      }
+      // Single artifact load
+      const displayName = `${primary.repo}@${primary.branch} (${primary.commit.substring(0, 7)}) - ${primary.artifact}`;
+      onFileLoad(primaryData, displayName);
+      setLoadedFile(displayName);
 
       // Notify parent component that deeplink loading is complete
       if (onDeeplinkLoadComplete) {
-        onDeeplinkLoadComplete(primary, secondary);
+        onDeeplinkLoadComplete(primary);
       }
 
       setError('');
@@ -201,35 +144,19 @@ export default function FileUpload({
     } finally {
       setIsLoading(false);
     }
-  }, [onFileLoad, onCompareLoad, onDeeplinkLoadComplete, loadArtifactFromDeeplink]);
+  }, [onFileLoad, onDeeplinkLoadComplete, loadArtifactFromDeeplink]);
 
   // Handle deeplink loading on mount
   useEffect(() => {
-    if (deeplinkParams && isLoadingFromDeeplink) {
+    if (deeplinkParams && isLoadingFromDeeplink && deeplinkParams.primary) {
       setActiveTab('github');
+      setGithubRepo(deeplinkParams.primary.repo);
+      setSelectedBranch(deeplinkParams.primary.branch);
+      setSelectedCommit(deeplinkParams.primary.commit);
+      setSelectedArtifact(deeplinkParams.primary.artifact);
 
-      if (deeplinkParams.mode === 'comparison' && deeplinkParams.primary && deeplinkParams.secondary) {
-        setComparisonMode(true);
-        setGithubRepo(deeplinkParams.primary.repo);
-        setSelectedBranch(deeplinkParams.primary.branch);
-        setSelectedCommit(deeplinkParams.primary.commit);
-        setSelectedArtifact(deeplinkParams.primary.artifact);
-        setSelectedSecondBranch(deeplinkParams.secondary.branch);
-        setSelectedSecondCommit(deeplinkParams.secondary.commit);
-        setSelectedSecondArtifact(deeplinkParams.secondary.artifact);
-
-        // Auto-load comparison data
-        loadDeeplinkArtifacts(deeplinkParams.primary, deeplinkParams.secondary);
-      } else if (deeplinkParams.primary) {
-        setComparisonMode(false);
-        setGithubRepo(deeplinkParams.primary.repo);
-        setSelectedBranch(deeplinkParams.primary.branch);
-        setSelectedCommit(deeplinkParams.primary.commit);
-        setSelectedArtifact(deeplinkParams.primary.artifact);
-
-        // Auto-load single artifact data
-        loadDeeplinkArtifacts(deeplinkParams.primary);
-      }
+      // Auto-load artifact data
+      loadDeeplinkArtifacts(deeplinkParams.primary);
     }
   }, [deeplinkParams, isLoadingFromDeeplink, loadDeeplinkArtifacts]);
 
@@ -436,14 +363,24 @@ export default function FileUpload({
     }
 
     let url: URL;
+    const finalUrl = urlInput.trim();
+
     try {
-      url = new URL(urlInput.trim());
+      url = new URL(finalUrl);
     } catch {
       setError('Invalid URL format. Please enter a valid URL (e.g., https://example.com/data.csv).');
       return;
     }
 
-    if (!url.pathname.toLowerCase().endsWith('.csv') && !urlInput.toLowerCase().includes('csv')) {
+    // Handle Google Drive URLs
+    if (url.hostname === 'drive.google.com') {
+      setError(
+        'Google Drive links are not supported due to CORS restrictions. Please download the file and use the "Drop file" tab instead or host the file on a different public server.'
+      );
+      return;
+    }
+
+    if (!url.pathname.toLowerCase().endsWith('.csv') && !finalUrl.toLowerCase().includes('csv')) {
       setError('URL should point to a CSV file. Please ensure the URL ends with .csv or contains CSV data.');
       return;
     }
@@ -460,7 +397,7 @@ export default function FileUpload({
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30_000); // 30 s timeout
 
-      const response = await fetch(urlInput.trim(), {
+      const response = await fetch(finalUrl, {
         signal: controller.signal,
         headers: { Accept: 'text/csv, text/plain, */*' }
       });
@@ -557,62 +494,23 @@ export default function FileUpload({
       return;
     }
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoadingGithubData(true);
     setError('');
 
     try {
-      // Fetch all branches with pagination support
-      const allBranches: GitHubBranch[] = [];
-      let page = 1;
-      const perPage = 100; // Maximum allowed by GitHub API
-
-      while (true) {
-        const response = await fetch(`https://api.github.com/repos/${githubRepo}/branches?per_page=${perPage}&page=${page}`, {
-          headers: {
-            'Authorization': `Bearer ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'PolicyEngine-Dashboard/1.0'
-          }
-        });
+      const response = await fetch(`/api/github/branches?repo=${encodeURIComponent(githubRepo)}`);
 
         if (!response.ok) {
           if (response.status === 404) {
-            throw new Error('Repository not found. Please check the repository name and ensure it is accessible.');
+            throw new Error('Repository not found. Please check the repository name and ensure it is publicly accessible.');
           } else if (response.status === 403) {
             throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
           }
-          throw new Error(`Failed to fetch branches: ${response.status} ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch branches: ${response.status}`);
         }
 
-        const branches: GitHubBranch[] = await response.json();
-
-        if (branches.length === 0) {
-          // No more branches to fetch
-          break;
-        }
-
-        allBranches.push(...branches);
-
-        // If we got fewer branches than requested, we've reached the end
-        if (branches.length < perPage) {
-          break;
-        }
-
-        page++;
-
-        // Safety check to prevent infinite loops (GitHub repos rarely have more than 1000 branches)
-        if (page > 10) {
-          console.warn('Stopped fetching branches after 10 pages (1000 branches) to prevent excessive API calls');
-          break;
-        }
-      }
-
+      const allBranches: GitHubBranch[] = await response.json();
       setGithubBranches(allBranches);
 
       // Auto-select main/master branch if available
@@ -631,28 +529,20 @@ export default function FileUpload({
   async function fetchGithubCommits(branch: string) {
     if (!githubRepo.trim() || !branch) return;
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoadingGithubData(true);
     try {
-      const response = await fetch(`https://api.github.com/repos/${githubRepo}/commits?sha=${branch}&per_page=20`, {
-        headers: {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'PolicyEngine-Dashboard/1.0'
-        }
-      });
+      const response = await fetch(
+        `/api/github/commits?repo=${encodeURIComponent(githubRepo)}&branch=${encodeURIComponent(branch)}`
+      );
+
       if (!response.ok) {
         if (response.status === 404) {
           throw new Error('Branch not found or repository is private.');
         } else if (response.status === 403) {
           throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
         }
-        throw new Error(`Failed to fetch commits: ${response.status} ${response.statusText}`);
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch commits: ${response.status}`);
       }
 
       const commits: GitHubCommit[] = await response.json();
@@ -673,97 +563,31 @@ export default function FileUpload({
   async function fetchGithubArtifacts(commitSha: string) {
     if (!githubRepo.trim() || !commitSha) return;
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoadingGithubData(true);
     setAvailableArtifacts([]);
     setSelectedArtifact('');
 
     try {
-      const [owner, repo] = githubRepo.split('/');
-
-      // Get workflow runs for the commit
-      const runsResponse = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/actions/runs?head_sha=${commitSha}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'PolicyEngine-Dashboard/1.0'
-          }
-        }
+      const response = await fetch(
+        `/api/github/artifacts?repo=${encodeURIComponent(githubRepo)}&commit=${encodeURIComponent(commitSha)}`
       );
 
-      if (!runsResponse.ok) {
-        if (runsResponse.status === 403) {
+      if (!response.ok) {
+        if (response.status === 403) {
           throw new Error(`GitHub API rate limit exceeded or token permissions insufficient (403). Please try again later or check your token permissions.`);
-        } else if (runsResponse.status === 404) {
+        } else if (response.status === 404) {
           throw new Error(`Repository or commit not found (404). Please check the repository name and commit SHA.`);
-        } else {
-          throw new Error(`Failed to fetch workflow runs: ${runsResponse.status} ${runsResponse.statusText}`);
         }
+        const errorData = await response.json();
+        throw new Error(errorData.error || `Failed to fetch artifacts: ${response.status}`);
       }
 
-      const runsData = await runsResponse.json();
-      const runs = runsData.workflow_runs;
+      const uniqueArtifacts: GitHubArtifact[] = await response.json();
 
-      if (!runs || runs.length === 0) {
-        setError('No workflow runs found for this commit.');
-        return;
-      }
-
-      // Collect all imputation artifacts from completed runs
-      const allArtifacts: GitHubArtifact[] = [];
-
-      for (const run of runs) {
-        if (run.status !== 'completed') continue;
-
-        try {
-          const artifactsResponse = await fetch(
-            `https://api.github.com/repos/${owner}/${repo}/actions/runs/${run.id}/artifacts`,
-            {
-              headers: {
-                'Authorization': `Bearer ${githubToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'PolicyEngine-Dashboard/1.0'
-              }
-            }
-          );
-
-          if (!artifactsResponse.ok) continue;
-
-          const artifactsData = await artifactsResponse.json();
-          const artifacts = artifactsData.artifacts;
-
-          // Filter for imputation artifacts
-          const imputationArtifacts = artifacts.filter((artifact: GitHubArtifact) =>
-            artifact.name.toLowerCase().includes('impute') ||
-            artifact.name.toLowerCase().includes('imputation') ||
-            artifact.name.toLowerCase().includes('result') ||
-            artifact.name.toLowerCase().includes('.csv')
-          );
-
-          allArtifacts.push(...imputationArtifacts);
-        } catch {
-          continue;
-        }
-      }
-
-      if (allArtifacts.length === 0) {
+      if (uniqueArtifacts.length === 0) {
         setError('No imputation artifacts found for this commit.');
         return;
       }
-
-      // Remove duplicates and sort by creation date (newest first)
-      const uniqueArtifacts = allArtifacts
-        .filter((artifact, index, self) =>
-          index === self.findIndex(a => a.name === artifact.name)
-        )
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       setAvailableArtifacts(uniqueArtifacts);
 
@@ -791,25 +615,15 @@ export default function FileUpload({
       return;
     }
 
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
     setIsLoading(true);
     setError('');
 
     try {
       setError('🔄 Downloading and extracting CSV from artifact...');
 
-      const downloadResponse = await fetch(artifact.archive_download_url, {
-        headers: {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'PolicyEngine-Dashboard/1.0'
-        }
-      });
+      const downloadResponse = await fetch(
+        `/api/github/download?url=${encodeURIComponent(artifact.archive_download_url)}`
+      );
 
       if (!downloadResponse.ok) {
         throw new Error(`Failed to download artifact: ${downloadResponse.status}`);
@@ -864,7 +678,7 @@ export default function FileUpload({
           commit: selectedCommit,
           artifact: artifact.name
         };
-        onGithubLoad(artifactInfo, null);
+        onGithubLoad(artifactInfo);
       }
 
       // Clear the GitHub state since we successfully loaded the file
@@ -884,286 +698,31 @@ export default function FileUpload({
     }
   }
 
-  async function fetchSecondBranchCommits(branch: string) {
-    if (!githubRepo.trim() || !branch) return;
-
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
-    setIsLoadingGithubData(true);
-    try {
-      const response = await fetch(`https://api.github.com/repos/${githubRepo}/commits?sha=${branch}&per_page=20`, {
-        headers: {
-          'Authorization': `Bearer ${githubToken}`,
-          'Accept': 'application/vnd.github.v3+json',
-          'User-Agent': 'PolicyEngine-Dashboard/1.0'
-        }
-      });
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Branch not found or repository is private.');
-        } else if (response.status === 403) {
-          throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
-        }
-        throw new Error(`Failed to fetch commits: ${response.status} ${response.statusText}`);
-      }
-
-      const commits: GitHubCommit[] = await response.json();
-      setSecondCommits(commits);
-
-      // Auto-select latest commit and fetch its artifacts
-      if (commits.length > 0) {
-        setSelectedSecondCommit(commits[0].sha);
-        await fetchSecondArtifacts(commits[0].sha);
-      }
-    } catch (err) {
-      setError(`GitHub API error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsLoadingGithubData(false);
-    }
-  }
-
-  async function fetchSecondArtifacts(commitSha: string) {
-    if (!githubRepo.trim() || !commitSha) return;
-
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
-    setIsLoadingGithubData(true);
-    setSecondArtifacts([]);
-    setSelectedSecondArtifact('');
-
-    try {
-      const [owner, repo] = githubRepo.split('/');
-
-      // Get workflow runs for the commit
-      const runsResponse = await fetch(
-        `https://api.github.com/repos/${owner}/${repo}/actions/runs?head_sha=${commitSha}`,
-        {
-          headers: {
-            'Authorization': `Bearer ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'PolicyEngine-Dashboard/1.0'
-          }
-        }
-      );
-
-      if (!runsResponse.ok) {
-        if (runsResponse.status === 403) {
-          throw new Error(`GitHub API rate limit exceeded or token permissions insufficient (403). Please try again later or check your token permissions.`);
-        } else if (runsResponse.status === 404) {
-          throw new Error(`Repository or commit not found (404). Please check the repository name and commit SHA.`);
-        } else {
-          throw new Error(`Failed to fetch workflow runs: ${runsResponse.status} ${runsResponse.statusText}`);
-        }
-      }
-
-      const runsData = await runsResponse.json();
-      const runs = runsData.workflow_runs;
-
-      if (!runs || runs.length === 0) {
-        setError('No workflow runs found for this commit.');
-        return;
-      }
-
-      // Collect all imputation artifacts from completed runs
-      const allArtifacts: GitHubArtifact[] = [];
-
-      for (const run of runs) {
-        if (run.status !== 'completed') continue;
-
-        try {
-          const artifactsResponse = await fetch(
-            `https://api.github.com/repos/${owner}/${repo}/actions/runs/${run.id}/artifacts`,
-            {
-              headers: {
-                'Authorization': `Bearer ${githubToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'PolicyEngine-Dashboard/1.0'
-              }
-            }
-          );
-
-          if (!artifactsResponse.ok) continue;
-
-          const artifactsData = await artifactsResponse.json();
-          const artifacts = artifactsData.artifacts;
-
-          // Filter for imputation artifacts
-          const imputationArtifacts = artifacts.filter((artifact: GitHubArtifact) =>
-            artifact.name.toLowerCase().includes('impute') ||
-            artifact.name.toLowerCase().includes('imputation') ||
-            artifact.name.toLowerCase().includes('result') ||
-            artifact.name.toLowerCase().includes('.csv')
-          );
-
-          allArtifacts.push(...imputationArtifacts);
-        } catch {
-          continue;
-        }
-      }
-
-      if (allArtifacts.length === 0) {
-        setError('No imputation artifacts found for this commit.');
-        return;
-      }
-
-      // Remove duplicates and sort by creation date (newest first)
-      const uniqueArtifacts = allArtifacts
-        .filter((artifact, index, self) =>
-          index === self.findIndex(a => a.name === artifact.name)
-        )
-        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-
-      setSecondArtifacts(uniqueArtifacts);
-
-      // Auto-select the first artifact
-      if (uniqueArtifacts.length > 0) {
-        setSelectedSecondArtifact(uniqueArtifacts[0].id.toString());
-      }
-
-    } catch (err) {
-      setError(`Failed to fetch artifacts: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsLoadingGithubData(false);
-    }
-  }
-
-  async function loadComparisonData() {
-    if (!selectedArtifact || !selectedSecondArtifact || !onCompareLoad) {
-      setError('Please select artifacts from both commits to compare');
-      return;
-    }
-
-    const firstArtifact = availableArtifacts.find(a => a.id.toString() === selectedArtifact);
-    const secondArtifact = secondArtifacts.find(a => a.id.toString() === selectedSecondArtifact);
-
-    if (!firstArtifact || !secondArtifact) {
-      setError('Selected artifacts not found');
-      return;
-    }
-
-    const githubToken = process.env.NEXT_PUBLIC_GITHUB_TOKEN;
-    if (!githubToken) {
-      setError('GitHub token not configured. Please set NEXT_PUBLIC_GITHUB_TOKEN environment variable.');
-      return;
-    }
-
-    setIsLoading(true);
-    setError('');
-
-    try {
-      setError('🔄 Downloading and extracting CSV files for comparison...');
-
-      // Download both artifacts
-      const [firstDownload, secondDownload] = await Promise.all([
-        fetch(firstArtifact.archive_download_url, {
-          headers: {
-            'Authorization': `Bearer ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'PolicyEngine-Dashboard/1.0'
-          }
-        }),
-        fetch(secondArtifact.archive_download_url, {
-          headers: {
-            'Authorization': `Bearer ${githubToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'PolicyEngine-Dashboard/1.0'
-          }
-        })
-      ]);
-
-      if (!firstDownload.ok || !secondDownload.ok) {
-        throw new Error('Failed to download one or both artifacts');
-      }
-
-      // Extract CSVs from both artifacts
-      const [firstZipBuffer, secondZipBuffer] = await Promise.all([
-        firstDownload.arrayBuffer(),
-        secondDownload.arrayBuffer()
-      ]);
-
-      const firstZip = new JSZip();
-      const secondZip = new JSZip();
-      const [firstZipContent, secondZipContent] = await Promise.all([
-        firstZip.loadAsync(firstZipBuffer),
-        secondZip.loadAsync(secondZipBuffer)
-      ]);
-
-      // Find CSV files in both ZIPs
-      const firstCsvFiles = Object.keys(firstZipContent.files).filter(filename =>
-        filename.toLowerCase().endsWith('.csv') && !firstZipContent.files[filename].dir
-      );
-      const secondCsvFiles = Object.keys(secondZipContent.files).filter(filename =>
-        filename.toLowerCase().endsWith('.csv') && !secondZipContent.files[filename].dir
-      );
-
-      if (firstCsvFiles.length === 0 || secondCsvFiles.length === 0) {
-        throw new Error('No CSV files found in one or both artifacts');
-      }
-
-      // Extract CSV content
-      const [firstCsvContent, secondCsvContent] = await Promise.all([
-        firstZipContent.files[firstCsvFiles[0]].async('text'),
-        secondZipContent.files[secondCsvFiles[0]].async('text')
-      ]);
-
-      // Create display names with commit info
-      const firstCommitShort = selectedCommit.slice(0, 8);
-      const secondCommitShort = selectedSecondCommit.slice(0, 8);
-
-      const firstBranchInfo = selectedBranch !== selectedSecondBranch ? ` (${selectedBranch})` : '';
-      const secondBranchInfo = selectedBranch !== selectedSecondBranch ? ` (${selectedSecondBranch})` : '';
-
-      const firstName = `${firstCsvFiles[0]} @ ${firstCommitShort}${firstBranchInfo}`;
-      const secondName = `${secondCsvFiles[0]} @ ${secondCommitShort}${secondBranchInfo}`;
-
-      // Load into comparison mode
-      onCompareLoad(firstCsvContent, firstName, secondCsvContent, secondName);
-
-      // Notify parent component about GitHub artifact info for sharing
-      if (onGithubLoad) {
-        const primaryArtifactInfo: GitHubArtifactInfo = {
-          repo: githubRepo,
-          branch: selectedBranch,
-          commit: selectedCommit,
-          artifact: firstArtifact.name
-        };
-        const secondaryArtifactInfo: GitHubArtifactInfo = {
-          repo: githubRepo,
-          branch: selectedSecondBranch,
-          commit: selectedSecondCommit,
-          artifact: secondArtifact.name
-        };
-        onGithubLoad(primaryArtifactInfo, secondaryArtifactInfo);
-      }
-
-      setError('');
-
-    } catch (extractError) {
-      console.error('Comparison extraction error:', extractError);
-      setError(`❌ Failed to extract comparison data: ${extractError instanceof Error ? extractError.message : 'Unknown error'}`);
-    } finally {
-      setIsLoading(false);
-    }
-  }
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
-      <div className="mb-6">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-2">Load imputation data</h2>
-        <p className="text-gray-600">Choose how you would like to load your CSV file</p>
+    <div className="space-y-8">
+      {/* Page Title */}
+      <div>
+        <h1 className="text-4xl font-bold text-gray-900 mb-2">Microimpute Dashboard</h1>
+        <p className="text-gray-600">Microimputation quality and model benchmarking assessment</p>
       </div>
 
+      {/* Upload Card */}
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="mb-6">
+          <h2 className="text-2xl font-semibold text-gray-900 mb-2">Load imputation data</h2>
+          <p className="text-gray-600">Choose how you would like to load your CSV file</p>
+        </div>
+
       {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 rounded-md p-3">
-          <p className="text-sm text-red-700">{error}</p>
+        <div className={`mb-4 rounded-md p-3 ${
+          error.startsWith('🔄')
+            ? 'bg-blue-50 border border-blue-200'
+            : 'bg-red-50 border border-red-200'
+        }`}>
+          <p className={`text-sm ${
+            error.startsWith('🔄') ? 'text-blue-700' : 'text-red-700'
+          }`}>{error}</p>
         </div>
       )}
 
@@ -1176,7 +735,11 @@ export default function FileUpload({
       {/* Tab navigation */}
       <div className="flex border-b border-gray-200 mb-6">
         <button
-          onClick={() => setActiveTab('drop')}
+          onClick={() => {
+            setActiveTab('drop');
+            setError('');
+            setLoadedFile('');
+          }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'drop'
               ? 'border-blue-500 text-blue-600'
@@ -1187,7 +750,11 @@ export default function FileUpload({
           Drop file
         </button>
         <button
-          onClick={() => setActiveTab('url')}
+          onClick={() => {
+            setActiveTab('url');
+            setError('');
+            setLoadedFile('');
+          }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'url'
               ? 'border-blue-500 text-blue-600'
@@ -1198,7 +765,11 @@ export default function FileUpload({
           URL
         </button>
         <button
-          onClick={() => setActiveTab('github')}
+          onClick={() => {
+            setActiveTab('github');
+            setError('');
+            setLoadedFile('');
+          }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'github'
               ? 'border-blue-500 text-blue-600'
@@ -1209,7 +780,11 @@ export default function FileUpload({
           GitHub
         </button>
         <button
-          onClick={() => setActiveTab('sample')}
+          onClick={() => {
+            setActiveTab('sample');
+            setError('');
+            setLoadedFile('');
+          }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'sample'
               ? 'border-blue-500 text-blue-600'
@@ -1265,7 +840,7 @@ export default function FileUpload({
                 value={urlInput}
                 onChange={e => setUrlInput(e.target.value)}
                 placeholder="https://example.com/data.csv"
-                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900"
               />
               <button
                 onClick={handleUrlLoad}
@@ -1332,8 +907,8 @@ export default function FileUpload({
                       type="text"
                       value={githubRepo}
                       onChange={(e) => setGithubRepo(e.target.value)}
-                      placeholder="PolicyEngine/microimpute"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="policyengine/microimpute"
+                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                     />
                     <button
                       onClick={fetchGithubBranches}
@@ -1343,34 +918,6 @@ export default function FileUpload({
                       {isLoadingGithubData ? 'Loading...' : 'Fetch'}
                     </button>
                   </div>
-                </div>
-
-                {/* Comparison Mode Toggle */}
-                <div className="mb-4">
-                  <label className="flex items-center">
-                    <input
-                      type="checkbox"
-                      checked={comparisonMode}
-                      onChange={(e) => {
-                        setComparisonMode(e.target.checked);
-                        if (!e.target.checked) {
-                          // Reset second selection states
-                          setSelectedSecondBranch('');
-                          setSecondCommits([]);
-                          setSelectedSecondCommit('');
-                          setSecondArtifacts([]);
-                          setSelectedSecondArtifact('');
-                        }
-                      }}
-                      className="mr-2 rounded"
-                    />
-                    <span className="text-sm font-medium text-gray-700">
-                      Compare two imputation runs (different branches/commits)
-                    </span>
-                  </label>
-                  <p className="text-xs text-gray-500 mt-1">
-                    Enable this to compare imputation results between different branches or commits
-                  </p>
                 </div>
 
                 {/* Branch Selection */}
@@ -1386,7 +933,7 @@ export default function FileUpload({
                         setSelectedBranch(e.target.value);
                         fetchGithubCommits(e.target.value);
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                     >
                       <option value="">Select a branch</option>
                       {githubBranches.map((branch) => (
@@ -1411,7 +958,7 @@ export default function FileUpload({
                         setSelectedCommit(e.target.value);
                         fetchGithubArtifacts(e.target.value);
                       }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                     >
                       <option value="">Select a commit</option>
                       {githubCommits.map((commit) => (
@@ -1441,7 +988,7 @@ export default function FileUpload({
                       id="github-artifact"
                       value={selectedArtifact}
                       onChange={(e) => setSelectedArtifact(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
                     >
                       <option value="">Select an artifact</option>
                       {availableArtifacts.map((artifact) => (
@@ -1460,109 +1007,14 @@ export default function FileUpload({
                   </div>
                 )}
 
-                {/* Second Selection for Comparison */}
-                {comparisonMode && githubBranches.length > 0 && (
-                  <div className="border-t border-gray-200 pt-4 mt-6">
-                    <h4 className="text-md font-semibold text-gray-800 mb-4">Second Imputation Run (for comparison)</h4>
-
-                    {/* Second Branch Selection */}
-                    <div className="mb-4">
-                      <label htmlFor="github-second-branch" className="block text-sm font-medium text-gray-700 mb-2">
-                        Branch
-                      </label>
-                      <select
-                        id="github-second-branch"
-                        value={selectedSecondBranch}
-                        onChange={(e) => {
-                          setSelectedSecondBranch(e.target.value);
-                          fetchSecondBranchCommits(e.target.value);
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      >
-                        <option value="">Select a branch</option>
-                        {githubBranches.map((branch) => (
-                          <option key={`second-${branch.name}`} value={branch.name}>
-                            {branch.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Second Commit Selection */}
-                    {secondCommits.length > 0 && (
-                      <div className="mb-4">
-                        <label htmlFor="github-second-commit" className="block text-sm font-medium text-gray-700 mb-2">
-                          Commit
-                        </label>
-                        <select
-                          id="github-second-commit"
-                          value={selectedSecondCommit}
-                          onChange={(e) => {
-                            setSelectedSecondCommit(e.target.value);
-                            fetchSecondArtifacts(e.target.value);
-                          }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select a commit</option>
-                          {secondCommits.map((commit) => (
-                            <option key={`second-${commit.sha}`} value={commit.sha}>
-                              {commit.sha.slice(0, 8)} - {commit.commit.message.slice(0, 60)}
-                              {commit.commit.message.length > 60 ? '...' : ''}
-                            </option>
-                          ))}
-                        </select>
-                        {selectedSecondCommit && (
-                          <p className="text-sm text-gray-500 mt-1">
-                            {secondCommits.find(c => c.sha === selectedSecondCommit)?.commit.author.date &&
-                              new Date(secondCommits.find(c => c.sha === selectedSecondCommit)!.commit.author.date).toLocaleString()
-                            }
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Second Artifact Selection */}
-                    {secondArtifacts.length > 0 && (
-                      <div className="mb-4">
-                        <label htmlFor="github-second-artifact" className="block text-sm font-medium text-gray-700 mb-2">
-                          Artifact ({secondArtifacts.length} available)
-                        </label>
-                        <select
-                          id="github-second-artifact"
-                          value={selectedSecondArtifact}
-                          onChange={(e) => setSelectedSecondArtifact(e.target.value)}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        >
-                          <option value="">Select an artifact</option>
-                          {secondArtifacts.map((artifact) => (
-                            <option key={`second-${artifact.id}`} value={artifact.id.toString()}>
-                              {artifact.name} ({(artifact.size_in_bytes / 1024).toFixed(1)} KB)
-                            </option>
-                          ))}
-                        </select>
-                        {selectedSecondArtifact && (
-                          <p className="text-sm text-gray-500 mt-1">
-                            {secondArtifacts.find(a => a.id.toString() === selectedSecondArtifact)?.created_at &&
-                              `Created: ${new Date(secondArtifacts.find(a => a.id.toString() === selectedSecondArtifact)!.created_at).toLocaleString()}`
-                            }
-                          </p>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                )}
-
                 {/* Load Button */}
-                {selectedArtifact && (!comparisonMode || selectedSecondArtifact) && (
+                {selectedArtifact && (
                   <button
-                    onClick={comparisonMode ? loadComparisonData : loadGithubArtifact}
+                    onClick={loadGithubArtifact}
                     disabled={isLoading}
                     className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md disabled:opacity-50"
                   >
-                    {isLoading
-                      ? (comparisonMode ? 'Loading comparison...' : 'Loading artifact...')
-                      : (comparisonMode ? 'Compare imputation runs' : 'Load imputation data')
-                    }
+                    {isLoading ? 'Loading artifact...' : 'Load imputation data'}
                   </button>
                 )}
 
@@ -1593,15 +1045,16 @@ export default function FileUpload({
         </div>
       )}
 
-      {/* Global loading indicator */}
-      {(isLoading || isLoadingGithubData) && (
-        <div className="mt-4 text-center">
-          <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
-          <p className="text-sm text-gray-600 mt-2">
-            {isLoadingGithubData ? 'Loading GitHub data...' : 'Loading file...'}
-          </p>
-        </div>
-      )}
+        {/* Global loading indicator */}
+        {(isLoading || isLoadingGithubData) && (
+          <div className="mt-4 text-center">
+            <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+            <p className="text-sm text-gray-600 mt-2">
+              {isLoadingGithubData ? 'Loading GitHub data...' : 'Loading file...'}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
