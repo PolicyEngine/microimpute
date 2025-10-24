@@ -7,6 +7,7 @@ import BenchmarkLossCharts from './BenchmarkLossCharts';
 import PerVariableCharts from './PerVariableCharts';
 import VisualizationTabs from './VisualizationTabs';
 import PredictorCorrelationMatrix from './PredictorCorrelationMatrix';
+import PredictorOrderingRobustness from './PredictorOrderingRobustness';
 import { Share } from 'lucide-react';
 
 interface VisualizationDashboardProps {
@@ -78,6 +79,7 @@ export default function VisualizationDashboard({
       hasBenchmarkLoss,
       hasDistributionDistance: types.has('distribution_distance'),
       hasPredictorCorrelation: types.has('predictor_correlation'),
+      hasPredictorOrdering: types.has('progressive_inclusion') || types.has('predictor_importance'),
       numericalVars,
       categoricalVars,
       hasPerVariableData: numericalVars.length > 0 || categoricalVars.length > 0,
@@ -112,6 +114,13 @@ export default function VisualizationDashboard({
       tabsList.push({
         id: 'correlation',
         label: 'Predictor correlation',
+      });
+    }
+
+    if (dataAnalysis.hasPredictorOrdering) {
+      tabsList.push({
+        id: 'ordering',
+        label: 'Predictor selection',
       });
     }
 
@@ -266,6 +275,11 @@ export default function VisualizationDashboard({
         {/* Predictor Correlation Tab */}
         {activeTab === 'correlation' && (
           <PredictorCorrelationMatrix data={data} />
+        )}
+
+        {/* Predictor Ordering and Robustness Tab */}
+        {activeTab === 'ordering' && (
+          <PredictorOrderingRobustness data={data} />
         )}
       </div>
     </div>
