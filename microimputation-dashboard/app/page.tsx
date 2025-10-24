@@ -65,30 +65,6 @@ function HomeContent() {
 
   return (
     <main className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
-            <div className="flex items-center space-x-3">
-              <h1 className="text-3xl font-bold text-gray-900">
-                Microimpute Dashboard
-              </h1>
-              <span className="bg-blue-100 text-blue-800 text-xs font-semibold px-2.5 py-0.5 rounded">
-                Beta
-              </span>
-            </div>
-            {showDashboard && (
-              <button
-                onClick={handleBackToUpload}
-                className="text-sm text-blue-600 hover:text-blue-800 font-medium"
-              >
-                ← Back to upload
-              </button>
-            )}
-          </div>
-        </div>
-      </header>
-
       {/* Main content */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {!showDashboard ? (
@@ -105,6 +81,7 @@ function HomeContent() {
             data={data}
             fileName={fileName}
             githubArtifactInfo={githubArtifactInfo}
+            onBackToUpload={handleBackToUpload}
           />
         )}
       </div>

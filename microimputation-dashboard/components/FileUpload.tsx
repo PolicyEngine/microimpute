@@ -700,11 +700,19 @@ export default function FileUpload({
 
 
   return (
-    <div className="bg-white rounded-lg shadow-lg p-6">
-      <div className="mb-6">
-        <h2 className="text-2xl font-semibold text-gray-900 mb-2">Load imputation data</h2>
-        <p className="text-gray-600">Choose how you would like to load your CSV file</p>
+    <div className="space-y-8">
+      {/* Page Title */}
+      <div>
+        <h1 className="text-4xl font-bold text-gray-900 mb-2">Microimpute Dashboard</h1>
+        <p className="text-gray-600">Microimputation quality and model benchmarking assessment</p>
       </div>
+
+      {/* Upload Card */}
+      <div className="bg-white rounded-lg shadow-lg p-6">
+        <div className="mb-6">
+          <h2 className="text-2xl font-semibold text-gray-900 mb-2">Load imputation data</h2>
+          <p className="text-gray-600">Choose how you would like to load your CSV file</p>
+        </div>
 
       {error && (
         <div className={`mb-4 rounded-md p-3 ${
@@ -1037,15 +1045,16 @@ export default function FileUpload({
         </div>
       )}
 
-      {/* Global loading indicator */}
-      {(isLoading || isLoadingGithubData) && (
-        <div className="mt-4 text-center">
-          <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
-          <p className="text-sm text-gray-600 mt-2">
-            {isLoadingGithubData ? 'Loading GitHub data...' : 'Loading file...'}
-          </p>
-        </div>
-      )}
+        {/* Global loading indicator */}
+        {(isLoading || isLoadingGithubData) && (
+          <div className="mt-4 text-center">
+            <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+            <p className="text-sm text-gray-600 mt-2">
+              {isLoadingGithubData ? 'Loading GitHub data...' : 'Loading file...'}
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

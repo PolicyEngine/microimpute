@@ -31,13 +31,16 @@ export function parseDeeplinkParams(searchParams: URLSearchParams): DeeplinkPara
   };
 }
 
-export function createShareableUrl(baseUrl: string, artifactInfo: GitHubArtifactInfo): string {
-  const url = new URL(baseUrl);
+export function createShareableUrl(artifactInfo: GitHubArtifactInfo): string {
+  const baseUrl = typeof window !== 'undefined'
+    ? `${window.location.protocol}//${window.location.host}${window.location.pathname}`
+    : '';
 
-  url.searchParams.set('repo', artifactInfo.repo);
-  url.searchParams.set('branch', artifactInfo.branch);
-  url.searchParams.set('commit', artifactInfo.commit);
-  url.searchParams.set('artifact', artifactInfo.artifact);
+  const urlParams = new URLSearchParams();
+  urlParams.set('repo', artifactInfo.repo);
+  urlParams.set('branch', artifactInfo.branch);
+  urlParams.set('commit', artifactInfo.commit);
+  urlParams.set('artifact', artifactInfo.artifact);
 
-  return url.toString();
+  return `${baseUrl}?${urlParams.toString()}`;
 }
