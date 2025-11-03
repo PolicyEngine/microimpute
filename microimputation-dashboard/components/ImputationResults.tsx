@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { ImputationDataPoint } from '@/types/imputation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import DistributionOverlay from './DistributionOverlay';
 
 interface ImputationResultsProps {
   data: ImputationDataPoint[];
@@ -85,6 +86,9 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
           Distributional quality metrics comparing imputed values to true values
         </p>
       </div>
+
+      {/* Distribution Overlay Visualization */}
+      <DistributionOverlay data={data} />
 
       {/* Wasserstein Distance Section */}
       {hasWasserstein && (
@@ -207,7 +211,7 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
           </h3>
 
           {/* Explanation */}
-          <div className="mb-6 p-4 bg-purple-50 border border-purple-200 rounded-md">
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
             <p className="text-sm text-gray-700 mb-2">
               <strong>What is KL-divergence?</strong> Kullback-Leibler divergence measures how much
               one probability distribution differs from another. It quantifies the &quot;information lost&quot;

@@ -19,6 +19,7 @@ from microimpute.utils.dashboard_formatter import format_csv
 VALID_TYPES = {
     "benchmark_loss",
     "distribution_distance",
+    "distribution_bins",
     "predictor_correlation",
     "predictor_target_mi",
     "predictor_importance",
@@ -623,6 +624,314 @@ class TestSaveFormattedCSV:
             # Check that string columns are preserved
             assert list(df["type"]) == list(loaded_df["type"])
             assert list(df["method"]) == list(loaded_df["method"])
+
+
+class TestDistributionBins:
+    """Test distribution_bins type formatting for histogram data."""
+
+    @pytest.fixture
+    def sample_donor_receiver_data(self):
+        """Create sample donor and receiver datasets with imputed variables."""
+        np.random.seed(42)
+
+        # Create donor data
+        donor_data = pd.DataFrame(
+            {
+                "numerical_var1": np.random.normal(100, 15, 200),
+                "numerical_var2": np.random.exponential(2, 200),
+                "categorical_var": np.random.choice(
+                    ["A", "B", "C"], 200, p=[0.5, 0.3, 0.2]
+                ),
+                "predictor1": np.random.randn(200),
+                "predictor2": np.random.randn(200),
+            }
+        )
+
+        # Create receiver data (slightly different distributions)
+        receiver_data = pd.DataFrame(
+            {
+                "numerical_var1": np.random.normal(
+                    102, 14, 150
+                ),  # Shifted mean
+                "numerical_var2": np.random.exponential(
+                    2.1, 150
+                ),  # Different rate
+                "categorical_var": np.random.choice(
+                    ["A", "B", "C"], 150, p=[0.4, 0.4, 0.2]
+                ),
+                "predictor1": np.random.randn(150),
+                "predictor2": np.random.randn(150),
+            }
+        )
+
+        return donor_data, receiver_data
+
+    def test_distribution_bins_created(self, sample_donor_receiver_data):
+        """Test that distribution_bins rows are created when histogram data is provided."""
+        donor_data, receiver_data = sample_donor_receiver_data
+        imputed_variables = [
+            "numerical_var1",
+            "numerical_var2",
+            "categorical_var",
+        ]
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".csv"
+        ) as f:
+            output_path = f.name
+
+        try:
+            result = format_csv(
+                output_path=output_path,
+                donor_data=donor_data,
+                receiver_data=receiver_data,
+                imputed_variables=imputed_variables,
+                best_method_name="TestMethod",
+                n_histogram_bins=20,
+            )
+
+            # Check that distribution_bins type exists
+            dist_bins_rows = result[result["type"] == "distribution_bins"]
+            assert len(dist_bins_rows) > 0
+
+            # Check that all imputed variables have bins
+            variables_with_bins = dist_bins_rows["variable"].unique()
+            assert set(variables_with_bins) == set(imputed_variables)
+
+            # Check numerical variables have histogram_distribution metric
+            numerical_bins = dist_bins_rows[
+                dist_bins_rows["metric_name"] == "histogram_distribution"
+            ]
+            assert "numerical_var1" in numerical_bins["variable"].values
+            assert "numerical_var2" in numerical_bins["variable"].values
+
+            # Check categorical variable has categorical_distribution metric
+            categorical_bins = dist_bins_rows[
+                dist_bins_rows["metric_name"] == "categorical_distribution"
+            ]
+            assert "categorical_var" in categorical_bins["variable"].values
+
+        finally:
+            Path(output_path).unlink()
+
+    def test_numerical_histogram_heights_match_numpy(
+        self, sample_donor_receiver_data
+    ):
+        """Test that histogram heights match numpy's histogram output."""
+        donor_data, receiver_data = sample_donor_receiver_data
+        var_name = "numerical_var1"
+        n_bins = 15
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".csv"
+        ) as f:
+            output_path = f.name
+
+        try:
+            result = format_csv(
+                output_path=output_path,
+                donor_data=donor_data,
+                receiver_data=receiver_data,
+                imputed_variables=[var_name],
+                best_method_name="TestMethod",
+                n_histogram_bins=n_bins,
+            )
+
+            # Get the distribution bins for our variable
+            dist_bins = result[
+                (result["type"] == "distribution_bins")
+                & (result["variable"] == var_name)
+                & (result["metric_name"] == "histogram_distribution")
+            ]
+
+            # Should have n_bins rows for this variable
+            assert len(dist_bins) == n_bins
+
+            # Extract bin data from additional_info
+            bin_data = []
+            for _, row in dist_bins.iterrows():
+                info = json.loads(row["additional_info"])
+                bin_data.append(info)
+
+            # Sort by bin index
+            bin_data = sorted(bin_data, key=lambda x: x["bin_index"])
+
+            # Manually compute histogram with numpy for comparison
+            donor_values = donor_data[var_name].values
+            receiver_values = receiver_data[var_name].values
+
+            # Remove NaN values
+            donor_clean = donor_values[~np.isnan(donor_values)]
+            receiver_clean = receiver_values[~np.isnan(receiver_values)]
+
+            # Compute bin edges from combined data (same as in the function)
+            combined = np.concatenate([donor_clean, receiver_clean])
+            _, bin_edges = np.histogram(combined, bins=n_bins)
+
+            # Compute histograms
+            donor_heights_np, _ = np.histogram(
+                donor_clean, bins=bin_edges, density=True
+            )
+            receiver_heights_np, _ = np.histogram(
+                receiver_clean, bins=bin_edges, density=True
+            )
+
+            # Convert to percentages (same as in the function)
+            bin_widths = np.diff(bin_edges)
+            donor_heights_expected = donor_heights_np * bin_widths * 100
+            receiver_heights_expected = receiver_heights_np * bin_widths * 100
+
+            # Compare heights
+            for i, data in enumerate(bin_data):
+                assert data["bin_index"] == i
+                # Check bin edges
+                assert np.isclose(data["bin_start"], bin_edges[i], rtol=1e-10)
+                assert np.isclose(
+                    data["bin_end"], bin_edges[i + 1], rtol=1e-10
+                )
+                # Check heights match numpy's output
+                assert np.isclose(
+                    data["donor_height"], donor_heights_expected[i], rtol=1e-10
+                )
+                assert np.isclose(
+                    data["receiver_height"],
+                    receiver_heights_expected[i],
+                    rtol=1e-10,
+                )
+                # Check sample counts
+                assert data["n_samples_donor"] == len(donor_clean)
+                assert data["n_samples_receiver"] == len(receiver_clean)
+                assert data["total_bins"] == n_bins
+
+        finally:
+            Path(output_path).unlink()
+
+    def test_categorical_distribution_proportions(
+        self, sample_donor_receiver_data
+    ):
+        """Test that categorical distribution proportions are computed correctly."""
+        donor_data, receiver_data = sample_donor_receiver_data
+        var_name = "categorical_var"
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".csv"
+        ) as f:
+            output_path = f.name
+
+        try:
+            result = format_csv(
+                output_path=output_path,
+                donor_data=donor_data,
+                receiver_data=receiver_data,
+                imputed_variables=[var_name],
+                best_method_name="TestMethod",
+            )
+
+            # Get the distribution bins for categorical variable
+            cat_bins = result[
+                (result["type"] == "distribution_bins")
+                & (result["variable"] == var_name)
+                & (result["metric_name"] == "categorical_distribution")
+            ]
+
+            # Should have one row per category
+            assert len(cat_bins) == 3  # A, B, C
+
+            # Extract category data
+            category_data = {}
+            for _, row in cat_bins.iterrows():
+                info = json.loads(row["additional_info"])
+                category = info["category"]
+                category_data[category] = info
+
+            # Manually compute proportions
+            donor_counts = donor_data[var_name].value_counts()
+            receiver_counts = receiver_data[var_name].value_counts()
+
+            donor_total = donor_data[var_name].count()
+            receiver_total = receiver_data[var_name].count()
+
+            # Check each category
+            for category in ["A", "B", "C"]:
+                assert category in category_data
+                data = category_data[category]
+
+                # Expected proportions
+                expected_donor_prop = (
+                    donor_counts.get(category, 0) / donor_total
+                ) * 100
+                expected_receiver_prop = (
+                    receiver_counts.get(category, 0) / receiver_total
+                ) * 100
+
+                # Check proportions match
+                assert np.isclose(
+                    data["donor_proportion"], expected_donor_prop, rtol=1e-10
+                )
+                assert np.isclose(
+                    data["receiver_proportion"],
+                    expected_receiver_prop,
+                    rtol=1e-10,
+                )
+
+                # Check sample counts
+                assert data["n_samples_donor"] == donor_total
+                assert data["n_samples_receiver"] == receiver_total
+
+        finally:
+            Path(output_path).unlink()
+
+    def test_error_when_missing_data_for_imputed_variables(self):
+        """Test that error is raised when donor/receiver data is missing for histogram generation."""
+        imputed_variables = ["var1", "var2"]
+
+        with pytest.raises(
+            ValueError, match="donor_data and receiver_data are required"
+        ):
+            format_csv(
+                imputed_variables=imputed_variables,
+                donor_data=None,
+                receiver_data=None,
+            )
+
+        # Test with missing donor data
+        receiver_data = pd.DataFrame({"var1": [1, 2, 3], "var2": [4, 5, 6]})
+        with pytest.raises(
+            ValueError, match="donor_data and receiver_data are required"
+        ):
+            format_csv(
+                imputed_variables=imputed_variables,
+                donor_data=None,
+                receiver_data=receiver_data,
+            )
+
+    def test_error_when_variable_missing_from_datasets(self):
+        """Test that error is raised when imputed variable is not in datasets."""
+        donor_data = pd.DataFrame({"var1": [1, 2, 3], "var2": [4, 5, 6]})
+        receiver_data = pd.DataFrame({"var1": [7, 8, 9], "var2": [10, 11, 12]})
+        imputed_variables = ["var1", "var3"]  # var3 doesn't exist
+
+        with pytest.raises(
+            ValueError, match="missing from donor_data: \\['var3'\\]"
+        ):
+            format_csv(
+                donor_data=donor_data,
+                receiver_data=receiver_data,
+                imputed_variables=imputed_variables,
+            )
+
+        # Test with variable missing from receiver
+        receiver_data = pd.DataFrame({"var1": [7, 8, 9]})  # Missing var2
+        imputed_variables = ["var1", "var2"]
+
+        with pytest.raises(
+            ValueError, match="missing from receiver_data: \\['var2'\\]"
+        ):
+            format_csv(
+                donor_data=donor_data,
+                receiver_data=receiver_data,
+                imputed_variables=imputed_variables,
+            )
 
 
 class TestEdgeCases:

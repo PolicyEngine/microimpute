@@ -242,6 +242,9 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
         predictor_importance_df=predictor_importance_df,
         progressive_inclusion_df=progressive_inclusion_df,
         best_method_name=best_method_name,
+        donor_data=donor_data,
+        receiver_data=autoimpute_results.receiver_data,
+        imputed_variables=imputed_variables,
     )
 
     print(f"Formatted DataFrame shape: {formatted_df.shape}")
