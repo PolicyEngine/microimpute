@@ -4,7 +4,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from microimpute.utils.data import normalize_data, preprocess_data
+from microimpute.utils.data import (
+    log_transform_data,
+    normalize_data,
+    preprocess_data,
+    unlog_transform_predictions,
+)
 
 
 class TestNormalize:
@@ -170,9 +175,12 @@ class TestPreprocessDataWithNormalize:
             }
         )
 
-        result, norm_params = preprocess_data(
+        result, transform_params = preprocess_data(
             data, full_data=True, normalize=True
         )
+
+        # Extract normalization params from nested dict
+        norm_params = transform_params["normalization"]
 
         # Categorical columns should be unchanged
         pd.testing.assert_series_equal(result["race"], data["race"])
@@ -233,3 +241,662 @@ class TestPreprocessDataWithNormalize:
 
             # Column name should not contain decimal points
             assert "." not in col, f"Column {col} has decimal point in name"
+
+
+class TestLogTransform:
+    """Test the log_transform_data function."""
+
+    def test_log_transform_excludes_categorical_columns(self):
+        """Test that categorical columns are not log transformed."""
+        data = pd.DataFrame(
+            {
+                "numeric_col": [1.0, 2.5, 3.7, 4.2, 5.9],
+                "categorical_col": [1, 2, 3, 1, 2],
+                "boolean_col": [0, 1, 0, 1, 0],
+            }
+        )
+
+        log_data, log_params = log_transform_data(data)
+
+        # Categorical and boolean columns should be unchanged
+        pd.testing.assert_series_equal(
+            log_data["categorical_col"], data["categorical_col"]
+        )
+        pd.testing.assert_series_equal(
+            log_data["boolean_col"], data["boolean_col"]
+        )
+
+        # Numeric column should be log transformed
+        assert not np.allclose(
+            log_data["numeric_col"].values, data["numeric_col"].values
+        )
+
+        # Only numeric column should have log transform params
+        assert "numeric_col" in log_params
+        assert "categorical_col" not in log_params
+        assert "boolean_col" not in log_params
+
+    def test_log_transform_correctly_transforms_numeric_columns(self):
+        """Test that numeric columns are correctly log transformed."""
+        data = pd.DataFrame(
+            {
+                "value1": [
+                    1.5,
+                    2.7,
+                    3.2,
+                    4.8,
+                    5.1,
+                    6.3,
+                    7.9,
+                    8.4,
+                    9.6,
+                    10.2,
+                ],
+                "value2": [
+                    15.5,
+                    27.3,
+                    32.1,
+                    48.7,
+                    51.9,
+                    63.2,
+                    79.8,
+                    84.5,
+                    96.1,
+                    102.4,
+                ],
+                "category": [1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+            }
+        )
+
+        log_data, log_params = log_transform_data(data)
+
+        # Check that numeric columns are log transformed
+        expected_value1 = np.log(data["value1"].values)
+        expected_value2 = np.log(data["value2"].values)
+
+        np.testing.assert_array_almost_equal(
+            log_data["value1"].values, expected_value1
+        )
+        np.testing.assert_array_almost_equal(
+            log_data["value2"].values, expected_value2
+        )
+
+        # Check log transform params are stored
+        assert "value1" in log_params
+        assert "value2" in log_params
+
+    def test_log_transform_rejects_non_positive_values(self):
+        """Test that log transform raises error for non-positive values."""
+        data = pd.DataFrame(
+            {
+                "value": [1.0, 2.0, 0.0, 4.0, 5.0],  # Contains zero
+            }
+        )
+
+        with pytest.raises(ValueError, match="non-positive values"):
+            log_transform_data(data)
+
+        data_negative = pd.DataFrame(
+            {
+                "value": [1.0, 2.0, -1.0, 4.0, 5.0],  # Contains negative
+            }
+        )
+
+        with pytest.raises(ValueError, match="non-positive values"):
+            log_transform_data(data_negative)
+
+    def test_log_transform_returns_copy(self):
+        """Test that log transform returns a copy."""
+        data = pd.DataFrame(
+            {
+                "value": [1.5, 2.7, 3.2, 4.8, 5.1, 6.3, 7.9, 8.4, 9.6, 10.2],
+                "category": [1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+            }
+        )
+        original_data = data.copy()
+
+        log_data, _ = log_transform_data(data)
+
+        # Original data should be unchanged
+        pd.testing.assert_frame_equal(data, original_data)
+
+        # Log transformed data should be different
+        assert not log_data["value"].equals(data["value"])
+
+    def test_log_transform_with_no_numeric_columns(self):
+        """Test log transform with only categorical columns."""
+        data = pd.DataFrame({"cat1": [1, 2, 3, 1, 2], "cat2": [0, 1, 0, 1, 0]})
+
+        log_data, log_params = log_transform_data(data)
+
+        # Data should be unchanged
+        pd.testing.assert_frame_equal(log_data, data)
+
+        # No log transform params should be returned
+        assert log_params == {}
+
+
+class TestUnlogTransformPredictions:
+    """Test the unlog_transform_predictions function."""
+
+    def test_unlog_transform_reverses_log_transform(self):
+        """Test that unlog transform correctly reverses log transform."""
+        original = pd.DataFrame(
+            {
+                "value1": [
+                    1.5,
+                    2.7,
+                    3.2,
+                    4.8,
+                    5.1,
+                    6.3,
+                    7.9,
+                    8.4,
+                    9.6,
+                    10.2,
+                ],
+                "value2": [
+                    15.5,
+                    27.3,
+                    32.1,
+                    48.7,
+                    51.9,
+                    63.2,
+                    79.8,
+                    84.5,
+                    96.1,
+                    102.4,
+                ],
+            }
+        )
+
+        # Apply log transform
+        log_data, log_params = log_transform_data(original)
+
+        # Create imputations dict (simulating prediction output)
+        imputations = {0.5: log_data}
+
+        # Reverse log transform
+        reversed_data = unlog_transform_predictions(imputations, log_params)
+
+        # Should match original data
+        pd.testing.assert_frame_equal(
+            reversed_data[0.5], original, check_exact=False, atol=1e-10
+        )
+
+    def test_unlog_transform_raises_error_for_missing_params(self):
+        """Test that unlog transform raises error when params are missing."""
+        imputations = {
+            0.5: pd.DataFrame(
+                {
+                    "value1": [0.0, 0.69, 1.10],
+                    "value2": [2.3, 3.0, 3.9],
+                }
+            )
+        }
+
+        # Only have params for value1, not value2
+        log_params = {"value1": {}}
+
+        with pytest.raises(
+            ValueError, match="Missing log transformation parameters"
+        ):
+            unlog_transform_predictions(imputations, log_params)
+
+
+class TestPreprocessDataWithLogTransform:
+    """Test that preprocess_data correctly uses log transformation."""
+
+    def test_preprocess_data_excludes_categoricals_from_log_transform(self):
+        """Test that preprocess_data doesn't log transform categorical columns."""
+        data = pd.DataFrame(
+            {
+                "age": [
+                    25.3,
+                    30.7,
+                    35.2,
+                    40.9,
+                    45.1,
+                    50.6,
+                    55.8,
+                    60.3,
+                    65.7,
+                    70.2,
+                ],
+                "race": [1, 2, 3, 1, 2, 3, 1, 2, 3, 1],
+                "is_female": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+                "income": [
+                    50123.45,
+                    60987.23,
+                    70456.78,
+                    80234.56,
+                    90876.12,
+                    100543.89,
+                    110234.67,
+                    120789.34,
+                    130456.78,
+                    140987.23,
+                ],
+            }
+        )
+
+        result, transform_params = preprocess_data(
+            data, full_data=True, log_transform=True
+        )
+
+        # Extract log transform params from nested dict
+        log_params = transform_params["log_transform"]
+
+        # Categorical columns should be unchanged
+        pd.testing.assert_series_equal(result["race"], data["race"])
+        pd.testing.assert_series_equal(result["is_female"], data["is_female"])
+
+        # Numeric columns should be log transformed
+        assert not np.allclose(result["age"].values, data["age"].values)
+        assert not np.allclose(result["income"].values, data["income"].values)
+
+        # Only numeric columns in log_params
+        assert "age" in log_params
+        assert "income" in log_params
+        assert "race" not in log_params
+        assert "is_female" not in log_params
+
+    def test_preprocess_data_raises_error_for_both_normalize_and_log(
+        self,
+    ):
+        """Test that preprocess_data raises error if both normalize and log_transform are True."""
+        data = pd.DataFrame(
+            {
+                "value1": [1.5, 2.7, 3.2, 4.8, 5.1, 6.3, 7.9, 8.4, 9.6, 10.2],
+                "value2": [
+                    15.5,
+                    27.3,
+                    32.1,
+                    48.7,
+                    51.9,
+                    63.2,
+                    79.8,
+                    84.5,
+                    96.1,
+                    102.4,
+                ],
+            }
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="Cannot apply both normalization and log transformation",
+        ):
+            preprocess_data(
+                data, full_data=True, normalize=True, log_transform=True
+            )
+
+    def test_preprocess_data_with_log_transform_and_split(self):
+        """Test that preprocess_data correctly splits and log transforms data."""
+        data = pd.DataFrame(
+            {
+                "value1": [
+                    1.5,
+                    2.7,
+                    3.2,
+                    4.8,
+                    5.1,
+                    6.3,
+                    7.9,
+                    8.4,
+                    9.6,
+                    10.2,
+                    11.5,
+                    12.8,
+                    13.3,
+                    14.9,
+                    15.2,
+                ],
+                "value2": [
+                    15.5,
+                    27.3,
+                    32.1,
+                    48.7,
+                    51.9,
+                    63.2,
+                    79.8,
+                    84.5,
+                    96.1,
+                    102.4,
+                    115.7,
+                    128.9,
+                    133.6,
+                    149.2,
+                    152.8,
+                ],
+            }
+        )
+
+        X_train, X_test, transform_params = preprocess_data(
+            data,
+            full_data=False,
+            test_size=0.2,
+            train_size=None,
+            random_state=42,
+            log_transform=True,
+        )
+
+        # Extract log transform params from nested dict
+        log_params = transform_params["log_transform"]
+
+        # Check that data is split
+        assert len(X_train) == 12
+        assert len(X_test) == 3
+
+        # Check that log params are returned
+        assert "value1" in log_params
+        assert "value2" in log_params
+
+        # Check that values are log transformed (compare to original)
+        assert not any(X_train["value1"].isin(data["value1"]))
+        assert not any(X_test["value1"].isin(data["value1"]))
+
+
+class TestPreprocessDataWithSelectiveTransformation:
+    """Test preprocess_data with selective column transformation."""
+
+    def test_normalize_only_specified_columns(self):
+        """Test that only specified columns are normalized."""
+        data = pd.DataFrame(
+            {
+                "age": [
+                    23,
+                    30,
+                    35,
+                    46,
+                    45,
+                    52,
+                    55,
+                    61,
+                    68,
+                    72,
+                ],
+                "income": [
+                    50123.45,
+                    60987.23,
+                    70456.78,
+                    80234.56,
+                    90876.12,
+                    100543.89,
+                    110234.67,
+                    120789.34,
+                    130456.78,
+                    140987.23,
+                ],
+                "wealth": [
+                    150000.5,
+                    250000.3,
+                    350000.7,
+                    450000.2,
+                    550000.9,
+                    650000.1,
+                    750000.4,
+                    850000.8,
+                    950000.6,
+                    1050000.3,
+                ],
+            }
+        )
+
+        # Only normalize income column
+        result, transform_params = preprocess_data(
+            data, full_data=True, normalize=["income"]
+        )
+
+        # Extract normalization params from nested dict
+        norm_params = transform_params["normalization"]
+
+        # Income should be normalized
+        assert not np.allclose(result["income"].values, data["income"].values)
+        assert "income" in norm_params
+
+        # Age and wealth should NOT be normalized
+        pd.testing.assert_series_equal(result["age"], data["age"])
+        pd.testing.assert_series_equal(result["wealth"], data["wealth"])
+        assert "age" not in norm_params
+        assert "wealth" not in norm_params
+
+    def test_log_transform_only_specified_columns(self):
+        """Test that only specified columns are log transformed."""
+        data = pd.DataFrame(
+            {
+                "age": [
+                    23,
+                    30,
+                    35,
+                    46,
+                    45,
+                    52,
+                    55,
+                    61,
+                    68,
+                    72,
+                ],
+                "income": [
+                    50123.45,
+                    60987.23,
+                    70456.78,
+                    80234.56,
+                    90876.12,
+                    100543.89,
+                    110234.67,
+                    120789.34,
+                    130456.78,
+                    140987.23,
+                ],
+                "wealth": [
+                    150000.5,
+                    250000.3,
+                    350000.7,
+                    450000.2,
+                    550000.9,
+                    650000.1,
+                    750000.4,
+                    850000.8,
+                    950000.6,
+                    1050000.3,
+                ],
+            }
+        )
+
+        # Only log transform income column
+        result, transform_params = preprocess_data(
+            data, full_data=True, log_transform=["income"]
+        )
+
+        # Extract log transform params from nested dict
+        log_params = transform_params["log_transform"]
+
+        # Income should be log transformed
+        assert not np.allclose(result["income"].values, data["income"].values)
+        assert "income" in log_params
+
+        # Age and wealth should NOT be transformed
+        pd.testing.assert_series_equal(result["age"], data["age"])
+        pd.testing.assert_series_equal(result["wealth"], data["wealth"])
+        assert "age" not in log_params
+        assert "wealth" not in log_params
+
+    def test_normalize_multiple_specified_columns(self):
+        """Test normalizing multiple specified columns."""
+        data = pd.DataFrame(
+            {
+                "age": [
+                    23,
+                    30,
+                    35,
+                    46,
+                    45,
+                    52,
+                    55,
+                    61,
+                    68,
+                    72,
+                ],
+                "income": [
+                    50123.45,
+                    60987.23,
+                    70456.78,
+                    80234.56,
+                    90876.12,
+                    100543.89,
+                    110234.67,
+                    120789.34,
+                    130456.78,
+                    140987.23,
+                ],
+                "wealth": [
+                    150000.5,
+                    250000.3,
+                    350000.7,
+                    450000.2,
+                    550000.9,
+                    650000.1,
+                    750000.4,
+                    850000.8,
+                    950000.6,
+                    1050000.3,
+                ],
+            }
+        )
+
+        # Normalize income and wealth, but not age
+        result, transform_params = preprocess_data(
+            data, full_data=True, normalize=["income", "wealth"]
+        )
+
+        # Extract normalization params from nested dict
+        norm_params = transform_params["normalization"]
+
+        # Income and wealth should be normalized
+        assert not np.allclose(result["income"].values, data["income"].values)
+        assert not np.allclose(result["wealth"].values, data["wealth"].values)
+        assert "income" in norm_params
+        assert "wealth" in norm_params
+
+        # Age should NOT be normalized
+        pd.testing.assert_series_equal(result["age"], data["age"])
+        assert "age" not in norm_params
+
+    def test_error_on_nonexistent_column_normalize(self):
+        """Test that error is raised when specifying non-existent column."""
+        data = pd.DataFrame(
+            {
+                "age": [25.3, 30.7, 35.2, 40.9, 45.1],
+                "income": [50123.45, 60987.23, 70456.78, 80234.56, 90876.12],
+            }
+        )
+
+        with pytest.raises(ValueError, match="not found in data"):
+            preprocess_data(
+                data, full_data=True, normalize=["income", "nonexistent"]
+            )
+
+    def test_error_on_nonexistent_column_log_transform(self):
+        """Test that error is raised when specifying non-existent column."""
+        data = pd.DataFrame(
+            {
+                "age": [25.3, 30.7, 35.2, 40.9, 45.1],
+                "income": [50123.45, 60987.23, 70456.78, 80234.56, 90876.12],
+            }
+        )
+
+        with pytest.raises(ValueError, match="not found in data"):
+            preprocess_data(
+                data, full_data=True, log_transform=["income", "nonexistent"]
+            )
+
+    def test_error_on_overlapping_columns(self):
+        """Test error when both normalize and log_transform target same columns."""
+        data = pd.DataFrame(
+            {
+                "age": [25.3, 30.7, 35.2, 40.9, 45.1],
+                "income": [50123.45, 60987.23, 70456.78, 80234.56, 90876.12],
+            }
+        )
+
+        # Error when same column is in both lists
+        with pytest.raises(
+            ValueError, match="Cannot apply both normalization and log"
+        ):
+            preprocess_data(
+                data,
+                full_data=True,
+                normalize=["income", "age"],
+                log_transform=["age"],
+            )
+
+    def test_both_transformations_on_different_columns(self):
+        """Test that both transformations work when applied to different columns."""
+        data = pd.DataFrame(
+            {
+                "age": [
+                    23,
+                    30,
+                    35,
+                    46,
+                    45,
+                    52,
+                    55,
+                    61,
+                    68,
+                    72,
+                ],
+                "income": [
+                    50123.45,
+                    60987.23,
+                    70456.78,
+                    80234.56,
+                    90876.12,
+                    100543.89,
+                    110234.67,
+                    120789.34,
+                    130456.78,
+                    140987.23,
+                ],
+                "wealth": [
+                    150000.5,
+                    250000.3,
+                    350000.7,
+                    450000.2,
+                    550000.9,
+                    650000.1,
+                    750000.4,
+                    850000.8,
+                    950000.6,
+                    1050000.3,
+                ],
+            }
+        )
+
+        # Normalize age, log transform income, leave wealth unchanged
+        result, transform_params = preprocess_data(
+            data,
+            full_data=True,
+            normalize=["age"],
+            log_transform=["income"],
+        )
+
+        # Extract both parameter dicts
+        norm_params = transform_params["normalization"]
+        log_params = transform_params["log_transform"]
+
+        # Age should be normalized
+        assert not np.allclose(result["age"].values, data["age"].values)
+        assert "age" in norm_params
+        assert "age" not in log_params
+
+        # Income should be log transformed
+        assert not np.allclose(result["income"].values, data["income"].values)
+        assert "income" in log_params
+        assert "income" not in norm_params
+
+        # Wealth should be unchanged
+        pd.testing.assert_series_equal(result["wealth"], data["wealth"])
+        assert "wealth" not in norm_params
+        assert "wealth" not in log_params

@@ -1,0 +1,5 @@
+- bump: minor
+  changes:
+    added:
+    - Distribution comparison histogram of donor and receiver datasets for imputed variables (to dashboard).
+    - Log transformation option for numerical variables in data preprocessing.

@@ -5,7 +5,279 @@ Utility function to format various imputation outputs into a unified CSV format 
 import json
 from typing import Any, Dict, List, Optional, Union
 
+import numpy as np
 import pandas as pd
+
+
+def _compute_histogram_data(
+    donor_values: np.ndarray,
+    receiver_values: np.ndarray,
+    variable_name: str,
+    n_bins: int = 30,
+) -> Dict[str, Union[List[float], str, int]]:
+    """
+    Compute histogram bin data for numerical variables.
+
+    Parameters
+    ----------
+    donor_values : np.ndarray
+        Original donor dataset values
+    receiver_values : np.ndarray
+        Imputed receiver dataset values
+    variable_name : str
+        Name of the variable being analyzed
+    n_bins : int
+        Number of histogram bins (default: 30)
+
+    Returns
+    -------
+    Dict containing bin edges and heights for both distributions
+    """
+    # Remove NaN values
+    donor_clean = donor_values[~np.isnan(donor_values)]
+    receiver_clean = receiver_values[~np.isnan(receiver_values)]
+
+    # Determine bin edges based on combined data range using numpy's auto algorithm
+    combined = np.concatenate([donor_clean, receiver_clean])
+    _, bin_edges = np.histogram(combined, bins=n_bins)
+
+    # Compute histogram heights (normalized as densities)
+    donor_heights, _ = np.histogram(donor_clean, bins=bin_edges, density=True)
+    receiver_heights, _ = np.histogram(
+        receiver_clean, bins=bin_edges, density=True
+    )
+
+    # Convert to percentages for easier interpretation
+    # Multiply by bin width to get probability mass per bin
+    bin_widths = np.diff(bin_edges)
+    donor_heights = (donor_heights * bin_widths * 100).tolist()
+    receiver_heights = (receiver_heights * bin_widths * 100).tolist()
+
+    return {
+        "variable": variable_name,
+        "bin_edges": bin_edges.tolist(),
+        "donor_heights": donor_heights,
+        "receiver_heights": receiver_heights,
+        "n_samples_donor": len(donor_clean),
+        "n_samples_receiver": len(receiver_clean),
+        "n_bins": n_bins,
+    }
+
+
+def _compute_categorical_distribution(
+    donor_values: pd.Series,
+    receiver_values: pd.Series,
+    variable_name: str,
+    max_categories: int = 20,
+) -> Dict[str, Union[List, str, bool]]:
+    """
+    Compute distribution data for categorical variables.
+
+    Parameters
+    ----------
+    donor_values : pd.Series
+        Original donor dataset values
+    receiver_values : pd.Series
+        Imputed receiver dataset values
+    variable_name : str
+        Name of the variable
+    max_categories : int
+        Maximum number of categories to include (others grouped as "Other")
+
+    Returns
+    -------
+    Dict containing category labels and proportions
+    """
+    # Get value counts
+    donor_counts = donor_values.value_counts()
+    receiver_counts = receiver_values.value_counts()
+
+    # Get all unique categories
+    all_categories = list(set(donor_counts.index) | set(receiver_counts.index))
+
+    # If too many categories, keep top ones and group rest as "Other"
+    if len(all_categories) > max_categories:
+        # Get top categories by combined frequency
+        combined_counts = donor_counts.add(receiver_counts, fill_value=0)
+        top_categories = combined_counts.nlargest(
+            max_categories - 1
+        ).index.tolist()
+
+        # Calculate "Other" category
+        donor_other = donor_counts[
+            ~donor_counts.index.isin(top_categories)
+        ].sum()
+        receiver_other = receiver_counts[
+            ~receiver_counts.index.isin(top_categories)
+        ].sum()
+
+        categories = top_categories + ["Other"]
+
+        # Get proportions
+        donor_props = [donor_counts.get(cat, 0) for cat in top_categories]
+        donor_props.append(donor_other)
+        donor_props = (
+            pd.Series(donor_props) / donor_values.count() * 100
+        ).tolist()
+
+        receiver_props = [
+            receiver_counts.get(cat, 0) for cat in top_categories
+        ]
+        receiver_props.append(receiver_other)
+        receiver_props = (
+            pd.Series(receiver_props) / receiver_values.count() * 100
+        ).tolist()
+    else:
+        categories = sorted(all_categories)
+        donor_props = [
+            (donor_counts.get(cat, 0) / donor_values.count() * 100)
+            for cat in categories
+        ]
+        receiver_props = [
+            (receiver_counts.get(cat, 0) / receiver_values.count() * 100)
+            for cat in categories
+        ]
+
+    return {
+        "variable": variable_name,
+        "categories": categories,
+        "donor_proportions": donor_props,
+        "receiver_proportions": receiver_props,
+        "n_samples_donor": int(donor_values.count()),
+        "n_samples_receiver": int(receiver_values.count()),
+        "is_categorical": True,
+    }
+
+
+def _format_histogram_rows(
+    histogram_data: Dict[str, Union[List, str, int, bool]], method: str
+) -> List[Dict]:
+    """
+    Convert histogram data to CSV row format.
+
+    Parameters
+    ----------
+    histogram_data : Dict
+        Output from _compute_histogram_data or _compute_categorical_distribution
+    method : str
+        Imputation method name
+
+    Returns
+    -------
+    List of dictionaries ready for CSV formatting
+    """
+    rows = []
+
+    if histogram_data.get("is_categorical", False):
+        # Categorical variable - store as distribution_bins type
+        for i, category in enumerate(histogram_data["categories"]):
+            rows.append(
+                {
+                    "type": "distribution_bins",
+                    "method": method,
+                    "variable": histogram_data["variable"],
+                    "quantile": "N/A",
+                    "metric_name": "categorical_distribution",
+                    "metric_value": None,  # Not used for histograms
+                    "split": "full",
+                    "additional_info": json.dumps(
+                        {
+                            "category": str(category),
+                            "donor_proportion": float(
+                                histogram_data["donor_proportions"][i]
+                            ),
+                            "receiver_proportion": float(
+                                histogram_data["receiver_proportions"][i]
+                            ),
+                            "n_samples_donor": int(
+                                histogram_data["n_samples_donor"]
+                            ),
+                            "n_samples_receiver": int(
+                                histogram_data["n_samples_receiver"]
+                            ),
+                        }
+                    ),
+                }
+            )
+    else:
+        # Numerical variable - store bin data
+        n_bins = len(histogram_data["donor_heights"])
+        for i in range(n_bins):
+            rows.append(
+                {
+                    "type": "distribution_bins",
+                    "method": method,
+                    "variable": histogram_data["variable"],
+                    "quantile": "N/A",
+                    "metric_name": "histogram_distribution",
+                    "metric_value": None,  # Not used for histograms
+                    "split": "full",
+                    "additional_info": json.dumps(
+                        {
+                            "bin_index": int(i),
+                            "bin_start": float(histogram_data["bin_edges"][i]),
+                            "bin_end": float(
+                                histogram_data["bin_edges"][i + 1]
+                            ),
+                            "donor_height": float(
+                                histogram_data["donor_heights"][i]
+                            ),
+                            "receiver_height": float(
+                                histogram_data["receiver_heights"][i]
+                            ),
+                            "n_samples_donor": int(
+                                histogram_data["n_samples_donor"]
+                            ),
+                            "n_samples_receiver": int(
+                                histogram_data["n_samples_receiver"]
+                            ),
+                            "total_bins": int(n_bins),
+                        }
+                    ),
+                }
+            )
+
+    return rows
+
+
+def _validate_imputed_variables(
+    donor_data: pd.DataFrame,
+    receiver_data: pd.DataFrame,
+    imputed_variables: List[str],
+) -> None:
+    """
+    Validate that all imputed variables exist in both datasets.
+
+    Parameters
+    ----------
+    donor_data : pd.DataFrame
+        Original donor dataset
+    receiver_data : pd.DataFrame
+        Imputed receiver dataset
+    imputed_variables : List[str]
+        List of variable names that were imputed
+
+    Raises
+    ------
+    ValueError
+        If any imputed variable is missing from either dataset
+    """
+    missing_in_donor = [
+        var for var in imputed_variables if var not in donor_data.columns
+    ]
+    missing_in_receiver = [
+        var for var in imputed_variables if var not in receiver_data.columns
+    ]
+
+    if missing_in_donor:
+        raise ValueError(
+            f"The following imputed variables are missing from donor_data: {missing_in_donor}"
+        )
+
+    if missing_in_receiver:
+        raise ValueError(
+            f"The following imputed variables are missing from receiver_data: {missing_in_receiver}"
+        )
 
 
 def format_csv(
@@ -17,6 +289,10 @@ def format_csv(
     predictor_importance_df: Optional[pd.DataFrame] = None,
     progressive_inclusion_df: Optional[pd.DataFrame] = None,
     best_method_name: Optional[str] = None,
+    donor_data: Optional[pd.DataFrame] = None,
+    receiver_data: Optional[pd.DataFrame] = None,
+    imputed_variables: Optional[List[str]] = None,
+    n_histogram_bins: int = 30,
 ) -> pd.DataFrame:
     """
     Format various imputation outputs into a unified long-format CSV for dashboard visualization.
@@ -54,11 +330,30 @@ def format_csv(
     best_method_name : str, optional
         Name of the best method to append "_best_method" suffix to.
 
+    donor_data : pd.DataFrame, optional
+        Original donor dataset for histogram generation. Required if imputed_variables is provided.
+
+    receiver_data : pd.DataFrame, optional
+        Imputed receiver dataset for histogram generation. Required if imputed_variables is provided.
+
+    imputed_variables : List[str], optional
+        List of variable names that were imputed. When provided with donor_data and receiver_data,
+        histogram bin data will be included in the CSV for distribution visualization.
+
+    n_histogram_bins : int, default 30
+        Number of bins to use for numerical variable histograms.
+
     Returns
     -------
     pd.DataFrame
         Unified long-format DataFrame with columns:
         ['type', 'method', 'variable', 'quantile', 'metric_name', 'metric_value', 'split', 'additional_info']
+
+    Raises
+    ------
+    ValueError
+        If imputed_variables is provided but donor_data or receiver_data is missing.
+        If any imputed variable is not present in both donor_data and receiver_data.
     """
     rows = []
 
@@ -338,6 +633,46 @@ def format_csv(
                         ),
                     }
                 )
+
+    # 7. Process histogram distribution data for imputed variables
+    if imputed_variables is not None:
+        # Validate inputs
+        if donor_data is None or receiver_data is None:
+            raise ValueError(
+                "donor_data and receiver_data are required when imputed_variables is provided"
+            )
+
+        # Validate that all imputed variables exist in both datasets
+        _validate_imputed_variables(
+            donor_data, receiver_data, imputed_variables
+        )
+
+        # Generate histogram data for each imputed variable
+        for var in imputed_variables:
+            # Check if variable is categorical or numerical
+            if donor_data[
+                var
+            ].dtype == "object" or pd.api.types.is_categorical_dtype(
+                donor_data[var]
+            ):
+                # Categorical variable
+                hist_data = _compute_categorical_distribution(
+                    donor_data[var], receiver_data[var], var
+                )
+            else:
+                # Numerical variable
+                hist_data = _compute_histogram_data(
+                    donor_data[var].values,
+                    receiver_data[var].values,
+                    var,
+                    n_bins=n_histogram_bins,
+                )
+
+            # Format histogram rows and add to main rows list
+            histogram_rows = _format_histogram_rows(
+                hist_data, best_method_name if best_method_name else "N/A"
+            )
+            rows.extend(histogram_rows)
 
     # Create DataFrame from rows
     if not rows:

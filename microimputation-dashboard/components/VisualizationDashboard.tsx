@@ -466,8 +466,8 @@ export default function VisualizationDashboard({
           Assessment of the quality of the imputations produced by the best-performing (or the only selected) model
         </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-          {/* Imputed Variables Section */}
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-6">
+          {/* Imputed Variables Section - 1/4 width */}
           <div className="border border-gray-200 rounded-md p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
               Imputed Variables
@@ -477,7 +477,7 @@ export default function VisualizationDashboard({
                 <p className="text-xs text-gray-600 mb-2">
                   {dataAnalysis.imputedVars.length} variable{dataAnalysis.imputedVars.length !== 1 ? 's' : ''} imputed
                 </p>
-                <ul className="space-y-1 max-h-40 overflow-y-auto">
+                <ul className={`space-y-1 ${dataAnalysis.imputedVars.length > 3 ? 'max-h-32 overflow-y-auto' : ''}`}>
                   {dataAnalysis.imputedVars.map((variable) => (
                     <li key={variable} className="text-sm font-mono text-gray-900 bg-gray-50 px-2 py-1 rounded">
                       {variable}
@@ -492,7 +492,7 @@ export default function VisualizationDashboard({
             )}
           </div>
 
-          {/* Best Model Section */}
+          {/* Best Model Section - 1/4 width */}
           <div className="border border-gray-200 rounded-md p-4">
             <h3 className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
               {dataAnalysis.allMethods.length === 1 ? 'Imputation Model' : 'Best Performing Model'}
@@ -525,6 +525,87 @@ export default function VisualizationDashboard({
                 No model information available in the CSV
               </p>
             )}
+          </div>
+
+          {/* Metrics Section - 1/2 width */}
+          <div className="lg:col-span-2 border border-gray-200 rounded-md p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
+              Performance Metrics
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              {/* Average Test Losses */}
+              {(() => {
+                const benchmarkData = data.filter(d => d.type === 'benchmark_loss' && d.method === dataAnalysis.bestModel && d.split === 'test');
+
+                // Calculate avg quantile loss
+                const quantileLossData = benchmarkData.filter(
+                  d => d.metric_name === 'quantile_loss' &&
+                       typeof d.quantile === 'number' &&
+                       d.metric_value !== null
+                );
+                const avgQuantileLoss = quantileLossData.length > 0
+                  ? quantileLossData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / quantileLossData.length
+                  : null;
+
+                // Calculate avg log loss
+                const logLossData = benchmarkData.filter(
+                  d => d.metric_name === 'log_loss' &&
+                       d.metric_value !== null
+                );
+                const avgLogLoss = logLossData.length > 0
+                  ? logLossData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / logLossData.length
+                  : null;
+
+                // Calculate avg Wasserstein distance
+                const wassersteinData = data.filter(
+                  d => d.type === 'distribution_distance' &&
+                       d.metric_name === 'wasserstein_distance' &&
+                       d.metric_value !== null
+                );
+                const avgWasserstein = wassersteinData.length > 0
+                  ? wassersteinData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / wassersteinData.length
+                  : null;
+
+                // Calculate avg KL divergence
+                const klData = data.filter(
+                  d => d.type === 'distribution_distance' &&
+                       d.metric_name === 'kl_divergence' &&
+                       d.metric_value !== null
+                );
+                const avgKL = klData.length > 0
+                  ? klData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / klData.length
+                  : null;
+
+                return (
+                  <>
+                    {avgQuantileLoss !== null && (
+                      <div className="bg-purple-50 p-3 rounded">
+                        <p className="text-xs text-gray-600 mb-1">Avg. test quantile loss</p>
+                        <p className="text-lg font-bold text-gray-900">{avgQuantileLoss.toFixed(4)}</p>
+                      </div>
+                    )}
+                    {avgLogLoss !== null && (
+                      <div className="bg-purple-50 p-3 rounded">
+                        <p className="text-xs text-gray-600 mb-1">Avg. test log loss</p>
+                        <p className="text-lg font-bold text-gray-900">{avgLogLoss.toFixed(4)}</p>
+                      </div>
+                    )}
+                    {avgWasserstein !== null && (
+                      <div className="bg-orange-50 p-3 rounded">
+                        <p className="text-xs text-gray-600 mb-1">Avg. wasserstein distance</p>
+                        <p className="text-lg font-bold text-gray-900">{avgWasserstein.toFixed(4)}</p>
+                      </div>
+                    )}
+                    {avgKL !== null && (
+                      <div className="bg-orange-50 p-3 rounded">
+                        <p className="text-xs text-gray-600 mb-1">Avg. KL divergence</p>
+                        <p className="text-lg font-bold text-gray-900">{avgKL.toFixed(4)}</p>
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
+            </div>
           </div>
         </div>
       </div>
