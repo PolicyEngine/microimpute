@@ -219,3 +219,10 @@
     - Links to dashboard in README.md and documentation.
     - First dashboard visualizations.
   date: 2025-10-24 16:06:59
+- bump: minor
+  changes:
+    added:
+    - Distribution comparison histogram of donor and receiver datasets for imputed
+      variables (to dashboard).
+    - Log transformation option for numerical variables in data preprocessing.
+  date: 2025-11-06 04:39:56

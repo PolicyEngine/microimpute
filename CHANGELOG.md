@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), 
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.0] - 2025-11-06 04:39:56
+
+### Added
+
+- Distribution comparison histogram of donor and receiver datasets for imputed variables (to dashboard).
+- Log transformation option for numerical variables in data preprocessing.
+
 ## [1.7.0] - 2025-10-24 16:06:59
 
 ### Added
@@ -258,6 +265,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[1.8.0]: https://github.com/PolicyEngine/microimpute/compare/1.7.0...1.8.0
 [1.7.0]: https://github.com/PolicyEngine/microimpute/compare/1.6.1...1.7.0
 [1.6.1]: https://github.com/PolicyEngine/microimpute/compare/1.6.0...1.6.1
 [1.6.0]: https://github.com/PolicyEngine/microimpute/compare/1.5.2...1.6.0
