@@ -226,3 +226,9 @@
       variables (to dashboard).
     - Log transformation option for numerical variables in data preprocessing.
   date: 2025-11-06 04:39:56
+- bump: patch
+  changes:
+    fixed:
+    - Fixed pyproject.toml to avoid dependency versions updating with package again,
+      again.
+  date: 2025-11-06 04:49:24
