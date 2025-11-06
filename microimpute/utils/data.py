@@ -1,18 +1,20 @@
 """Data preparation and transformation utilities
 
 This module provides comprehensive data preparation functions for imputation workflows,
-including data splitting, normalization, unnormalization, and categorical variable handling.
+including data splitting, normalization, log transformation, and categorical variable handling.
 These utilities ensure consistent data preprocessing across different imputation methods.
 
 Key functions:
-    - preprocess_data: split and optionally normalize data for training/testing
+    - preprocess_data: split and optionally normalize or log-transform data for training/testing
     - unnormalize_predictions: convert normalized predictions back to original scale
+    - unlog_transform_predictions: convert log-transformed predictions back to original scale
     - Handle categorical variables through one-hot encoding
 """
 
 import logging
-from typing import Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
+import numpy as np
 import pandas as pd
 from pydantic import validate_call
 from sklearn.model_selection import train_test_split
@@ -30,6 +32,7 @@ logger = logging.getLogger(__name__)
 @validate_call(config=VALIDATE_CONFIG)
 def normalize_data(
     data: pd.DataFrame,
+    columns_to_normalize: Optional[List[str]] = None,
 ) -> Tuple[pd.DataFrame, dict]:
     """Normalize numeric columns in a DataFrame.
 
@@ -38,6 +41,8 @@ def normalize_data(
 
     Args:
         data: DataFrame to normalize.
+        columns_to_normalize: Optional list of specific columns to normalize.
+            If None, all numeric columns will be normalized.
 
     Returns:
         Tuple of (normalized_data, normalization_params)
@@ -45,6 +50,7 @@ def normalize_data(
         to {"mean": float, "std": float}.
 
     Raises:
+        ValueError: If specified columns don't exist in data.
         RuntimeError: If normalization fails.
     """
     logger.debug("Normalizing data")
@@ -64,10 +70,39 @@ def normalize_data(
                 f"Excluding categorical columns from normalization: {categorical_cols}"
             )
 
-        # Get only numeric columns for normalization
-        numeric_cols = [
-            col for col in data.columns if col not in categorical_cols
-        ]
+        # Determine which columns to normalize
+        if columns_to_normalize is not None:
+            # Validate that specified columns exist
+            missing_cols = set(columns_to_normalize) - set(data.columns)
+            if missing_cols:
+                error_msg = (
+                    f"Columns specified for normalization not found in "
+                    f"data: {missing_cols}"
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+            # Only normalize specified columns that are not categorical
+            numeric_cols = [
+                col
+                for col in columns_to_normalize
+                if col not in categorical_cols
+            ]
+
+            # Warn if user specified categorical columns
+            specified_categorical = [
+                col for col in columns_to_normalize if col in categorical_cols
+            ]
+            if specified_categorical:
+                logger.warning(
+                    f"Skipping normalization for categorical columns: "
+                    f"{specified_categorical}"
+                )
+        else:
+            # Get all numeric columns for normalization
+            numeric_cols = [
+                col for col in data.columns if col not in categorical_cols
+            ]
 
         if not numeric_cols:
             logger.warning("No numeric columns found for normalization")
@@ -107,13 +142,128 @@ def normalize_data(
 
 
 @validate_call(config=VALIDATE_CONFIG)
+def log_transform_data(
+    data: pd.DataFrame,
+    columns_to_transform: Optional[List[str]] = None,
+) -> Tuple[pd.DataFrame, dict]:
+    """Apply log transformation to numeric columns in a DataFrame.
+
+    Categorical and boolean columns are excluded from transformation
+    to prevent issues when they are later encoded as dummy variables.
+
+    Args:
+        data: DataFrame to log transform.
+        columns_to_transform: Optional list of specific columns to
+            log transform. If None, all numeric columns will be transformed.
+
+    Returns:
+        Tuple of (log_transformed_data, log_transform_params)
+        where log_transform_params is a dict mapping column names
+        to {} for reversing the transformation.
+
+    Raises:
+        ValueError: If data contains non-positive values in numeric columns
+            or if specified columns don't exist in data.
+        RuntimeError: If log transformation fails.
+    """
+    logger.debug("Applying log transformation to data")
+    try:
+        from microimpute.utils.type_handling import VariableTypeDetector
+
+        # Identify categorical columns to exclude from log transformation
+        detector = VariableTypeDetector()
+        categorical_cols = []
+        for col in data.columns:
+            var_type, _ = detector.categorize_variable(data[col], col, logger)
+            if var_type in ["categorical", "numeric_categorical", "bool"]:
+                categorical_cols.append(col)
+
+        if categorical_cols:
+            logger.info(
+                f"Excluding categorical columns from log transformation: {categorical_cols}"
+            )
+
+        # Determine which columns to transform
+        if columns_to_transform is not None:
+            # Validate that specified columns exist
+            missing_cols = set(columns_to_transform) - set(data.columns)
+            if missing_cols:
+                error_msg = (
+                    f"Columns specified for log transformation not found "
+                    f"in data: {missing_cols}"
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+            # Only transform specified columns that are not categorical
+            numeric_cols = [
+                col
+                for col in columns_to_transform
+                if col not in categorical_cols
+            ]
+
+            # Warn if user specified categorical columns
+            specified_categorical = [
+                col for col in columns_to_transform if col in categorical_cols
+            ]
+            if specified_categorical:
+                logger.warning(
+                    f"Skipping log transformation for categorical "
+                    f"columns: {specified_categorical}"
+                )
+        else:
+            # Get all numeric columns for log transformation
+            numeric_cols = [
+                col for col in data.columns if col not in categorical_cols
+            ]
+
+        if not numeric_cols:
+            logger.warning("No numeric columns found for log transformation")
+            return data.copy(), {}
+
+        # Check for non-positive values in numeric columns
+        data_copy = data.copy()
+        for col in numeric_cols:
+            min_val = data_copy[col].min()
+            if min_val <= 0:
+                error_msg = (
+                    f"Column '{col}' contains non-positive values "
+                    f"(min={min_val}). Log transformation requires all "
+                    f"positive values."
+                )
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+
+        # Apply log transformation only to numeric columns
+        log_transform_params = {}
+        for col in numeric_cols:
+            data_copy[col] = np.log(data_copy[col])
+            log_transform_params[col] = {}
+
+        logger.debug(
+            f"Log transformed {len(numeric_cols)} numeric columns successfully"
+        )
+        logger.debug(f"Log transformation parameters: {log_transform_params}")
+
+        return data_copy, log_transform_params
+
+    except ValueError:
+        # Re-raise ValueError as-is (for non-positive values)
+        raise
+    except (TypeError, AttributeError) as e:
+        logger.error(f"Error during log transformation: {str(e)}")
+        raise RuntimeError("Failed to apply log transformation") from e
+
+
+@validate_call(config=VALIDATE_CONFIG)
 def preprocess_data(
     data: pd.DataFrame,
     full_data: Optional[bool] = False,
     train_size: Optional[float] = TRAIN_SIZE,
     test_size: Optional[float] = TEST_SIZE,
     random_state: Optional[int] = RANDOM_STATE,
-    normalize: Optional[bool] = False,
+    normalize: Optional[Union[bool, List[str]]] = False,
+    log_transform: Optional[Union[bool, List[str]]] = False,
 ) -> Union[
     Tuple[pd.DataFrame, dict],  # when full_data=True
     Tuple[pd.DataFrame, pd.DataFrame, dict],  # when full_data=False
@@ -126,17 +276,35 @@ def preprocess_data(
         train_size: Proportion of the dataset to include in the train split.
         test_size: Proportion of the dataset to include in the test split.
         random_state: Random seed for reproducibility.
-        normalize: Whether to normalize the data.
+        normalize: Whether to normalize the data. Can be:
+            - True: normalize all numeric columns
+            - List of column names: normalize only those columns
+            - False: no normalization (default)
+        log_transform: Whether to apply log transformation to the data. Can be:
+            - True: transform all numeric columns
+            - List of column names: transform only those columns
+            - False: no transformation (default)
 
     Returns:
-        Different tuple formats depending on the value of full_data:
-          - If full_data=True: (data, dummy_info)
-          - If full_data=False: (X_train, X_test, dummy_info)
+        Different tuple formats depending on parameters:
+          - If full_data=True and transformations applied:
+            (data, transform_params)
+          - If full_data=True and no transformations:
+            data
+          - If full_data=False and transformations applied:
+            (X_train, X_test, transform_params)
+          - If full_data=False and no transformations:
+            (X_train, X_test)
 
-        Where dummy_info is a dictionary mapping original columns to their resulting dummy columns
+        Where transform_params is a dict with keys:
+          - "normalization": dict of normalization parameters (or empty dict)
+          - "log_transform": dict of log transform parameters (or empty dict)
 
     Raises:
-        ValueError: If data is empty or invalid
+        ValueError: If data is empty or invalid, or if both normalize and
+            log_transform would apply to the same columns, or if log_transform
+            is applied to data with non-positive values, or if specified
+            columns don't exist in data.
         RuntimeError: If data preprocessing fails
     """
 
@@ -146,23 +314,100 @@ def preprocess_data(
 
     if data.empty:
         raise ValueError("Data must not be None or empty")
+
+    # Check if both normalize and log_transform are requested
+    normalize_requested = normalize is not False and normalize != []
+    log_transform_requested = (
+        log_transform is not False and log_transform != []
+    )
+
+    # Validate that normalize and log_transform don't conflict
+    if normalize_requested and log_transform_requested:
+        # If both are True, they would apply to all numeric columns - conflict
+        if normalize is True and log_transform is True:
+            error_msg = (
+                "Cannot apply both normalization and log transformation to "
+                "all columns. Please specify which columns to transform with "
+                "each approach using lists."
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # If one is True and the other is a list, conflict
+        if normalize is True or log_transform is True:
+            error_msg = (
+                "Cannot apply both normalization and log transformation. "
+                "When using both, specify column lists for each to ensure "
+                "they apply to different variables."
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Both are lists - check for overlap
+        normalize_cols = (
+            set(normalize) if isinstance(normalize, list) else set()
+        )
+        log_transform_cols = (
+            set(log_transform) if isinstance(log_transform, list) else set()
+        )
+        overlap = normalize_cols & log_transform_cols
+
+        if overlap:
+            error_msg = (
+                f"Cannot apply both normalization and log transformation to "
+                f"the same columns: {overlap}. Each column can only have one "
+                f"transformation applied."
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
     # Check for missing values
     missing_count = data.isna().sum().sum()
     if missing_count > 0:
         logger.warning(f"Data contains {missing_count} missing values")
 
-    if normalize:
-        data, normalization_params = normalize_data(data)
+    # Apply normalization if requested
+    normalization_params = {}
+    if normalize_requested:
+        if isinstance(normalize, bool):
+            # normalize=True means normalize all numeric columns
+            data, normalization_params = normalize_data(data)
+        else:
+            # normalize is a list of specific columns
+            data, normalization_params = normalize_data(
+                data, columns_to_normalize=normalize
+            )
 
-    if full_data and normalize:
-        logger.info("Returning full preprocessed dataset")
-        return (
-            data,
-            normalization_params,
-        )
-    elif full_data:
-        logger.info("Returning full preprocessed dataset")
-        return data
+    # Apply log transformation if requested
+    log_transform_params = {}
+    if log_transform_requested:
+        if isinstance(log_transform, bool):
+            # log_transform=True means transform all numeric columns
+            data, log_transform_params = log_transform_data(data)
+        else:
+            # log_transform is a list of specific columns
+            data, log_transform_params = log_transform_data(
+                data, columns_to_transform=log_transform
+            )
+
+    # Prepare transformation parameters to return
+    has_transformations = normalize_requested or log_transform_requested
+    if has_transformations:
+        # Merge both parameter dicts, with a key to distinguish them
+        transform_params = {
+            "normalization": normalization_params,
+            "log_transform": log_transform_params,
+        }
+
+    if full_data:
+        if has_transformations:
+            logger.info(
+                "Returning full preprocessed dataset with transformations"
+            )
+            return (data, transform_params)
+        else:
+            logger.info("Returning full preprocessed dataset")
+            return data
     else:
         logger.debug(
             f"Splitting data with train_size={train_size}, test_size={test_size}"
@@ -177,17 +422,10 @@ def preprocess_data(
             logger.info(
                 f"Data split into train ({X_train.shape}) and test ({X_test.shape}) sets"
             )
-            if normalize:
-                return (
-                    X_train,
-                    X_test,
-                    normalization_params,
-                )
+            if has_transformations:
+                return (X_train, X_test, transform_params)
             else:
-                return (
-                    X_train,
-                    X_test,
-                )
+                return (X_train, X_test)
 
         except (ValueError, TypeError) as e:
             logger.error(f"Error in processing data: {str(e)}")
@@ -236,3 +474,56 @@ def unnormalize_predictions(
         logger.debug(f"Unnormalized quantile {q} with shape {df_unnorm.shape}")
 
     return unnormalized
+
+
+@validate_call(config=VALIDATE_CONFIG)
+def unlog_transform_predictions(
+    imputations: dict, log_transform_params: dict
+) -> dict:
+    """Reverse log transformation on predictions using stored parameters.
+
+    Args:
+        imputations: Dictionary mapping quantiles to DataFrames of predictions.
+        log_transform_params: Dictionary with column names that were
+            log-transformed.
+
+    Returns:
+        Dictionary with same structure as imputations but with
+        un-log-transformed values.
+
+    Raises:
+        ValueError: If columns in imputations don't match log transformation
+            parameters.
+    """
+    logger.debug(
+        f"Reversing log transformation for {len(imputations)} quantiles"
+    )
+
+    untransformed = {}
+    for q, df in imputations.items():
+        cols = df.columns
+
+        # Check that all columns have log transformation parameters
+        missing_params = [
+            col for col in cols if col not in log_transform_params
+        ]
+        if missing_params:
+            error_msg = (
+                f"Missing log transformation parameters for columns: "
+                f"{missing_params}"
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Reverse log transformation: x_original = exp(x_log)
+        df_untransformed = df.copy()
+        for col in cols:
+            df_untransformed[col] = np.exp(df[col])
+        untransformed[q] = df_untransformed
+
+        logger.debug(
+            f"Reversed log transformation for quantile {q} with shape "
+            f"{df_untransformed.shape}"
+        )
+
+    return untransformed
