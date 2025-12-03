@@ -47,6 +47,11 @@ matching = [
     "rpy2>=3.5.0,<4.0.0",
 ]
 
+mdn = [
+    "pytorch-tabular>=1.1.0",
+    "torch>=2.0.0",
+]
+
 docs = [
     "jupyter-book",
     "furo>=2024.0.0",  # Sphinx theme for documentation

@@ -39,12 +39,45 @@ QUANTILES: List[float] = [round(q, 2) for q in np.arange(0.05, 1.00, 0.05)]
 # Random state for reproducibility
 RANDOM_STATE: int = 42
 
-# Model parameters
+# Model parameters (passed via **kwargs to fit() or as __init__ params)
 DEFAULT_MODEL_PARAMS: Dict[str, Dict[str, Any]] = {
-    "qrf": {},
-    "quantreg": {},
-    "ols": {},
-    "matching": {},
+    "qrf": {
+        # RandomForestQuantileRegressor parameters
+        "n_estimators": 100,
+        "max_depth": None,
+        "min_samples_split": 2,
+        "min_samples_leaf": 1,
+        "max_features": 1.0,
+    },
+    "quantreg": {
+        # statsmodels QuantReg uses default parameters
+    },
+    "ols": {
+        # statsmodels OLS uses default parameters
+        # LogisticRegression params for categorical targets:
+        "penalty": "l2",
+        "C": 1.0,
+        "max_iter": 1000,
+    },
+    "matching": {
+        # StatMatch NND hotdeck default parameters
+    },
+    "mdn": {
+        # Backbone network parameters
+        "layers": "128-64-32",
+        "activation": "ReLU",
+        "dropout": 0.0,
+        "use_batch_norm": False,
+        # MDN head parameters
+        "num_gaussian": 5,
+        "softmax_temperature": 1.0,
+        "n_samples": 100,
+        # Training parameters
+        "learning_rate": 1e-3,
+        "max_epochs": 100,
+        "early_stopping_patience": 10,
+        "batch_size": 256,
+    },
 }
 
 # Plotting configuration

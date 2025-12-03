@@ -37,14 +37,23 @@ try:
 except ImportError:
     HAS_MATCHING = False
 
+
+try:
+    from microimpute.models import MDN
+
+    HAS_MDN = True
+except ImportError:
+    HAS_MDN = False
+
 log = logging.getLogger(__name__)
 
 # Internal constants for model compatibility with variable types
-_NUMERICAL_MODELS = {"OLS", "QRF", "QuantReg", "Matching"}
+_NUMERICAL_MODELS = {"OLS", "QRF", "QuantReg", "Matching", "MDN"}
 _CATEGORICAL_MODELS = {
     "OLS",
     "QRF",
     "Matching",
+    "MDN",
 }  # QuantReg doesn't support categorical
 
 
@@ -327,6 +336,7 @@ def autoimpute(
     random_state: Optional[int] = RANDOM_STATE,
     train_size: Optional[float] = TRAIN_SIZE,
     k_folds: Optional[int] = 5,
+    force_retrain: Optional[bool] = False,
     log_level: Optional[str] = "WARNING",
 ) -> AutoImputeResult:
     """Automatically select and apply the best imputation model.
@@ -364,6 +374,8 @@ def autoimpute(
         random_state : Random seed for reproducibility
         train_size : Proportion of data to use for training in preprocessing
         k_folds : Number of folds for cross-validation. Defaults to 5.
+        force_retrain : If True, forces MDN models to retrain instead of using
+            cached models. Defaults to False.
         log_level : Logging level for the function. Defaults to "WARNING".
 
     Returns:
@@ -440,8 +452,18 @@ def autoimpute(
             model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg]
             if HAS_MATCHING:
                 model_classes.append(Matching)
+            if HAS_MDN:
+                model_classes.append(MDN)
         else:
             model_classes = models
+
+        # Inject force_retrain for MDN if it's in the model list
+        if force_retrain and any(m.__name__ == "MDN" for m in model_classes):
+            if hyperparameters is None:
+                hyperparameters = {}
+            if "MDN" not in hyperparameters:
+                hyperparameters["MDN"] = {}
+            hyperparameters["MDN"]["force_retrain"] = True
 
         # Log hyperparameter usage
         if hyperparameters:
