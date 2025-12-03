@@ -291,7 +291,7 @@ def fit_and_predict_model(
             weight_col=weight_col,
             quantiles=[quantile],
         )
-    elif hyperparams and model_name in ["Matching", "QRF"]:
+    elif hyperparams and model_name in ["Matching", "QRF", "MDN"]:
         # Apply hyperparameters for specific models
         fitted_model = model.fit(
             training_data,

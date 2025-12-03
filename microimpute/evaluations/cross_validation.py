@@ -206,8 +206,8 @@ def _fit_model_for_fold(
                 return None, None
             raise e
 
-    # Handle hyperparameter tuning for QRF and Matching
-    elif tune_hyperparameters and model_name in ["QRF", "Matching"]:
+    # Handle hyperparameter tuning for QRF, Matching, and MDN
+    elif tune_hyperparameters and model_name in ["QRF", "Matching", "MDN"]:
         log.info(f"Tuning {model_name} hyperparameters during fitting")
         fitted_model, fold_tuned_params = model.fit(
             train_data,

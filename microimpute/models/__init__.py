@@ -9,6 +9,8 @@ Available models:
     - QRF: quantile random forest for non-parametric quantile regression
     - QuantReg: linear quantile regression model
     - Matching: statistical matching/hot-deck imputation (optional, requires rpy2)
+    - MDN: Mixture Density Network for probabilistic imputation
+        (optional, requires pytorch-tabular)
 
 Base classes:
     - Imputer: abstract base class for all imputation models
@@ -20,6 +22,11 @@ from microimpute.models.imputer import Imputer, ImputerResults
 
 try:
     from microimpute.models.matching import Matching
+except ImportError:
+    pass
+
+try:
+    from microimpute.models.mdn import MDN
 except ImportError:
     pass
 

@@ -82,3 +82,13 @@ celerybeat.pid
 *.h5
 # MyST build outputs
 _build
+
+# PyTorch Lightning logs and checkpoints
+lightning_logs/
+saved_models/
+.pt_tmp/
+*.ckpt
+*.yaml
+
+# MDN model cache
+microimpute_models/

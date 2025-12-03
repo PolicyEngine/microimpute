@@ -78,6 +78,14 @@ try:
 except ImportError:
     pass
 
+try:
+    from microimpute.models.mdn import MDN
+
+    ALL_IMPUTER_MODELS.append(MDN)
+    CATEGORICAL_MODELS.append(MDN)
+except ImportError:
+    pass
+
 
 # === Basic Interface Tests ===
 
