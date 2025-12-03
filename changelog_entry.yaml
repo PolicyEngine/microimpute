@@ -1,4 +1,0 @@
-- bump: minor
-  changes:
-    added:
-    - Mixture Density Network (MDN) model for numeric variable imputation and Neural Classifier model for categorical variable imputation.
