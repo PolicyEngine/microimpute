@@ -217,7 +217,7 @@ def _evaluate_models_parallel(
             if len(result) == 3:
                 model_name, cv_result, best_params = result
                 method_results[model_name] = cv_result
-                if model_name in ["QRF", "Matching"]:
+                if model_name in ["QRF", "Matching", "MDN"]:
                     best_hyperparams[model_name] = best_params
             else:
                 model_name, cv_result = result

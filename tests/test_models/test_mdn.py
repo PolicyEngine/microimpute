@@ -511,3 +511,153 @@ def test_mdn_return_probs(mixed_type_data: pd.DataFrame) -> None:
     # Probabilities should sum to 1
     probs = prob_info["probabilities"]
     assert np.allclose(probs.sum(axis=1), 1.0)
+
+
+# === Hyperparameter Tuning Tests ===
+
+
+def test_mdn_hyperparameter_tuning_numeric(
+    simple_numeric_data: pd.DataFrame,
+) -> None:
+    """Test MDN hyperparameter tuning with numeric targets."""
+    predictors = ["x1", "x2"]
+    imputed_variables = ["y"]
+
+    X_train, X_test = preprocess_data(simple_numeric_data)
+
+    model = MDN(
+        layers="16-8",
+        max_epochs=5,  # Short for testing
+        batch_size=32,
+    )
+
+    # Fit with tuning enabled
+    result = model.fit(
+        X_train, predictors, imputed_variables, tune_hyperparameters=True
+    )
+
+    # Should return tuple (MDNResults, best_params)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+    fitted_model, best_params = result
+
+    # Check best_params structure for numeric-only case
+    assert isinstance(best_params, dict)
+    assert "num_gaussian" in best_params
+    assert "learning_rate" in best_params
+
+    # Verify tuned params are within expected ranges
+    assert 2 <= best_params["num_gaussian"] <= 10
+    assert 1e-4 <= best_params["learning_rate"] <= 1e-2
+
+    # Verify model can still predict
+    predictions = fitted_model.predict(X_test)
+    assert not predictions.isna().any().any()
+
+
+def test_mdn_hyperparameter_tuning_categorical(
+    mixed_type_data: pd.DataFrame,
+) -> None:
+    """Test MDN hyperparameter tuning with categorical targets."""
+    predictors = ["x1", "x2"]
+    imputed_variables = ["y_categorical"]
+
+    X_train, X_test = preprocess_data(mixed_type_data)
+
+    model = MDN(
+        layers="16-8",
+        max_epochs=5,  # Short for testing
+        batch_size=32,
+    )
+
+    # Fit with tuning enabled
+    result = model.fit(
+        X_train, predictors, imputed_variables, tune_hyperparameters=True
+    )
+
+    # Should return tuple (MDNResults, best_params)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+    fitted_model, best_params = result
+
+    # Check best_params structure for categorical-only case
+    assert isinstance(best_params, dict)
+    assert "learning_rate" in best_params
+
+    # Verify tuned params are within expected ranges
+    assert 1e-4 <= best_params["learning_rate"] <= 1e-2
+
+    # Verify model can still predict
+    predictions = fitted_model.predict(X_test)
+    assert not predictions.isna().any().any()
+
+
+def test_mdn_hyperparameter_tuning_mixed(
+    mixed_type_data: pd.DataFrame,
+) -> None:
+    """Test MDN hyperparameter tuning with mixed targets."""
+    predictors = ["x1", "x2"]
+    imputed_variables = ["y_numeric", "y_categorical"]
+
+    X_train, X_test = preprocess_data(mixed_type_data)
+
+    model = MDN(
+        layers="16-8",
+        max_epochs=5,  # Short for testing
+        batch_size=32,
+    )
+
+    # Fit with tuning enabled
+    result = model.fit(
+        X_train, predictors, imputed_variables, tune_hyperparameters=True
+    )
+
+    # Should return tuple (MDNResults, best_params)
+    assert isinstance(result, tuple)
+    assert len(result) == 2
+
+    fitted_model, best_params = result
+
+    # Check best_params structure for mixed case
+    assert isinstance(best_params, dict)
+    assert "mdn" in best_params
+    assert "classifier" in best_params
+
+    # Verify MDN params
+    assert "num_gaussian" in best_params["mdn"]
+    assert "learning_rate" in best_params["mdn"]
+
+    # Verify classifier params
+    assert "learning_rate" in best_params["classifier"]
+
+    # Verify model can still predict
+    predictions = fitted_model.predict(X_test)
+    assert not predictions.isna().any().any()
+
+
+def test_mdn_without_tuning_returns_single_result(
+    simple_numeric_data: pd.DataFrame,
+) -> None:
+    """Test that MDN without tuning returns just MDNResults (not tuple)."""
+    predictors = ["x1", "x2"]
+    imputed_variables = ["y"]
+
+    X_train, X_test = preprocess_data(simple_numeric_data)
+
+    model = MDN(
+        layers="16-8",
+        max_epochs=3,
+        batch_size=32,
+    )
+
+    # Fit without tuning
+    result = model.fit(X_train, predictors, imputed_variables)
+
+    # Should return MDNResults directly, not a tuple
+    assert not isinstance(result, tuple)
+
+    # Verify model can predict
+    predictions = result.predict(X_test)
+    assert not predictions.isna().any().any()

@@ -3,7 +3,7 @@
 import hashlib
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -760,8 +760,9 @@ class MDN(Imputer):
         boolean_targets: Optional[Dict[str, Dict]] = None,
         numeric_targets: Optional[List[str]] = None,
         constant_targets: Optional[Dict[str, Dict]] = None,
+        tune_hyperparameters: bool = False,
         **kwargs: Any,
-    ) -> MDNResults:
+    ) -> Union[MDNResults, Tuple[MDNResults, Dict[str, Any]]]:
         """Fit the MDN model to the training data.
 
         Args:
@@ -773,12 +774,55 @@ class MDN(Imputer):
             boolean_targets: Dict of boolean target info.
             numeric_targets: List of numeric target names.
             constant_targets: Dict of constant target info.
+            tune_hyperparameters: If True, tune hyperparameters before fitting.
             **kwargs: Additional parameters.
 
         Returns:
             MDNResults instance with fitted models.
+            If tune_hyperparameters=True, returns (MDNResults, best_params).
         """
         try:
+            best_params = None
+
+            # Optionally tune hyperparameters before fitting
+            if tune_hyperparameters:
+                self.logger.info("Starting hyperparameter tuning...")
+                best_params = self._tune_hyperparameters(
+                    X_train,
+                    predictors,
+                    imputed_variables,
+                    categorical_targets,
+                    boolean_targets,
+                )
+
+                # Apply tuned parameters
+                if isinstance(best_params, dict):
+                    if "mdn" in best_params:
+                        # Mixed types - apply MDN params
+                        mdn_params = best_params["mdn"]
+                        if "num_gaussian" in mdn_params:
+                            self.num_gaussian = mdn_params["num_gaussian"]
+                        if "learning_rate" in mdn_params:
+                            self.learning_rate = mdn_params["learning_rate"]
+                        # Classifier params stored separately
+                    elif "classifier" in best_params:
+                        # Only categorical - apply to learning rate
+                        classifier_params = best_params["classifier"]
+                        if "learning_rate" in classifier_params:
+                            self.learning_rate = classifier_params[
+                                "learning_rate"
+                            ]
+                    else:
+                        # Only numeric - flat dict
+                        if "num_gaussian" in best_params:
+                            self.num_gaussian = best_params["num_gaussian"]
+                        if "learning_rate" in best_params:
+                            self.learning_rate = best_params["learning_rate"]
+
+                self.logger.info(
+                    f"Applied tuned hyperparameters: {best_params}"
+                )
+
             self.logger.info(
                 f"Fitting MDN model with {len(predictors)} predictors"
             )
@@ -930,7 +974,7 @@ class MDN(Imputer):
                 except Exception as e:
                     self.logger.warning(f"Failed to save model: {e}")
 
-            return MDNResults(
+            results = MDNResults(
                 models=self.models,
                 predictors=predictors,
                 imputed_variables=imputed_variables,
@@ -944,6 +988,368 @@ class MDN(Imputer):
                 log_level=self.log_level,
             )
 
+            # Return tuple if hyperparameter tuning was performed
+            if tune_hyperparameters and best_params is not None:
+                return results, best_params
+            return results
+
         except Exception as e:
             self.logger.error(f"Error fitting MDN model: {str(e)}")
             raise RuntimeError(f"Failed to fit MDN model: {str(e)}") from e
+
+    def _tune_mdn_hyperparameters(
+        self,
+        data: pd.DataFrame,
+        predictors: List[str],
+        numeric_vars: List[str],
+        n_cv_folds: int = 3,
+        n_trials: int = 10,
+    ) -> Dict[str, Any]:
+        """Tune MDN hyperparameters using Optuna with cross-validation.
+
+        Tunes num_gaussian and learning_rate for numeric targets.
+
+        Args:
+            data: Full training data.
+            predictors: List of column names to use as predictors.
+            numeric_vars: List of numeric variables to impute.
+            n_cv_folds: Number of CV folds (default: 3).
+            n_trials: Number of Optuna trials (default: 10).
+
+        Returns:
+            Dictionary of tuned hyperparameters for MDN.
+        """
+        import optuna
+        from sklearn.model_selection import KFold
+
+        from microimpute.comparisons.metrics import compute_loss
+
+        # Suppress Optuna's logs during optimization
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        # Set up CV folds
+        kf = KFold(n_splits=n_cv_folds, shuffle=True, random_state=self.seed)
+
+        def objective(trial: optuna.Trial) -> float:
+            # Only tune num_gaussian and learning_rate
+            num_gaussian = trial.suggest_int("num_gaussian", 2, 10)
+            learning_rate = trial.suggest_float(
+                "learning_rate", 1e-4, 1e-2, log=True
+            )
+
+            # Track errors across CV folds
+            fold_errors = []
+
+            # Perform CV
+            for train_idx, val_idx in kf.split(data):
+                X_train_fold = data.iloc[train_idx]
+                X_val_fold = data.iloc[val_idx]
+
+                # Track errors for numeric variables in this fold
+                var_errors = []
+
+                for var in numeric_vars:
+                    y_train = X_train_fold[var]
+                    y_val = X_val_fold[var]
+
+                    # Create and fit MDN model with trial parameters
+                    model = _MDNModel(
+                        seed=self.seed,
+                        logger=self.logger,
+                        layers=self.layers,
+                        activation=self.activation,
+                        dropout=self.dropout,
+                        use_batch_norm=self.use_batch_norm,
+                        num_gaussian=num_gaussian,
+                        softmax_temperature=self.softmax_temperature,
+                        n_samples=self.n_samples,
+                        learning_rate=learning_rate,
+                        max_epochs=40,  # Reduced for tuning
+                        early_stopping_patience=self.early_stopping_patience,
+                        batch_size=self.batch_size,
+                    )
+                    model.fit(X_train_fold[predictors], y_train)
+
+                    # Predict using stochastic sampling
+                    y_pred = model.predict(X_val_fold[predictors], n_samples=1)
+
+                    # Use quantile loss with median (q=0.5) for tuning
+                    _, quantile_loss_value = compute_loss(
+                        y_val.values.flatten(),
+                        y_pred.flatten(),
+                        "quantile_loss",
+                        q=0.5,
+                    )
+
+                    # Normalize by variable's standard deviation
+                    std = np.std(y_val.values.flatten())
+                    normalized_loss = (
+                        quantile_loss_value / std
+                        if std > 0
+                        else quantile_loss_value
+                    )
+
+                    var_errors.append(normalized_loss)
+
+                # Average across variables for this fold
+                if var_errors:
+                    fold_errors.append(np.mean(var_errors))
+
+            # Return mean error across all CV folds
+            return np.mean(fold_errors) if fold_errors else float("inf")
+
+        # Create and run the study
+        study = optuna.create_study(
+            direction="minimize",
+            sampler=optuna.samplers.TPESampler(seed=self.seed),
+        )
+
+        study.optimize(objective, n_trials=n_trials)
+
+        best_value = study.best_value
+        self.logger.info(
+            f"MDN - Lowest average normalized quantile loss "
+            f"({n_cv_folds}-fold CV): {best_value}"
+        )
+
+        best_params = study.best_params
+        self.logger.info(f"MDN - Best hyperparameters found: {best_params}")
+
+        return best_params
+
+    def _tune_classifier_hyperparameters(
+        self,
+        data: pd.DataFrame,
+        predictors: List[str],
+        categorical_vars: List[str],
+        categorical_targets: Optional[Dict] = None,
+        boolean_targets: Optional[Dict] = None,
+        n_cv_folds: int = 3,
+        n_trials: int = 10,
+    ) -> Dict[str, Any]:
+        """Tune neural classifier hyperparameters using Optuna with CV.
+
+        Tunes learning_rate for categorical/boolean targets.
+
+        Args:
+            data: Full training data.
+            predictors: List of column names to use as predictors.
+            categorical_vars: List of categorical/boolean variables to impute.
+            categorical_targets: Dict of categorical target info.
+            boolean_targets: Dict of boolean target info.
+            n_cv_folds: Number of CV folds (default: 3).
+            n_trials: Number of Optuna trials (default: 10).
+
+        Returns:
+            Dictionary of tuned hyperparameters for classifier.
+        """
+        import optuna
+        from sklearn.model_selection import KFold
+
+        from microimpute.comparisons.metrics import (
+            compute_loss,
+            order_probabilities_alphabetically,
+        )
+
+        # Suppress Optuna's logs during optimization
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+
+        categorical_targets = categorical_targets or {}
+        boolean_targets = boolean_targets or {}
+
+        # Set up CV folds
+        kf = KFold(n_splits=n_cv_folds, shuffle=True, random_state=self.seed)
+
+        def objective(trial: optuna.Trial) -> float:
+            # Only tune learning_rate for classifier
+            learning_rate = trial.suggest_float(
+                "learning_rate", 1e-4, 1e-2, log=True
+            )
+
+            # Track errors across CV folds
+            fold_errors = []
+
+            # Perform CV
+            for train_idx, val_idx in kf.split(data):
+                X_train_fold = data.iloc[train_idx]
+                X_val_fold = data.iloc[val_idx]
+
+                # Track errors for categorical variables in this fold
+                var_errors = []
+
+                for var in categorical_vars:
+                    y_train = X_train_fold[var]
+                    y_val = X_val_fold[var]
+
+                    # Determine variable type
+                    if var in boolean_targets:
+                        var_type = "boolean"
+                        categories = None
+                    else:
+                        var_type = categorical_targets[var].get(
+                            "type", "categorical"
+                        )
+                        categories = categorical_targets[var].get("categories")
+
+                    # Create and fit classifier with trial parameters
+                    # Use 40 epochs for tuning
+                    model = _NeuralClassifierModel(
+                        seed=self.seed,
+                        logger=self.logger,
+                        layers=self.layers,
+                        activation=self.activation,
+                        dropout=self.dropout,
+                        use_batch_norm=self.use_batch_norm,
+                        learning_rate=learning_rate,
+                        max_epochs=40,  # Reduced for tuning
+                        early_stopping_patience=self.early_stopping_patience,
+                        batch_size=self.batch_size,
+                    )
+                    model.fit(
+                        X_train_fold[predictors],
+                        y_train,
+                        var_type=var_type,
+                        categories=categories,
+                    )
+
+                    # Get probabilities for log loss calculation
+                    prob_info = model.predict(
+                        X_val_fold[predictors], return_probs=True
+                    )
+                    probs = prob_info["probabilities"]
+                    classes = prob_info["classes"]
+
+                    # Order probabilities alphabetically for consistent evaluation
+                    probs, classes = order_probabilities_alphabetically(
+                        probs, classes
+                    )
+
+                    # Compute log loss
+                    _, log_loss_value = compute_loss(
+                        y_val.values,
+                        probs,
+                        "log_loss",
+                        labels=classes,
+                    )
+
+                    var_errors.append(log_loss_value)
+
+                # Average across variables for this fold
+                if var_errors:
+                    fold_errors.append(np.mean(var_errors))
+
+            # Return mean error across all CV folds
+            return np.mean(fold_errors) if fold_errors else float("inf")
+
+        # Create and run the study
+        study = optuna.create_study(
+            direction="minimize",
+            sampler=optuna.samplers.TPESampler(seed=self.seed),
+        )
+
+        study.optimize(objective, n_trials=n_trials)
+
+        best_value = study.best_value
+        self.logger.info(
+            f"Classifier - Lowest average log loss "
+            f"({n_cv_folds}-fold CV): {best_value}"
+        )
+
+        best_params = study.best_params
+        self.logger.info(
+            f"Classifier - Best hyperparameters found: {best_params}"
+        )
+
+        return best_params
+
+    def _tune_hyperparameters(
+        self,
+        data: pd.DataFrame,
+        predictors: List[str],
+        imputed_variables: List[str],
+        categorical_targets: Optional[Dict] = None,
+        boolean_targets: Optional[Dict] = None,
+        n_cv_folds: int = 3,
+        n_trials: int = 10,
+    ) -> Dict[str, Any]:
+        """Coordinate hyperparameter tuning for MDN.
+
+        Automatically detects variable types and tunes appropriate models:
+        - Numeric variables: MDN with num_gaussian and learning_rate
+        - Categorical/Boolean variables: Classifier with learning_rate
+
+        Args:
+            data: DataFrame containing the training data.
+            predictors: List of column names to use as predictors.
+            imputed_variables: List of column names to impute.
+            categorical_targets: Dict of categorical target info.
+            boolean_targets: Dict of boolean target info.
+
+        Returns:
+            Dictionary of tuned hyperparameters. Format depends on variable types:
+            - Only numeric: flat dict with MDN params
+            - Only categorical: flat dict with classifier params
+            - Mixed: nested dict {"mdn": {...}, "classifier": {...}}
+        """
+        categorical_targets = categorical_targets or {}
+        boolean_targets = boolean_targets or {}
+
+        # Separate variables by type
+        categorical_vars = [
+            var
+            for var in imputed_variables
+            if var in categorical_targets or var in boolean_targets
+        ]
+        numeric_vars = [
+            var for var in imputed_variables if var not in categorical_vars
+        ]
+
+        self.logger.info(
+            f"MDN hyperparameter tuning with {n_cv_folds}-fold CV and "
+            f"{n_trials} trials: {len(numeric_vars)} numeric variables, "
+            f"{len(categorical_vars)} categorical/boolean variables"
+        )
+
+        # Tune appropriate models based on variable types
+        if not categorical_vars:
+            # Only numeric variables
+            self.logger.info(
+                "Tuning MDN hyperparameters (numeric variables only)"
+            )
+            return self._tune_mdn_hyperparameters(
+                data, predictors, numeric_vars, n_cv_folds, n_trials
+            )
+        elif not numeric_vars:
+            # Only categorical variables
+            self.logger.info(
+                "Tuning classifier hyperparameters "
+                "(categorical/boolean variables only)"
+            )
+            return self._tune_classifier_hyperparameters(
+                data,
+                predictors,
+                categorical_vars,
+                categorical_targets,
+                boolean_targets,
+                n_cv_folds,
+                n_trials,
+            )
+        else:
+            # Mixed: tune both separately
+            self.logger.info(
+                "Tuning both MDN and classifier hyperparameters "
+                "(mixed variable types)"
+            )
+            mdn_params = self._tune_mdn_hyperparameters(
+                data, predictors, numeric_vars, n_cv_folds, n_trials
+            )
+            classifier_params = self._tune_classifier_hyperparameters(
+                data,
+                predictors,
+                categorical_vars,
+                categorical_targets,
+                boolean_targets,
+                n_cv_folds,
+                n_trials,
+            )
+            return {"mdn": mdn_params, "classifier": classifier_params}
