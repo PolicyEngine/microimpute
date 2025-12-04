@@ -7,16 +7,17 @@ The framework currently supports the following imputation methods:
 - Ordinary Least Squares Linear Regression
 - Quantile Random Forests
 - Quantile Regression
+- Mixture Density Networks
 
 This is a work in progress that may evolve over time, including new statistical imputation methods and features. 
 
-## Microimputation dashboard
+## Microimputation dashboard
 
 Users can visualize imputation and benchmarking results at https://microimpute-dashboard.vercel.app/.
 
 To use the dashboard for visualization, CSV files must contain the following columns in this exact order:
 - `type`: Type of metric (e.g., "benchmark_loss", "distribution_distance", "predictor_correlation")
-- `method`: Imputation method name (e.g., "QRF", "OLS", "QuantReg", "Matching")
+- `method`: Imputation method name (e.g., "QRF", "OLS", "QuantReg", "Matching", "MDN")
 - `variable`: Variable being imputed or analyzed
 - `quantile`: Quantile level (numeric value, "mean", or "N/A")
 - `metric_name`: Name of the metric (e.g., "quantile_loss", "log_loss")

@@ -4,7 +4,7 @@ The `QRF` model harnesses the power of ensemble learning by utilizing multiple d
 
 ## Variable type support
 
-QRF seamlessly handles both numerical and categorical variables. For numerical targets, it uses quantile regression forests. For categorical targets (strings, booleans, numerically-encoded categorical variables), it automatically employs a Random Forest Classifier. The model detects variable types automatically and applies the appropriate method internally, requiring no manual specification from users.
+QRF handles both numerical and categorical variables. For numerical targets, it uses quantile regression forests. For categorical targets (strings, booleans, numerically-encoded categorical variables), it automatically employs a Random Forest Classifier. The model detects variable types automatically and applies the appropriate method internally, requiring no manual specification from users.
 
 ## How it works
 

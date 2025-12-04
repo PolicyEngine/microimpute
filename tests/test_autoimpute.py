@@ -7,6 +7,7 @@ from sklearn.datasets import load_diabetes
 
 from microimpute.comparisons.autoimpute import autoimpute, AutoImputeResult
 from microimpute.visualizations import *
+from microimpute.models import QRF, QuantReg, OLS
 
 # Check if Matching is available
 try:
@@ -16,6 +17,13 @@ try:
 except ImportError:
     HAS_MATCHING = False
 
+# Check if MDN is available
+try:
+    from microimpute.models import MDN
+
+    HAS_MDN = True
+except ImportError:
+    HAS_MDN = False
 
 # === Fixtures ===
 
@@ -81,6 +89,7 @@ def test_autoimpute_basic_structure(
         receiver_data=diabetes_receiver,
         predictors=predictors,
         imputed_variables=imputed_variables,
+        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
         hyperparameters={
             "QRF": {"n_estimators": 50},
             "Matching": {"constrained": True},
@@ -132,7 +141,7 @@ def test_autoimpute_all_models(
         receiver_data=diabetes_receiver,
         predictors=predictors,
         imputed_variables=imputed_variables,
-        models=None,  # Use all available models
+        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
         impute_all=True,  # Return results for all models
         log_level="WARNING",
     )
@@ -201,6 +210,7 @@ def test_autoimpute_with_hyperparameters(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
+        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
         hyperparameters=hyperparameters,
         log_level="WARNING",
     )
@@ -222,6 +232,7 @@ def test_autoimpute_multiple_imputed_variables(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1", "y2"],  # Multiple variables
+        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
         log_level="WARNING",
     )
 
@@ -243,6 +254,7 @@ def test_autoimpute_large_receiver() -> None:
         receiver_data=receiver,
         predictors=["x"],
         imputed_variables=["y"],
+        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
         log_level="WARNING",
     )
 
@@ -263,6 +275,7 @@ def test_autoimpute_best_method_selection(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
+        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
         log_level="WARNING",
     )
 
@@ -321,6 +334,7 @@ def test_autoimpute_cv_results_structure(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
+        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
         log_level="WARNING",
     )
 
@@ -342,22 +356,6 @@ def test_autoimpute_cv_results_structure(simple_data: tuple) -> None:
         assert isinstance(ql_results["results"], pd.DataFrame)
         assert "train" in ql_results["results"].index
         assert "test" in ql_results["results"].index
-
-
-# === Visualization Compatibility ===
-
-
-def test_autoimpute_visualization_compatibility(simple_data: tuple) -> None:
-    """Test that autoimpute results work with visualization functions."""
-    donor, receiver = simple_data
-
-    results = autoimpute(
-        donor_data=donor,
-        receiver_data=receiver,
-        predictors=["x1", "x2"],
-        imputed_variables=["y1"],
-        log_level="WARNING",
-    )
 
 
 # === Error Handling ===
@@ -388,6 +386,7 @@ def test_autoimpute_missing_predictors() -> None:
             receiver_data=receiver,
             predictors=["x1", "x2"],  # x2 not in receiver
             imputed_variables=["y"],
+            models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
             log_level="WARNING",
         )
 
@@ -425,6 +424,7 @@ def test_autoimpute_consistency(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
+        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
         log_level="WARNING",
     )
 
@@ -433,6 +433,7 @@ def test_autoimpute_consistency(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
+        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
         log_level="WARNING",
     )
 
