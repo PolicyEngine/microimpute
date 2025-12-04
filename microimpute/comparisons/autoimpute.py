@@ -27,7 +27,11 @@ from microimpute.config import (
     VALIDATE_CONFIG,
 )
 from microimpute.models import OLS, QRF, Imputer, QuantReg
-from microimpute.utils.data import unnormalize_predictions
+from microimpute.utils.data import (
+    un_asinh_transform_predictions,
+    unlog_transform_predictions,
+    unnormalize_predictions,
+)
 from microimpute.utils.type_handling import VariableTypeDetector
 
 try:
@@ -46,6 +50,57 @@ except ImportError:
     HAS_MDN = False
 
 log = logging.getLogger(__name__)
+
+
+def _reverse_transformations(
+    imputations: Dict[float, pd.DataFrame],
+    transform_params: Optional[Dict[str, Any]],
+) -> Dict[float, pd.DataFrame]:
+    """Reverse preprocessing transformations on imputed predictions.
+
+    Args:
+        imputations: Dict mapping quantiles to DataFrames of predictions.
+        transform_params: Dict with 'type' and 'params' from prepare_data_for_imputation.
+
+    Returns:
+        Dict with same structure but with reversed transformations.
+    """
+    if not transform_params:
+        return imputations
+
+    transform_type = transform_params.get("type")
+    params = transform_params.get("params", {})
+
+    if transform_type == "normalize":
+        # Legacy normalize_data=True format
+        return unnormalize_predictions(imputations, params)
+
+    elif transform_type == "preprocessing":
+        # New preprocessing format with multiple transformation types
+        result = imputations
+
+        # Reverse normalization if any
+        if params.get("normalization"):
+            result = unnormalize_predictions(result, params["normalization"])
+
+        # Reverse log transform if any
+        if params.get("log_transform"):
+            result = unlog_transform_predictions(
+                result, params["log_transform"]
+            )
+
+        # Reverse asinh transform if any
+        if params.get("asinh_transform"):
+            result = un_asinh_transform_predictions(
+                result, params["asinh_transform"]
+            )
+
+        return result
+
+    else:
+        log.warning(f"Unknown transform type: {transform_type}")
+        return imputations
+
 
 # Internal constants for model compatibility with variable types
 _NUMERICAL_MODELS = {"OLS", "QRF", "QuantReg", "Matching", "MDN"}
@@ -238,11 +293,11 @@ def _generate_imputations_for_all_models(
     imputed_variables: List[str],
     weight_col: Optional[str],
     imputation_q: float,
-    normalize_data: bool,
     train_size: float,
     tune_hyperparameters: bool,
     hyperparams: Optional[Dict[str, Any]],
     log_level: str,
+    preprocessing: Optional[Dict[str, str]] = None,
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, Any]]:
     """Generate imputations for all models when impute_all=True.
 
@@ -274,16 +329,16 @@ def _generate_imputations_for_all_models(
         log.info(f"Generating imputations with {model_name}.")
 
         # Preprocess data fresh for this model
-        training_data, imputing_data, normalizing_params = (
+        training_data, imputing_data, transform_params = (
             prepare_data_for_imputation(
                 donor_data,
                 receiver_data,
                 predictors,
                 imputed_variables,
                 weight_col,
-                normalize_data,
                 train_size,
                 1 - train_size,
+                preprocessing=preprocessing,
             )
         )
 
@@ -305,13 +360,10 @@ def _generate_imputations_for_all_models(
             log_level,
         )
 
-        # Unnormalize if needed
-        if normalize_data and normalizing_params:
-            final_imputations = unnormalize_predictions(
-                imputations, normalizing_params
-            )
-        else:
-            final_imputations = imputations
+        # Reverse transformations if needed
+        final_imputations = _reverse_transformations(
+            imputations, transform_params
+        )
 
         final_imputations_dict[model_name] = final_imputations[imputation_q]
         fitted_models_dict[model_name] = fitted_model
@@ -330,7 +382,7 @@ def autoimpute(
     imputation_quantiles: Optional[List[float]] = None,
     hyperparameters: Optional[Dict[str, Dict[str, Any]]] = None,
     tune_hyperparameters: Optional[bool] = False,
-    normalize_data: Optional[bool] = False,
+    preprocessing: Optional[Dict[str, str]] = None,
     impute_all: Optional[bool] = False,
     metric_priority: Optional[str] = "auto",
     random_state: Optional[int] = RANDOM_STATE,
@@ -363,7 +415,13 @@ def autoimpute(
             with model names as keys. Defaults to None and uses default model hyperparameters then.
         tune_hyperparameters : Whether to tune hyperparameters for the models.
             Defaults to False.
-        normalize_data : If True, will normalize the data before imputation.
+        preprocessing : Dictionary mapping variable names (predictors or imputed_variables)
+            to transformation type. Supported transformations:
+            - "normalize": z-score normalization (mean=0, std=1)
+            - "log": natural log transformation (requires positive values)
+            - "asinh": inverse hyperbolic sine transformation (handles zero/negative values)
+            Example: {"income": "asinh", "age": "normalize"}
+            If a variable is not in this dict, no transformation is applied.
         impute_all : If True, will return final imputations for all models not
             just the best one.
         metric_priority : Strategy for model selection when both metrics are present:
@@ -429,16 +487,16 @@ def autoimpute(
         # Keep track of original imputed variable names
         original_imputed_variables = imputed_variables.copy()
 
-        training_data, imputing_data, normalizing_params = (
+        training_data, imputing_data, transform_params = (
             prepare_data_for_imputation(
                 donor_data,
                 receiver_data,
                 predictors,
                 imputed_variables,
                 weight_col,
-                normalize_data,
                 train_size,
                 1 - train_size,
+                preprocessing=preprocessing,
             )
         )
 
@@ -556,13 +614,10 @@ def autoimpute(
             log_level,
         )
 
-        # Unnormalize if needed
-        if normalize_data and normalizing_params:
-            final_imputations = unnormalize_predictions(
-                imputations, normalizing_params
-            )
-        else:
-            final_imputations = imputations
+        # Reverse transformations if needed
+        final_imputations = _reverse_transformations(
+            imputations, transform_params
+        )
 
         log.info(
             f"Imputation generation completed for {len(receiver_data)} samples "
@@ -601,11 +656,11 @@ def autoimpute(
                     original_imputed_variables,
                     weight_col,
                     imputation_q,
-                    normalize_data,
                     train_size,
                     tune_hyperparameters,
                     best_hyperparams,
                     log_level,
+                    preprocessing=preprocessing,
                 )
             )
             final_imputations_dict.update(other_imputations)

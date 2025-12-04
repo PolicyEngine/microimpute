@@ -1,6 +1,6 @@
 format: jb-book
 root: index
-parts: 
+parts:
   - caption: Models
     chapters:
       - file: models/imputer/index
@@ -18,19 +18,25 @@ parts:
       - file: models/quantreg/index
         sections:
           - file: models/quantreg/quantreg-imputation
+      - file: models/mdn/index
+        sections:
+          - file: models/mdn/mdn-imputation
   - caption: Imputation and benchmarking
     chapters:
       - file: imputation-benchmarking/index
         sections:
+          - file: imputation-benchmarking/preprocessing
+          - file: imputation-benchmarking/cross-validation
+          - file: imputation-benchmarking/metrics
+          - file: imputation-benchmarking/visualizations
           - file: imputation-benchmarking/benchmarking-methods
-          - file: imputation-benchmarking/imputing-across-surveys
   - caption: AutoImpute
     chapters:
       - file: autoimpute/index
         sections:
           - file: autoimpute/autoimpute
-  - caption: SCF to CPS example
+  - caption: Use cases
     chapters:
-      - file: examples/scf_to_cps/index
+      - file: use_cases/index
         sections:
-          - file: examples/scf_to_cps/imputing-from-scf-to-cps
+          - file: use_cases/scf_to_cps/imputing-from-scf-to-cps

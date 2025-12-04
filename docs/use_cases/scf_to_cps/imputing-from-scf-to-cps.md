@@ -1,6 +1,6 @@
-# Imputing wealth from the SCF to the CPS
+# Example: imputing wealth from the SCF to the CPS
 
-This notebook demonstrates how to use the `microimpute` package and specifically the `autoimpute` function to impute wealth variables from the Survey of Consumer Finances to the Current Population Survey.
+This notebook demonstrates a full pipeline powered by the `microimpute` package and specifically the `autoimpute` function used to impute wealth variables from the Survey of Consumer Finances to the Current Population Survey.
 
 The Survey of Consumer Finances (SCF) is a triennial survey conducted by the Federal Reserve that collects detailed information on U.S. families' balance sheets, income, and demographic characteristics, with a special focus on wealth measures. The Current Population Survey (CPS) is a monthly survey conducted by the Census Bureau that provides comprehensive data on the labor force, employment, unemployment, and demographic characteristics, but lacks detailed wealth information.
 

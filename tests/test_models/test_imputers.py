@@ -658,11 +658,15 @@ def test_missing_predictors_in_test(model_class: Type[Imputer]) -> None:
 
 
 @pytest.mark.parametrize(
-    "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
+    "model_class",
+    [OLS, QuantReg, QRF, Matching],
+    ids=lambda cls: cls.__name__,
 )
 def test_reproducibility(
     model_class: Type[Imputer], simple_data: pd.DataFrame
 ) -> None:
+    # Note: MDN is excluded because PyTorch MPS (Apple Silicon) doesn't support
+    # deterministic operations, making reproducibility tests unreliable.
     """Test that models produce reproducible results."""
     X_train, X_test = preprocess_data(simple_data)
 

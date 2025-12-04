@@ -85,11 +85,11 @@ def prepare_data_for_imputation(
     predictors: List[str],
     imputed_variables: List[str],
     weight_col: Optional[str],
-    normalize_data: bool,
     train_size: float,
     test_size: float,
+    preprocessing: Optional[Dict[str, str]] = None,
 ) -> Tuple[pd.DataFrame, pd.DataFrame, Optional[dict]]:
-    """Prepare training and imputing data, optionally with normalization.
+    """Prepare training and imputing data, optionally with transformations.
 
     Args:
         donor_data: Original donor data.
@@ -97,12 +97,15 @@ def prepare_data_for_imputation(
         predictors: Predictor columns.
         imputed_variables: Variables to impute.
         weight_col: Optional weight column.
-        normalize_data: Whether to normalize.
         train_size: Training data proportion.
         test_size: Test data proportion.
+        preprocessing: Dict mapping variable names to transformation type.
+            Supported: "normalize", "log", "asinh". If None, no transformation.
 
     Returns:
-        Tuple of (training_data, imputing_data, normalization_params or None)
+        Tuple of (training_data, imputing_data, transform_params or None)
+        transform_params contains info needed to reverse transformations on
+        imputed variables.
     """
     # Remove imputed variables from receiver if present
     receiver_data = receiver_data.drop(
@@ -112,43 +115,106 @@ def prepare_data_for_imputation(
     training_data = donor_data.copy()
     imputing_data = receiver_data.copy()
 
-    if normalize_data:
-        # Normalize predictors and imputed variables together for consistency
+    if preprocessing:
         all_training_cols = predictors + imputed_variables
-        normalized_training, norm_params = preprocess_data(
+        all_cols = set(all_training_cols)
+
+        # Validate preprocessing keys
+        invalid_cols = set(preprocessing.keys()) - all_cols
+        if invalid_cols:
+            error_msg = (
+                f"Preprocessing specified for unknown columns: {invalid_cols}. "
+                f"Valid columns are: {all_cols}"
+            )
+            log.error(error_msg)
+            raise ValueError(error_msg)
+
+        # Validate transformation types
+        valid_transforms = {"normalize", "log", "asinh"}
+        for col, transform in preprocessing.items():
+            if transform not in valid_transforms:
+                error_msg = (
+                    f"Invalid transformation '{transform}' for column '{col}'. "
+                    f"Valid transformations are: {valid_transforms}"
+                )
+                log.error(error_msg)
+                raise ValueError(error_msg)
+
+        # Group columns by transformation type
+        normalize_cols = [
+            col for col, t in preprocessing.items() if t == "normalize"
+        ]
+        log_cols = [col for col, t in preprocessing.items() if t == "log"]
+        asinh_cols = [col for col, t in preprocessing.items() if t == "asinh"]
+
+        # Apply transformations to training data
+        transformed_training, transform_result = preprocess_data(
             training_data[all_training_cols],
             full_data=True,
             train_size=train_size,
             test_size=test_size,
-            normalize=True,
+            normalize=normalize_cols if normalize_cols else False,
+            log_transform=log_cols if log_cols else False,
+            asinh_transform=asinh_cols if asinh_cols else False,
         )
 
-        # Normalize imputing data predictors using same parameters
-        imputing_predictors, _ = preprocess_data(
+        # Apply same transformations to predictors in imputing data
+        predictor_normalize = [c for c in normalize_cols if c in predictors]
+        predictor_log = [c for c in log_cols if c in predictors]
+        predictor_asinh = [c for c in asinh_cols if c in predictors]
+
+        transformed_imputing, _ = preprocess_data(
             imputing_data[predictors],
             full_data=True,
             train_size=train_size,
             test_size=test_size,
-            normalize=True,
+            normalize=predictor_normalize if predictor_normalize else False,
+            log_transform=predictor_log if predictor_log else False,
+            asinh_transform=predictor_asinh if predictor_asinh else False,
         )
 
-        # Reconstruct training data with normalized values
-        training_data = normalized_training
+        training_data = transformed_training
         if weight_col:
             training_data[weight_col] = donor_data[weight_col]
 
-        imputing_data = imputing_predictors
+        imputing_data = transformed_imputing
 
-        # Extract normalization params only for imputed variables
-        imputed_norm_params = {
-            col: norm_params[col]
-            for col in imputed_variables
-            if col in norm_params
+        # Extract transform params only for imputed variables
+        imputed_transform_params = {
+            "normalization": {
+                col: transform_result["normalization"].get(col, {})
+                for col in imputed_variables
+                if col in transform_result.get("normalization", {})
+            },
+            "log_transform": {
+                col: transform_result["log_transform"].get(col, {})
+                for col in imputed_variables
+                if col in transform_result.get("log_transform", {})
+            },
+            "asinh_transform": {
+                col: transform_result["asinh_transform"].get(col, {})
+                for col in imputed_variables
+                if col in transform_result.get("asinh_transform", {})
+            },
         }
 
-        return training_data, imputing_data, imputed_norm_params
+        # Only return params if there are transformations to reverse
+        has_transforms = any(
+            imputed_transform_params[key]
+            for key in ["normalization", "log_transform", "asinh_transform"]
+        )
+
+        if has_transforms:
+            transform_params = {
+                "type": "preprocessing",
+                "params": imputed_transform_params,
+            }
+            return training_data, imputing_data, transform_params
+        else:
+            return training_data, imputing_data, None
+
     else:
-        # No normalization needed
+        # No transformation needed
         training_data = preprocess_data(
             training_data[predictors + imputed_variables],
             full_data=True,

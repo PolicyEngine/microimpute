@@ -1,6 +1,7 @@
 """Mixture Density Network (MDN) imputation model using PyTorch Tabular."""
 
 import hashlib
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -19,6 +20,20 @@ from microimpute.models.imputer import (
 
 # PyTorch Tabular imports
 try:
+    # Set environment variables to suppress logging BEFORE imports
+    # pytorch_tabular uses PT_LOGLEVEL to set its log level
+    os.environ["PT_LOGLEVEL"] = "ERROR"
+
+    # Suppress lightning rank_zero logging
+    for _logger_name in [
+        "lightning_utilities.core.rank_zero",
+        "pytorch_lightning",
+        "pytorch_lightning.utilities.rank_zero",
+    ]:
+        logging.getLogger(_logger_name).setLevel(logging.ERROR)
+
+    # After import, also update the rank_zero_module logger
+    from lightning_fabric.utilities.rank_zero import rank_zero_module
     from pytorch_tabular import TabularModel
     from pytorch_tabular.config import (
         DataConfig,
@@ -27,9 +42,37 @@ try:
     )
     from pytorch_tabular.models import CategoryEmbeddingModelConfig, MDNConfig
 
+    rank_zero_module.log.setLevel(logging.ERROR)
+
     PYTORCH_TABULAR_AVAILABLE = True
 except ImportError:
     PYTORCH_TABULAR_AVAILABLE = False
+
+
+def _suppress_pytorch_logging() -> None:
+    """Suppress verbose logging from PyTorch-related libraries.
+
+    This only suppresses pytorch_tabular and lightning logging,
+    leaving microimpute's own logging intact.
+    """
+    for logger_name in [
+        "pytorch_tabular",
+        "pytorch_tabular.tabular_model",
+        "pytorch_tabular.config",
+        "pytorch_tabular.config.config",
+        "pytorch_tabular.tabular_datamodule",
+        "pytorch_lightning",
+        "pytorch_lightning.utilities.rank_zero",
+        "lightning",
+        "lightning.pytorch",
+        "lightning.pytorch.utilities.rank_zero",
+        "lightning_fabric",
+    ]:
+        logger = logging.getLogger(logger_name)
+        logger.setLevel(logging.CRITICAL)
+        logger.propagate = False
+        logger.handlers = []
+        logger.addHandler(logging.NullHandler())
 
 
 def _generate_data_hash(X: pd.DataFrame, y: pd.Series) -> str:
@@ -142,6 +185,7 @@ class _MDNModel:
             X: Feature DataFrame (predictors are already dummy-encoded).
             y: Target Series.
         """
+        _suppress_pytorch_logging()
         self.output_column = y.name
 
         # Combine X and y for PyTorch Tabular
@@ -209,6 +253,8 @@ class _MDNModel:
             model_config=model_config,
             optimizer_config=optimizer_config,
             trainer_config=trainer_config,
+            verbose=False,
+            suppress_lightning_logger=True,
         )
 
         self.model.fit(train=train_data)
@@ -311,6 +357,7 @@ class _NeuralClassifierModel:
             var_type: Type of variable ("boolean" or "categorical").
             categories: List of categories for categorical variables.
         """
+        _suppress_pytorch_logging()
         self.output_column = y.name
         self.var_type = var_type
 
@@ -385,6 +432,8 @@ class _NeuralClassifierModel:
             model_config=model_config,
             optimizer_config=optimizer_config,
             trainer_config=trainer_config,
+            verbose=False,
+            suppress_lightning_logger=True,
         )
 
         self.model.fit(train=train_data)
@@ -539,19 +588,23 @@ class MDNResults(ImputerResults):
         X_test: pd.DataFrame,
         quantiles: Optional[List[float]] = None,
         return_probs: bool = False,
+        n_samples: int = 1000,
     ) -> Dict[float, pd.DataFrame]:
         """Predict imputed values using stochastic sampling.
 
-        For MDN models, samples are drawn from the learned mixture distribution.
-        For classifier models, samples are drawn from the predicted probability
-        distribution.
+        For MDN models, many samples are drawn from the learned mixture
+        distribution and empirical quantiles are computed. For classifier
+        models, samples are drawn from the predicted probability distribution.
 
         Args:
             X_test: DataFrame containing the test data.
-            quantiles: List of quantiles (used to determine number of
-                independent samples to draw).
+            quantiles: List of quantiles to compute from the sampled
+                distribution.
             return_probs: If True, return probability distributions for
                 categorical variables.
+            n_samples: Number of samples to draw for computing quantiles
+                (default 1000). More samples give more accurate quantile
+                estimates but increase computation time.
 
         Returns:
             Dictionary mapping quantiles to imputed DataFrames.
@@ -561,12 +614,24 @@ class MDNResults(ImputerResults):
             imputations: Dict[float, pd.DataFrame] = {}
             prob_results = {} if return_probs else None
 
-            # Determine how many independent samples to draw
             if quantiles:
                 quantiles_to_use = quantiles
             else:
-                quantiles_to_use = [0.5]  # Default single sample
+                quantiles_to_use = [0.5]
 
+            # Pre-compute samples for MDN models (draw once, compute all
+            # quantiles)
+            mdn_samples: Dict[str, np.ndarray] = {}
+            for variable in self.imputed_variables:
+                model = self.models[variable]
+                if isinstance(model, _MDNModel):
+                    # Draw n_samples for each observation
+                    samples = model.predict(
+                        X_test[self.predictors], n_samples=n_samples
+                    )
+                    mdn_samples[variable] = samples
+
+            # Compute quantiles from the samples
             for q in quantiles_to_use:
                 imputed_df = pd.DataFrame(index=X_test.index)
 
@@ -591,11 +656,10 @@ class MDNResults(ImputerResults):
                         )
 
                     elif isinstance(model, _MDNModel):
-                        # Stochastic sampling from MDN mixture distribution
-                        samples = model.predict(
-                            X_test[self.predictors], n_samples=1
-                        )
-                        imputed_df[variable] = samples.flatten()
+                        # Compute empirical quantile from samples
+                        samples = mdn_samples[variable]
+                        quantile_values = np.quantile(samples, q, axis=1)
+                        imputed_df[variable] = quantile_values
 
                     else:
                         raise ValueError(
