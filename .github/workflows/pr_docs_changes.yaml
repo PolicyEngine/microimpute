@@ -36,7 +36,7 @@ jobs:
               sudo Rscript -e 'install.packages("clue", repos="https://cloud.r-project.org")'
           - name: Install dependencies
             run: |
-              uv pip install -e ".[dev,docs,matching,images]" --system
+              uv pip install -e ".[dev,docs,matching,mdn,images]" --system
           - name: Install JB
             run: uv pip install "jupyter-book>=2.0.0a0" --system
           - name: Test documentation builds

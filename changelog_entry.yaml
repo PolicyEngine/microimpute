@@ -1,0 +1,4 @@
+- bump: minor
+  changes:
+    added:
+    - Asinh transformation preprocessing option for numeric variables.

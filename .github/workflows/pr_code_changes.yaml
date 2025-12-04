@@ -52,7 +52,7 @@ jobs:
       - name: Install full test dependencies (Python 3.13)
         if: matrix.python-version == '3.13'
         run: |
-          uv pip install -e ".[dev,matching]" --system
+          uv pip install -e ".[dev,matching,mdn]" --system
       - name: Install minimal test dependencies (Python 3.12)
         if: matrix.python-version == '3.12'
         run: |
