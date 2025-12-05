@@ -32,6 +32,33 @@ try:
     ]:
         logging.getLogger(_logger_name).setLevel(logging.ERROR)
 
+    # Suppress pytorch_tabular warnings
+    import warnings
+
+    warnings.filterwarnings(
+        "ignore",
+        message=".*does not have many workers.*",
+        module="pytorch_lightning",
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=".*pin_memory.*argument is set as true but not supported on MPS.*",
+        module="torch.utils.data.dataloader",
+    )
+
+    warnings.filterwarnings(
+        "ignore",
+        message=".*Setting an item of incompatible dtype is deprecated.*",
+        category=FutureWarning,
+        module="pytorch_tabular.tabular_datamodule",
+    )
+
+    warnings.filterwarnings(
+        "ignore",
+        message=".*training batches.*smaller than the logging interval.*",
+        module="pytorch_lightning.loops.fit_loop",
+    )
+
     # After import, also update the rank_zero_module logger
     from lightning_fabric.utilities.rank_zero import rank_zero_module
     from pytorch_tabular import TabularModel
@@ -145,7 +172,7 @@ class _MDNModel:
         self,
         seed: int,
         logger,
-        layers: str = "128-64",
+        layers: str = "128-64-32",
         activation: str = "ReLU",
         dropout: float = 0.1,
         use_batch_norm: bool = False,
@@ -155,7 +182,7 @@ class _MDNModel:
         learning_rate: float = 1e-3,
         max_epochs: int = 100,
         early_stopping_patience: int = 10,
-        batch_size: int = 64,
+        batch_size: int = 256,
     ):
         self.seed = seed
         self.logger = logger
@@ -316,14 +343,14 @@ class _NeuralClassifierModel:
         self,
         seed: int,
         logger,
-        layers: str = "128-64",
+        layers: str = "128-64-32",
         activation: str = "ReLU",
         dropout: float = 0.1,
         use_batch_norm: bool = False,
         learning_rate: float = 1e-3,
         max_epochs: int = 100,
         early_stopping_patience: int = 10,
-        batch_size: int = 64,
+        batch_size: int = 256,
     ):
         self.seed = seed
         self.logger = logger

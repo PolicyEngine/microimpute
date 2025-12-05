@@ -9,6 +9,7 @@ Microimpute enables variable imputation through a variety of statistical methods
 - **Ordinary Least Squares (OLS)**: Linear regression-based imputation
 - **Quantile Regression**: Distribution-aware regression imputation
 - **Quantile Random Forests (QRF)**: Non-parametric forest-based approach
+- **Mixture Density Networks (MDN)**: Neural network with Gaussian mixture approximation head
 
 ### Automated method selection
 - **AutoImpute**: Automatically compares and selects the best imputation method for your data

@@ -4,10 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from microimpute.comparisons import (
-    compare_metrics,
-    get_imputations,
-)
+from microimpute.comparisons import compare_metrics, get_imputations
 from microimpute.comparisons.autoimpute import autoimpute
 from microimpute.comparisons.autoimpute_helpers import (
     select_best_model_dual_metrics,
@@ -1222,37 +1219,35 @@ def test_compare_distributions_missing_columns() -> None:
         compare_distributions(donor, receiver, ["c"])
 
 
-def test_compare_distributions_with_nulls() -> None:
-    """Test that compare_distributions handles null values correctly."""
+def test_compare_distributions_rejects_nulls_in_data() -> None:
+    """Test that compare_distributions raises error when data contains nulls."""
     np.random.seed(42)
 
-    donor = pd.DataFrame(
+    donor_with_nulls = pd.DataFrame(
         {
             "x": [1, 2, 3, 4, 5, np.nan, np.nan],
             "y": ["A", "B", "A", "B", "A", None, "B"],
         }
     )
 
-    receiver = pd.DataFrame(
+    receiver_ok = pd.DataFrame(
         {
-            "x": [1.5, 2.5, 3.5, 4.5, 5.5, np.nan],
-            "y": ["A", "A", "B", "B", "B", None],
+            "x": [1.5, 2.5, 3.5, 4.5, 5.5, 6.5],
+            "y": ["A", "A", "B", "B", "B", "A"],
         }
     )
 
-    # Should work - nulls are dropped
-    results = compare_distributions(donor, receiver, ["x", "y"])
-
-    assert len(results) == 2
-    assert all(results["Distance"] >= 0)
+    # Should raise error for nulls in donor
+    with pytest.raises(ValueError, match="contains null values"):
+        compare_distributions(donor_with_nulls, receiver_ok, ["x", "y"])
 
 
-def test_compare_distributions_insufficient_data() -> None:
-    """Test error when variables have insufficient non-null data."""
+def test_compare_distributions_empty_data() -> None:
+    """Test error when variables have no data."""
     donor = pd.DataFrame(
         {
-            "x": [np.nan, np.nan, np.nan],
-            "y": [None, None, None],
+            "x": pd.Series([], dtype=float),
+            "y": pd.Series([], dtype=str),
         }
     )
 
@@ -1297,3 +1292,340 @@ def test_compare_distributions_return_format() -> None:
     assert results["Variable"].dtype == "object"
     assert results["Metric"].dtype == "object"
     assert results["Distance"].dtype in ["float64", "float32"]
+
+
+# === Weighted Distribution Comparison Tests ===
+
+
+def test_kl_divergence_with_weights() -> None:
+    """Test KL divergence with sample weights."""
+    # Create data where weights matter
+    donor = np.array(["A", "A", "B", "B"])
+    receiver = np.array(["A", "A", "B", "B"])
+
+    # Without weights: both distributions are 50% A, 50% B
+    kl_unweighted = kl_divergence(donor, receiver)
+    assert np.isclose(
+        kl_unweighted, 0.0, atol=1e-10
+    ), "Unweighted identical distributions should have KL=0"
+
+    # With weights: donor becomes 80% A, 20% B; receiver stays 50% A, 50% B
+    donor_weights = np.array(
+        [4.0, 4.0, 1.0, 1.0]
+    )  # A weighted 8, B weighted 2
+    kl_weighted_donor = kl_divergence(
+        donor, receiver, donor_weights=donor_weights
+    )
+    assert (
+        kl_weighted_donor > 0
+    ), "Weighted donor with different distribution should have KL > 0"
+
+    # With receiver weights: donor 50/50, receiver becomes 80% A, 20% B
+    receiver_weights = np.array([4.0, 4.0, 1.0, 1.0])
+    kl_weighted_receiver = kl_divergence(
+        donor, receiver, receiver_weights=receiver_weights
+    )
+    assert (
+        kl_weighted_receiver > 0
+    ), "Weighted receiver with different distribution should have KL > 0"
+
+
+def test_kl_divergence_weights_symmetry() -> None:
+    """Test that KL divergence with swapped weighted distributions gives same result."""
+    donor = np.array(["A", "A", "B", "B"])
+    receiver = np.array(["A", "A", "B", "B"])
+
+    # Make donor 80% A via weights
+    donor_weights = np.array([4.0, 4.0, 1.0, 1.0])
+
+    # Make receiver 80% A via weights
+    receiver_weights = np.array([4.0, 4.0, 1.0, 1.0])
+
+    # Both weighted the same way should give KL = 0
+    kl = kl_divergence(
+        donor,
+        receiver,
+        donor_weights=donor_weights,
+        receiver_weights=receiver_weights,
+    )
+    assert np.isclose(
+        kl, 0.0, atol=1e-10
+    ), "Identically weighted distributions should have KL=0"
+
+
+def test_compare_distributions_with_weights() -> None:
+    """Test compare_distributions with weight arrays."""
+    np.random.seed(42)
+
+    donor = pd.DataFrame(
+        {
+            "income": np.random.normal(50000, 10000, 100),
+            "region": np.random.choice(["A", "B", "C"], 100),
+        }
+    )
+    donor_weights = np.random.uniform(0.5, 2.0, 100)
+
+    receiver = pd.DataFrame(
+        {
+            "income": np.random.normal(52000, 10000, 100),
+            "region": np.random.choice(["A", "B", "C"], 100),
+        }
+    )
+    receiver_weights = np.random.uniform(0.5, 2.0, 100)
+
+    # Unweighted comparison
+    results_unweighted = compare_distributions(
+        donor, receiver, ["income", "region"]
+    )
+
+    # Weighted comparison
+    results_weighted = compare_distributions(
+        donor,
+        receiver,
+        ["income", "region"],
+        donor_weights=donor_weights,
+        receiver_weights=receiver_weights,
+    )
+
+    # Both should return valid results
+    assert len(results_unweighted) == 2
+    assert len(results_weighted) == 2
+
+    # Results should be different (weights should affect the computation)
+    # Get income distances
+    income_unweighted = results_unweighted[
+        results_unweighted["Variable"] == "income"
+    ]["Distance"].values[0]
+    income_weighted = results_weighted[
+        results_weighted["Variable"] == "income"
+    ]["Distance"].values[0]
+
+    # With random weights, results should typically differ
+    # (though not guaranteed, so we just check they're both valid)
+    assert income_unweighted >= 0
+    assert income_weighted >= 0
+
+
+def test_compare_distributions_donor_weight_only() -> None:
+    """Test compare_distributions with only donor weights."""
+    np.random.seed(42)
+
+    donor = pd.DataFrame(
+        {
+            "x": np.random.normal(0, 1, 50),
+        }
+    )
+    donor_weights = np.random.uniform(1, 3, 50)
+
+    receiver = pd.DataFrame(
+        {
+            "x": np.random.normal(0.5, 1, 50),
+        }
+    )
+
+    # Should work with only donor weights
+    results = compare_distributions(
+        donor, receiver, ["x"], donor_weights=donor_weights
+    )
+
+    assert len(results) == 1
+    assert results["Variable"].values[0] == "x"
+    assert results["Distance"].values[0] >= 0
+
+
+def test_compare_distributions_receiver_weight_only() -> None:
+    """Test compare_distributions with only receiver weights."""
+    np.random.seed(42)
+
+    donor = pd.DataFrame(
+        {
+            "x": np.random.normal(0, 1, 50),
+        }
+    )
+
+    receiver = pd.DataFrame(
+        {
+            "x": np.random.normal(0.5, 1, 50),
+        }
+    )
+    receiver_weights = np.random.uniform(1, 3, 50)
+
+    # Should work with only receiver weights
+    results = compare_distributions(
+        donor, receiver, ["x"], receiver_weights=receiver_weights
+    )
+
+    assert len(results) == 1
+    assert results["Variable"].values[0] == "x"
+    assert results["Distance"].values[0] >= 0
+
+
+def test_compare_distributions_rejects_nulls() -> None:
+    """Test that compare_distributions raises error when data contains nulls."""
+    donor_with_null = pd.DataFrame(
+        {
+            "x": [1.0, 2.0, np.nan, 4.0, 5.0],
+        }
+    )
+    donor_ok = pd.DataFrame(
+        {
+            "x": [1.0, 2.0, 3.0, 4.0, 5.0],
+        }
+    )
+    receiver_with_null = pd.DataFrame(
+        {
+            "x": [1.5, np.nan, 3.5, 4.5, 5.5],
+        }
+    )
+    receiver_ok = pd.DataFrame(
+        {
+            "x": [1.5, 2.5, 3.5, 4.5, 5.5],
+        }
+    )
+
+    # Should raise error for null in donor
+    with pytest.raises(ValueError, match="donor_data contains null values"):
+        compare_distributions(donor_with_null, receiver_ok, ["x"])
+
+    # Should raise error for null in receiver
+    with pytest.raises(ValueError, match="receiver_data contains null values"):
+        compare_distributions(donor_ok, receiver_with_null, ["x"])
+
+
+def test_compare_distributions_weights_affect_wasserstein() -> None:
+    """Test that weights actually affect Wasserstein distance calculation."""
+    # Create two identical value arrays
+    donor = pd.DataFrame(
+        {
+            "x": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+    donor_weights = np.array([1.0, 1.0, 1.0, 1.0])
+
+    receiver = pd.DataFrame(
+        {
+            "x": [1.0, 2.0, 3.0, 4.0],
+        }
+    )
+    receiver_weights = np.array([1.0, 1.0, 1.0, 1.0])
+
+    # Identical data and weights should give distance = 0
+    results_identical = compare_distributions(
+        donor,
+        receiver,
+        ["x"],
+        donor_weights=donor_weights,
+        receiver_weights=receiver_weights,
+    )
+    assert np.isclose(
+        results_identical["Distance"].values[0], 0.0, atol=1e-10
+    ), "Identical weighted distributions should have distance=0"
+
+    # Now change receiver weights to shift distribution toward higher values
+    receiver_shifted_weights = np.array(
+        [0.1, 0.1, 1.0, 1.0]
+    )  # More weight on higher values
+
+    results_shifted = compare_distributions(
+        donor,
+        receiver,
+        ["x"],
+        donor_weights=donor_weights,
+        receiver_weights=receiver_shifted_weights,
+    )
+    assert (
+        results_shifted["Distance"].values[0] > 0
+    ), "Different weighted distributions should have distance > 0"
+
+
+def test_compare_distributions_weights_affect_kl() -> None:
+    """Test that weights actually affect KL divergence calculation."""
+    # Create identical categorical arrays
+    donor = pd.DataFrame(
+        {
+            "cat": ["A", "A", "B", "B"],
+        }
+    )
+    donor_weights = np.array([1.0, 1.0, 1.0, 1.0])
+
+    receiver = pd.DataFrame(
+        {
+            "cat": ["A", "A", "B", "B"],
+        }
+    )
+    receiver_weights = np.array([1.0, 1.0, 1.0, 1.0])
+
+    # Identical data and weights should give KL = 0
+    results_identical = compare_distributions(
+        donor,
+        receiver,
+        ["cat"],
+        donor_weights=donor_weights,
+        receiver_weights=receiver_weights,
+    )
+    assert np.isclose(
+        results_identical["Distance"].values[0], 0.0, atol=1e-10
+    ), "Identical weighted distributions should have KL=0"
+
+    # Now change weights to create different distributions
+    # Donor: 50% A, 50% B (equal weights)
+    # Receiver: 90% A, 10% B (by weights)
+    receiver_shifted_weights = np.array(
+        [4.5, 4.5, 0.5, 0.5]
+    )  # 90% weight on A
+
+    results_shifted = compare_distributions(
+        donor,
+        receiver,
+        ["cat"],
+        donor_weights=donor_weights,
+        receiver_weights=receiver_shifted_weights,
+    )
+    assert (
+        results_shifted["Distance"].values[0] > 0
+    ), "Different weighted distributions should have KL > 0"
+
+
+def test_compare_distributions_weight_length_mismatch() -> None:
+    """Test error handling for weight length mismatch."""
+    donor = pd.DataFrame({"x": [1, 2, 3]})
+    receiver = pd.DataFrame({"x": [1, 2, 3]})
+
+    # Should raise error for mismatched donor weights length
+    with pytest.raises(ValueError, match="donor_weights length"):
+        compare_distributions(
+            donor,
+            receiver,
+            ["x"],
+            donor_weights=np.array([1.0, 2.0]),  # Wrong length
+        )
+
+    # Should raise error for mismatched receiver weights length
+    with pytest.raises(ValueError, match="receiver_weights length"):
+        compare_distributions(
+            donor,
+            receiver,
+            ["x"],
+            receiver_weights=np.array([1.0, 2.0]),  # Wrong length
+        )
+
+
+def test_compare_distributions_with_series_weights() -> None:
+    """Test that compare_distributions works with pandas Series as weights."""
+    donor = pd.DataFrame({"x": [1.0, 2.0, 3.0, 4.0]})
+    donor_weights = pd.Series([1.0, 2.0, 3.0, 4.0])
+
+    receiver = pd.DataFrame({"x": [1.5, 2.5, 3.5, 4.5]})
+    receiver_weights = pd.Series([1.0, 1.0, 1.0, 1.0])
+
+    # Should work with Series weights
+    results = compare_distributions(
+        donor,
+        receiver,
+        ["x"],
+        donor_weights=donor_weights,
+        receiver_weights=receiver_weights,
+    )
+
+    assert len(results) == 1
+    assert results["Distance"].values[0] >= 0

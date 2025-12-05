@@ -8,7 +8,7 @@ The module automatically detects which metric to use based on variable type.
 """
 
 import logging
-from typing import Dict, List, Literal, Optional, Tuple
+from typing import Dict, List, Literal, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -497,7 +497,10 @@ def compare_metrics(
 
 
 def kl_divergence(
-    donor_values: np.ndarray, receiver_values: np.ndarray
+    donor_values: np.ndarray,
+    receiver_values: np.ndarray,
+    donor_weights: Optional[np.ndarray] = None,
+    receiver_weights: Optional[np.ndarray] = None,
 ) -> float:
     """Calculate Kullback-Leibler (KL) Divergence between two categorical distributions.
 
@@ -512,6 +515,10 @@ def kl_divergence(
     Args:
         donor_values: Array of categorical values from donor data (reference distribution P).
         receiver_values: Array of categorical values from receiver data (approximation Q).
+        donor_weights: Optional weights for donor values. If provided, computes
+            weighted probability distribution.
+        receiver_weights: Optional weights for receiver values. If provided,
+            computes weighted probability distribution.
 
     Returns:
         KL divergence value >= 0, where 0 indicates identical distributions
@@ -536,9 +543,30 @@ def kl_divergence(
         np.unique(donor_values), np.unique(receiver_values)
     )
 
-    # Calculate probability distributions
-    donor_counts = pd.Series(donor_values).value_counts(normalize=True)
-    receiver_counts = pd.Series(receiver_values).value_counts(normalize=True)
+    # Calculate probability distributions (weighted if weights provided)
+    if donor_weights is not None:
+        # Compute weighted probabilities
+        donor_df = pd.DataFrame(
+            {"value": donor_values, "weight": donor_weights}
+        )
+        donor_grouped = donor_df.groupby("value")["weight"].sum()
+        donor_total = donor_grouped.sum()
+        donor_counts = donor_grouped / donor_total
+    else:
+        donor_counts = pd.Series(donor_values).value_counts(normalize=True)
+
+    if receiver_weights is not None:
+        # Compute weighted probabilities
+        receiver_df = pd.DataFrame(
+            {"value": receiver_values, "weight": receiver_weights}
+        )
+        receiver_grouped = receiver_df.groupby("value")["weight"].sum()
+        receiver_total = receiver_grouped.sum()
+        receiver_counts = receiver_grouped / receiver_total
+    else:
+        receiver_counts = pd.Series(receiver_values).value_counts(
+            normalize=True
+        )
 
     # Create probability arrays for all categories
     p_donor = np.array([donor_counts.get(cat, 0.0) for cat in all_categories])
@@ -563,6 +591,8 @@ def compare_distributions(
     donor_data: pd.DataFrame,
     receiver_data: pd.DataFrame,
     imputed_variables: List[str],
+    donor_weights: Optional[Union[pd.Series, np.ndarray]] = None,
+    receiver_weights: Optional[Union[pd.Series, np.ndarray]] = None,
 ) -> pd.DataFrame:
     """Compare distributions between donor and receiver data for imputed variables.
 
@@ -574,6 +604,10 @@ def compare_distributions(
         donor_data: DataFrame containing original donor data.
         receiver_data: DataFrame containing receiver data with imputations.
         imputed_variables: List of variable names to compare.
+        donor_weights: Optional array or Series of sample weights for donor data.
+            Must have same length as donor_data.
+        receiver_weights: Optional array or Series of sample weights for receiver
+            data. Must have same length as receiver_data.
 
     Returns:
         DataFrame with columns 'Variable', 'Metric', and 'Distance' containing
@@ -608,14 +642,45 @@ def compare_distributions(
             receiver_data, imputed_variables, "receiver_data"
         )
 
+        # Convert weights to numpy arrays if provided
+        donor_weights_arr = None
+        receiver_weights_arr = None
+        if donor_weights is not None:
+            donor_weights_arr = np.asarray(donor_weights)
+            if len(donor_weights_arr) != len(donor_data):
+                raise ValueError(
+                    f"donor_weights length ({len(donor_weights_arr)}) must match "
+                    f"donor_data length ({len(donor_data)})"
+                )
+        if receiver_weights is not None:
+            receiver_weights_arr = np.asarray(receiver_weights)
+            if len(receiver_weights_arr) != len(receiver_data):
+                raise ValueError(
+                    f"receiver_weights length ({len(receiver_weights_arr)}) must "
+                    f"match receiver_data length ({len(receiver_data)})"
+                )
+
         results = []
 
         # Detect metric type and compute distance for each variable
         detector = VariableTypeDetector()
         for var in imputed_variables:
-            # Get values from both datasets
-            donor_values = donor_data[var].dropna().values
-            receiver_values = receiver_data[var].dropna().values
+            donor_values = donor_data[var].values
+            receiver_values = receiver_data[var].values
+
+            # Check for null values - these are not allowed when comparing
+            if np.any(pd.isna(donor_values)):
+                raise ValueError(
+                    f"Variable '{var}' in donor_data contains null values. "
+                    "Please remove or impute null values before comparing "
+                    "distributions."
+                )
+            if np.any(pd.isna(receiver_values)):
+                raise ValueError(
+                    f"Variable '{var}' in receiver_data contains null values. "
+                    "Please remove or impute null values before comparing "
+                    "distributions."
+                )
 
             if len(donor_values) == 0 or len(receiver_values) == 0:
                 log.warning(
@@ -633,14 +698,24 @@ def compare_distributions(
             if var_type in ["bool", "categorical", "numeric_categorical"]:
                 # Use KL Divergence for categorical
                 metric_name = "kl_divergence"
-                distance = kl_divergence(donor_values, receiver_values)
+                distance = kl_divergence(
+                    donor_values,
+                    receiver_values,
+                    donor_weights=donor_weights_arr,
+                    receiver_weights=receiver_weights_arr,
+                )
                 log.debug(
                     f"KL divergence for categorical variable '{var}': {distance:.6f}"
                 )
             else:
                 # Use Wasserstein Distance for numerical
                 metric_name = "wasserstein_distance"
-                distance = wasserstein_distance(donor_values, receiver_values)
+                distance = wasserstein_distance(
+                    donor_values,
+                    receiver_values,
+                    u_weights=donor_weights_arr,
+                    v_weights=receiver_weights_arr,
+                )
                 log.debug(
                     f"Wasserstein distance for numerical variable '{var}': {distance:.6f}"
                 )

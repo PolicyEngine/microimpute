@@ -163,15 +163,20 @@ def prepare_data_for_imputation(
         predictor_log = [c for c in log_cols if c in predictors]
         predictor_asinh = [c for c in asinh_cols if c in predictors]
 
-        transformed_imputing, _ = preprocess_data(
-            imputing_data[predictors],
-            full_data=True,
-            train_size=train_size,
-            test_size=test_size,
-            normalize=predictor_normalize if predictor_normalize else False,
-            log_transform=predictor_log if predictor_log else False,
-            asinh_transform=predictor_asinh if predictor_asinh else False,
-        )
+        if predictor_normalize or predictor_log or predictor_asinh:
+            transformed_imputing, _ = preprocess_data(
+                imputing_data[predictors],
+                full_data=True,
+                train_size=train_size,
+                test_size=test_size,
+                normalize=(
+                    predictor_normalize if predictor_normalize else False
+                ),
+                log_transform=predictor_log if predictor_log else False,
+                asinh_transform=predictor_asinh if predictor_asinh else False,
+            )
+        else:
+            transformed_imputing = imputing_data[predictors].copy()
 
         training_data = transformed_training
         if weight_col:
