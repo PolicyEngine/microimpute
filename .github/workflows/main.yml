@@ -5,33 +5,7 @@ on:
     branches: [ main ]
 
 jobs:
-  Check-MDN-Changes:
-    runs-on: ubuntu-latest
-    outputs:
-      mdn_changed: ${{ steps.check.outputs.mdn_changed }}
-    steps:
-      - uses: actions/checkout@v3
-        with:
-          fetch-depth: 2
-      - name: Check for MDN-related file changes
-        id: check
-        run: |
-          # Get list of changed files in this push
-          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD)
-          echo "Changed files:"
-          echo "$CHANGED_FILES"
-
-          # Check if any MDN-related files were changed
-          if echo "$CHANGED_FILES" | grep -qE "(mdn|MDN)"; then
-            echo "mdn_changed=true" >> $GITHUB_OUTPUT
-            echo "MDN-related files were changed"
-          else
-            echo "mdn_changed=false" >> $GITHUB_OUTPUT
-            echo "No MDN-related files were changed"
-          fi
-
   Test:
-    needs: Check-MDN-Changes
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -56,12 +30,8 @@ jobs:
         run: |
           sudo Rscript -e 'install.packages("StatMatch", repos="https://cloud.r-project.org")'
           sudo Rscript -e 'install.packages("clue", repos="https://cloud.r-project.org")'
-      - name: Install full dependencies without MDN (Python 3.13)
-        if: matrix.python-version == '3.13' && needs.Check-MDN-Changes.outputs.mdn_changed != 'true'
-        run: |
-          uv pip install -e ".[dev,docs,matching,images]" --system
-      - name: Install full dependencies with MDN (Python 3.13)
-        if: matrix.python-version == '3.13' && needs.Check-MDN-Changes.outputs.mdn_changed == 'true'
+      - name: Install full dependencies (Python 3.13)
+        if: matrix.python-version == '3.13'
         run: |
           uv pip install -e ".[dev,docs,matching,mdn,images]" --system
       - name: Install minimal dependencies (Python 3.12)

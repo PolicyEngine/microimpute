@@ -116,6 +116,8 @@ $$W_p(P, Q) = \left(\inf_{\gamma \in \Pi(P, Q)} \int_{X \times Y} d(x, y)^p d\ga
 
 where $\Pi(P, Q)$ denotes the set of all joint distributions whose marginals are $P$ and $Q$ respectively. The Wasserstein distance measures the minimum "work" required to transform one distribution into another, where work is the amount of distribution mass moved times the distance moved. Lower values indicate better preservation of the original distribution's shape.
 
+When sample weights are provided, the weighted Wasserstein distance accounts for varying observation importance, which is essential when comparing survey data with different sampling designs. We use scipy's `wasserstein_distance` implementation, which supports sample weights via the `u_weights` and `v_weights` parameters.
+
 ### Kullback-Leibler divergence
 
 For discrete distributions (categorical and boolean variables), KL divergence quantifies how one probability distribution diverges from a reference:
@@ -124,23 +126,55 @@ $$D_{KL}(P||Q) = \sum_{x \in \mathcal{X}} P(x) \log\left(\frac{P(x)}{Q(x)}\right
 
 where $P$ is the reference distribution (original data), $Q$ is the approximation (imputed data), and $\mathcal{X}$ is the set of all possible categorical values. KL divergence measures how much information is lost when using the imputed distribution to approximate the true distribution. Lower values indicate better preservation of the original categorical distribution.
 
+When sample weights are provided, the probability distributions are computed as weighted proportions rather than simple counts, ensuring proper comparison of weighted survey data.
+
+### kl_divergence
+
+Computes the Kullback-Leibler divergence between two categorical distributions, with optional sample weights.
+
+```python
+def kl_divergence(
+    donor_values: np.ndarray,
+    receiver_values: np.ndarray,
+    donor_weights: Optional[np.ndarray] = None,
+    receiver_weights: Optional[np.ndarray] = None,
+) -> float
+```
+
+| Parameter | Type | Default used | Description |
+|-----------|------|---------|-------------|
+| donor_values | np.ndarray | - | Categorical values from donor data (reference distribution) |
+| receiver_values | np.ndarray | - | Categorical values from receiver data (approximation) |
+| donor_weights | np.ndarray | None | Optional sample weights for donor values |
+| receiver_weights | np.ndarray | None | Optional sample weights for receiver values |
+
+Returns KL divergence value (float >= 0), where 0 indicates identical distributions.
+
 ### compare_distributions
+
+Compares distributions between donor and receiver data, automatically selecting the appropriate metric based on variable type and supporting sample weights for survey data.
 
 ```python
 def compare_distributions(
     donor_data: pd.DataFrame,
     receiver_data: pd.DataFrame,
     imputed_variables: List[str],
+    donor_weights: Optional[Union[pd.Series, np.ndarray]] = None,
+    receiver_weights: Optional[Union[pd.Series, np.ndarray]] = None,
 ) -> pd.DataFrame
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| donor_data | pd.DataFrame | Original donor data |
-| receiver_data | pd.DataFrame | Receiver data with imputations |
-| imputed_variables | List[str] | Variables to compare |
+| Parameter | Type | Default used | Description |
+|-----------|------|---------|-------------|
+| donor_data | pd.DataFrame | - | Original donor data |
+| receiver_data | pd.DataFrame | - | Receiver data with imputations |
+| imputed_variables | List[str] | - | Variables to compare |
+| donor_weights | pd.Series or np.ndarray | None | Sample weights for donor data (must match donor_data length) |
+| receiver_weights | pd.Series or np.ndarray | None | Sample weights for receiver data (must match receiver_data length) |
 
 Returns a DataFrame with columns `Variable`, `Metric`, and `Distance`. The function automatically selects Wasserstein distance for numerical variables and KL divergence for categorical variables.
+
+Note that data must not contain null or infinite values. If your data contains such values, filter them before calling this function.
 
 ## Predictor analysis
 
@@ -251,11 +285,13 @@ metrics_df = compare_metrics(
     imputed_variables=imputed_variables
 )
 
-# Evaluate distributional match
-dist_df = compare_distributions(
+# Evaluate distributional match with survey weights
+dist_df_weighted = compare_distributions(
     donor_data=donor,
     receiver_data=receiver_with_imputations,
-    imputed_variables=imputed_variables
+    imputed_variables=imputed_variables,
+    donor_weights=donor["sample_weight"],
+    receiver_weights=receiver["sample_weight"],
 )
 
 # Analyze predictor importance
