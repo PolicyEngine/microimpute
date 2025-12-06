@@ -1,0 +1,35 @@
+\section{Discussion}
+
+This paper has demonstrated both theoretically and empirically that Quantile Regression Forests provide substantial advantages for microimputation, particularly through the example of wealth imputation from the SCF to the CPS. By preserving the full conditional distribution of wealth, QRF maintains the critical statistical properties of wealth data that traditional methods fail to capture.
+
+\subsection{Strengths powered by $\texttt{microimpute}$}
+
+The $\texttt{microimpute}$ package's design philosophy and implementation choices provide several key advantages that contributed to the success of our wealth imputation analysis:
+
+\begin{enumerate}
+    \item \textbf{Unified interface for method comparison}: $\texttt{microimpute}$'s consistent API across all imputation methods enabled systematic benchmarking without implementation-specific biases. This standardization ensures that performance differences reflect genuine methodological advantages rather than implementation artifacts \citep{policyengine2025microimpute}.
+
+    \item \textbf{Automated method selection}: The package's \texttt{autoimpute} function streamlines the imputation workflow by automatically comparing methods and selecting the best performer based on quantile loss metrics. This feature proved particularly valuable given the wealth data's complexity, as it removed subjective method selection and ensured optimal performance.
+
+    \item \textbf{Survey weight integration}: $\texttt{microimpute}$'s native support for survey weights through stratified sampling ensures that imputation models properly represent population distributions. This capability is crucial when transferring information between surveys with different sampling designs, such as the SCF's oversampling of wealthy households.
+
+    \item \textbf{Quantile-aware evaluation}: By implementing quantile loss as the primary evaluation metric, $\texttt{microimpute}$ directly addresses the challenges of skewed distributions. This metric's asymmetric penalty structure naturally prioritizes accurate imputation at distribution tails, where traditional metrics like Root Mean Squared Error (RMSE) often fail.
+
+    \item \textbf{Computational efficiency}: The package's optimized implementation enables processing of large microdata files while maintaining reasonable computation times. Cross-validation on the full SCF dataset, including QRF hyperparameter tuning, was completed in under 30 minutes on standard hardware, making iterative experimentation feasible.
+
+    \item \textbf{Open-source transparency}: As an open-source tool, $\texttt{microimpute}$ allows full inspection and modification of imputation algorithms, promoting reproducibility and enabling custom extensions for specific research needs \citep{policyengine2025microimpute}.
+\end{enumerate}
+
+\subsection{Limitations and future improvements}
+
+Despite the demonstrated advantages, several limitations warrant consideration for future development:
+
+\subsubsection{Current package limitations}
+
+While $\texttt{microimpute}$ currently supports four imputation methods, expanding to include modern machine learning approaches such as neural networks, gradient boosting machines, or deep learning architectures could further improve performance, particularly for complex multivariate relationships \citep{alaa2024deep}. The package would benefit from implementing ensemble methods that combine multiple imputation approaches, potentially leveraging the strengths of different methods across different parts of the distribution. Moreover, model selection and assessment could be enhanced with evaluation metrics additional to quantile loss, ensuring a thorough understanding of each model's behavior at every step.
+
+\subsubsection{QRF-specific challenges}
+
+The terminal node sparsity issue identified in Section 2.2.4 remains a fundamental limitation of tree-based methods. When few training samples reach certain terminal nodes, multiple observations in the recipient dataset may receive identical imputed values, potentially underestimating variability in extreme wealth categories. Future work could explore adaptive tree construction methods that ensure minimum node occupancy or hybrid approaches that combine QRF with parametric methods at distribution extremes.
+
+These enhancements would position $\texttt{microimpute}$ further as a comprehensive solution for survey data imputation challenges while maintaining its current strengths in ease of use and methodological rigor.

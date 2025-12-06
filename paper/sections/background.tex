@@ -1,0 +1,78 @@
+\section{Background}
+
+Effective imputation requires understanding both the data's distributional properties and the techniques available to handle them. This section first explores the statistical properties of wealth microdata that challenge imputation. It then reviews the literature on microdata imputation methods, tracing their development and practical applications.
+
+\subsection{Statistical properties of wealth distributions and imputation challenges}
+
+Wealth microdata present unique statistical challenges that can render innacurate policy analyses when using traditional imputation methods.
+
+\begin{enumerate}
+    \item \textbf{High skewness and concentration}: Wealth distributions are typically right-skewed, with a small percentage of households holding a large share of total net worth \citep{chen2020imputation}. This concentration means that imputation models assuming normality can perform poorly, biasing estimates of wealth aggregates and inequality \citep{lun2019multiple}.
+    \item \textbf{Outliers and extreme values}: Legitimate extreme values are common and can unduly influence parametric imputation models. Robust methods or data transformations are often necessary \citep{chen2020imputation}. 
+    \item \textbf{Non-linear relationships}: Wealth's relationship with predictor variables such as age, education, and income is highly non-linear \citep{zillow2024quantile}, requiring more flexible imputation methods.
+\end{enumerate}
+
+\subsection{Traditional microdata imputation methods}
+
+Among traditional imputation methods, we have selected three to examine, namely Ordinary Least Squares regression, Quantile regression, and Hot Deck Matching, due to their diverse approaches to imputation and relevance in the literature. We also study more novel approaches like Quantile Regression Forests, which provides an opportunity for more robust microdata imputation. In the following sections we discuss the methodological details of each method. 
+
+\subsubsection{Ordinary Least Squares (OLS)}
+
+OLS imputation predicts missing values in a recipient dataset based on a linear regression model trained on a donor dataset. The model is specified as:
+
+$$y_i = \beta_0 + \beta_1 x_{i1} + \beta_2 x_{i2} + ... + \beta_p x_{ip} + \varepsilon_i,$$
+
+where $y_i$ is the variable to be imputed for observation $i$ in the recipient dataset, $x_{i1}$,...,$x_{ip}$ are predictor variables common to both donor and recipient datasets, $\beta_0$,...,$\beta_p$ are coefficients estimated from the donor dataset, and $\varepsilon_i$ is the error term \citep{bruch2023imputation}. In deterministic regression imputation, the imputed value is typically the expected value of $y_i$. An alternative, stochastic regression imputation, adds a randomly drawn residual (from the donor model's residuals or a normal distribution with estimated variance $\sigma^2$) to the predicted value: $y_{imputed} = y_i + e_i$, where $e_i~N(0,\sigma^2)$. Stochastic imputation aims to preserve the variability of the original data better than deterministic imputation \citep{anil_regression}.
+
+OLS assumes linearity, homoscedasticity (constant variance of errors), and normally distributed errors, all of which are typically violated by skewed wealth data \citep{vonhippel2007should}. While OLS imputation might yield consistent estimates for means and variances even with non-normal data, it can produce considerable bias for shape-dependent estimands like percentiles or skewness coefficients \citep{vonhippel2007should}. Furthermore, deterministic OLS imputation systematically underestimates the true variance of the completed data \citep{barcelo2008impact}. 
+
+\subsubsection{Quantile Regression (QR)}
+
+Quantile regression (QR) models the conditional quantiles (e.g., median, 10th percentile, 90th percentile) of a response variable, $Y$, given a set of predictors, $X$ \citep{koenker1978regression}. The model for the $\tau$-th quantile is:
+
+$$Q_{Y}(\tau|X) = \beta_0(\tau) + \beta_1(\tau)x_1 + \beta_2(\tau)x_2 + ... + \beta_p(\tau)x_p$$
+
+When inputting from a donor to a recipient dataset, QR models for various quantiles $\tau$ are fitted on the donor dataset using common predictor variables. These fitted models are then applied to the recipient dataset to predict the conditional quantiles for observations with missing data \citep{parker_missing}. To generate a single imputed value, one might impute the conditional median ($\tau=0.5$) or draw a value from an estimated conditional distribution constructed from multiple quantile predictions \citep{wei2014multiple}. For instance, a random quantile $\tau*$ can be selected from a uniform distribution, and the imputed value computed by interpolating between the estimated responses for quantiles directly above and below $\tau*$ \citep{chen2007confidentiality}.
+
+QR is more robust to outliers and better at handling skewed distributions and heteroscedasticity than OLS because it does not make strong assumptions about the error distribution \citep{zhao2023quantile}. This makes it particularly suitable for economic variables like wealth, where relationships may vary across the distribution, better preserving its overall shape \citep{kleinke2020multiple}. However, while more robust than OLS, standard quantile regression still assumes linear relationships between predictors and the outcome at each specific quantile \citep{meinshausen2006quantile}. It requires fitting separate models for different quantiles, which can increase complexity, and may struggle with high-dimensional data or very complex non-linear patterns \citep{meinshausen2006quantile}.
+
+\subsubsection{Hot Deck Matching imputation}
+
+Hot Deck imputation replaces missing values in a recipient record with an observed value from a ``similar" donor record. When imputing from a donor dataset to a recipient dataset, ``similarity" is established using variables common to both datasets \citep{dorazio2021statistical}. This often involves defining adjustment cells, which are groupings of records in both datasets   
+based on shared categorical variables (e.g., gender, education level). Donors to be matched to a receiver record are then selected from the corresponding cell in the donor dataset \citep{chen2000nearest}. For continuous or mixed data, a distance metric (e.g., Euclidean, Mahalanobis) is calculated between a recipient record and potential donor records based on common variables. The donor record with the smallest distance is chosen \citep{dorazio2021statistical}. Once the matching is done, the exact value from the selected donor record in the donor dataset is then used to fill the missing item in the recipient dataset \citep{andridge2010review}.
+
+Hot Deck methods are non-parametric and do not require explicit model specification, making them robust to weak distributional assumptions \citep{dorazio2021statistical}. Since imputed values are actual observed values from the donor dataset, they are inherently plausible and can help preserve the marginal distribution of the imputed variable if donors are well-matched \citep{andridge2010review}. Nonetheless, a critical challenge is ensuring an adequate and representative donor pool in the donor dataset for all types of recipients in the target dataset. This is particularly difficult for extreme wealth values, where suitable donors may be scarce or unrepresentative, leading to biased imputations or overuse of certain donors \citep{haziza2009imputation}. Additionally, it may struggle to maintain complex multivariate relationships, especially when imputing across datasets with different underlying structures or sampling designs \citep{siddique2008multiple}. The effectiveness is highly dependent on the choice of matching variables \citep{ota2012revenue}, as well as “similarity” metrics. Poorly defined cells or metrics can lead to inappropriate donor selection and biased results \citep{andridge2010review}. Most critically for policy analysis, Hot Deck methods provide only observed values rather than capturing the full conditional distribution, making it impossible to properly quantify imputation uncertainty and data variance. This affects winner-loser analysis and the evaluation of distributional impacts of policy changes where small differences in imputed values can dramatically affect conclusions about who benefits or loses \citep{rubin1987multiple}.
+
+\subsubsection{Quantile Regression Forests (QRF)}
+
+Quantile Regression Forests (QRF) \citep{meinshausen2006quantile} extend Random Forests (RF), which are ensemble learners that build multiple decision trees and excel at capturing non-linearities and interactions \citep{breiman2001random}, to estimate conditional quantiles. When imputing from a donor dataset to a receiver dataset, QRF models are trained on the donor dataset using predictor variables common to both. Instead of storing only mean values in terminal nodes (as in standard RF regression), QRF retains all observed outcome values for the training instances that fall into each terminal leaf of each tree \citep{meinshausen2006quantile}. 
+
+For a given point $x$ (representing the predictor values for an observation in the recipient dataset), the conditional distribution function $\hat{F}(y|X=x)$ of the target variable $Y$ is estimated as:
+
+$$\hat{F}(y|X=x) = \sum_{i=1}^n w_i(x) \cdot \mathbf{1}_{{Y_i \leq y}},$$
+
+where $Y_i$ are the observed values from the donor dataset, $1_{Y_i} \leq y$ is an indicator function ($1 \text{ if } Y_i \leq y$, $0 \text{ otherwise}$), and $w_i(x)$ represents the weight assigned to each donor observation $i$. This weight is derived from the forest structure; specifically, $w_i(x)$ is positive if observation $i$ from the donor set falls into the same terminal node as $x$ in any tree, and its magnitude reflects how often this co-occurrence happens across all trees in the forest \citep{kleinke2023robust}.
+
+The $\tau$-th conditional quantile is then estimated by finding the minimum value $y$ for which the estimated cumulative distribution function $\hat{F}(y|X=x)$ is greater than or equal to $\tau$:
+
+$$\hat{Q}_\tau(y|X=x) = \inf{y: \hat{F}(y|X=x) \geq \tau}$$
+
+\citep{meinshausen2006quantile}. This allows for the estimation of any quantile without retraining the model \citep{woodruff2024enhancing}. For imputation, particularly multiple imputation, values can be drawn randomly from this estimated conditional distribution for each observation in the recipient dataset requiring imputation. This process helps reflect the uncertainty inherent in the imputation.
+
+This approach offers several critical advantages for microdata imputation, and wealth imputation more specifically:
+
+\begin{enumerate}
+    \item \textbf{Distribution preservation}: By modeling the entire conditional distribution, QRF is adept at capturing and preserving the right-skewness and heavy tails characteristic of wealth distributions \citep{meinshausen2006quantile}. 
+
+    \item \textbf{Non-linear relationship handling}: The tree-based structure of RF, and thus QRF, automatically handles complex non-linear relationships between predictors (e.g., demographic variables) and the imputation target (e.g., wealth) without requiring explicit transformation or pre-specification of these functional forms \citep{tang2017random}.
+
+    \item \textbf{Automatic interaction detection}: QRF naturally incorporates interactions between predictor variables, as tree splitting rules inherently consider combinations of features \citep{tang2017random}.
+
+    \item \textbf{Robustness to outliers}:  The ensemble nature of random forests and the focus on quantiles (rather than just the mean) make QRF less sensitive to extreme outliers in the donor data that might distort parametric models \citep{tang2017random}.
+
+    \item \textbf{Single model for all quantiles}: Unlike standard QR, which requires fitting separate models for different quantiles, QRF produces an estimate of the entire conditional distribution from a single trained model, making it computationally more efficient \citep{meinshausen2006quantile}.
+\end{enumerate}
+
+When imputing from a survey with specific design features to a more general survey with somewhat different distributional properties, QRF's ability to learn localized relationships in the predictor space can be advantageous. If survey weights from the donor are incorporated during the QRF training (e.g., by influencing tree construction or the sampling of observations for bootstrap aggregation), the model can learn to represent the oversampled segments appropriately. The subsequent prediction onto the receiver dataset, which has its distinct sample structure, then relies on the learned conditional distributions. The challenge lies in ensuring that the relationships learned from the donor are transportable and applicable to the recipient, and that the resulting imputations in the recipient dataset, when combined with its own survey weights, yield valid population estimates. While QRF itself doesn't explicitly model survey design features like clustering or stratification in a formal statistical sense unless specifically adapted, its flexibility in capturing complex data structures can implicitly handle some of the heterogeneity introduced by such designs \citep{hao2007quantile}, making it much stronger than other more limited imputation approaches.
+
+Nonetheless, QRF has its own limitations. Given the data-splitting nature of a tree, certain terminal nodes may receive a single or very few extreme training samples. When imputing, all the data points from the receiver dataset that land on those leaves will likely receive the same or very similar values for the imputed variable, even if there are differences in predictor values between them. In practice, this means that if the donor and receiver datasets have distributional differences, imputations at the extreme tails of the receiver dataset may suffer. Data points that are not necessarily unusual or extreme might receive extreme imputations, while truly extreme values in the receiver dataset are at risk of not being regarded as so if the donor dataset had a narrower range of values for the training variable.
