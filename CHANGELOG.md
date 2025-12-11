@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), 
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2025-12-11 14:03:49
+
+### Added
+
+- Benchmarking experiments for wealth imputation paper draft.
+- MDN model to experiments run in imputing-from-scf-to-cps.ipynb.
+- Privacy & Terms to microimputation-dashboard.
+
 ## [1.11.0] - 2025-12-05 09:20:27
 
 ### Added
@@ -290,6 +298,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[1.12.0]: https://github.com/PolicyEngine/microimpute/compare/1.11.0...1.12.0
 [1.11.0]: https://github.com/PolicyEngine/microimpute/compare/1.10.0...1.11.0
 [1.10.0]: https://github.com/PolicyEngine/microimpute/compare/1.9.0...1.10.0
 [1.9.0]: https://github.com/PolicyEngine/microimpute/compare/1.8.1...1.9.0

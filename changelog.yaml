@@ -249,3 +249,10 @@
     added:
     - Updates to documentation and Myst deployment.
   date: 2025-12-05 09:20:27
+- bump: minor
+  changes:
+    added:
+    - Benchmarking experiments for wealth imputation paper draft.
+    - MDN model to experiments run in imputing-from-scf-to-cps.ipynb.
+    - Privacy & Terms to microimputation-dashboard.
+  date: 2025-12-11 14:03:49
