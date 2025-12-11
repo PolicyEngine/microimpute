@@ -1,0 +1,4 @@
+- bump: minor
+  changes:
+    added:
+    - Downstream compatibility CI workflow to test policyengine-us-data integration
