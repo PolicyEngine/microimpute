@@ -153,17 +153,17 @@ def _fit_model_for_fold(
                 return None, None
 
     # Handle model-specific hyperparameters
-    if model_hyperparams and model_name in model_hyperparams:
+    if model_hyperparams:
         try:
             log.info(
-                f"Fitting {model_name} with hyperparameters: {model_hyperparams[model_name]}"
+                f"Fitting {model_name} with hyperparameters: {model_hyperparams}"
             )
             fitted_model = model.fit(
                 X_train=train_data,
                 predictors=predictors,
                 imputed_variables=imputed_variables,
                 weight_col=weight_col,
-                **model_hyperparams[model_name],
+                **model_hyperparams,
             )
         except ValueError as e:
             # Check if it's due to categorical incompatibility

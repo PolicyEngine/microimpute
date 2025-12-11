@@ -41,51 +41,53 @@ EXPECTED_COLUMNS = [
 
 @pytest.fixture
 def sample_autoimpute_result():
-    """Create sample autoimpute result for testing."""
+    """Create sample autoimpute result for testing.
+
+    This fixture returns the cv_results dictionary directly (not wrapped
+    in a 'cv_results' key), as expected by format_csv after the API update.
+    """
     return {
-        "cv_results": {
-            "OLS": {
-                "quantile_loss": {
-                    "results": pd.DataFrame(
-                        {
-                            0.1: [0.01, 0.02],
-                            0.5: [0.015, 0.025],
-                            0.9: [0.02, 0.03],
-                        },
-                        index=["train", "test"],
-                    ),
-                    "mean_train": 0.015,
-                    "mean_test": 0.025,
-                    "variables": ["var1", "var2"],
-                },
-                "log_loss": {
-                    "results": pd.DataFrame(
-                        {
-                            0.5: [0.1, 0.15],
-                        },
-                        index=["train", "test"],
-                    ),
-                    "mean_train": 0.1,
-                    "mean_test": 0.15,
-                    "variables": ["cat_var"],
-                },
+        "OLS": {
+            "quantile_loss": {
+                "results": pd.DataFrame(
+                    {
+                        0.1: [0.01, 0.02],
+                        0.5: [0.015, 0.025],
+                        0.9: [0.02, 0.03],
+                    },
+                    index=["train", "test"],
+                ),
+                "mean_train": 0.015,
+                "mean_test": 0.025,
+                "variables": ["var1", "var2"],
             },
-            "QRF": {
-                "quantile_loss": {
-                    "results": pd.DataFrame(
-                        {
-                            0.1: [0.012, 0.022],
-                            0.5: [0.017, 0.027],
-                            0.9: [0.022, 0.032],
-                        },
-                        index=["train", "test"],
-                    ),
-                    "mean_train": 0.017,
-                    "mean_test": 0.027,
-                    "variables": ["var1", "var2"],
-                },
+            "log_loss": {
+                "results": pd.DataFrame(
+                    {
+                        0.5: [0.1, 0.15],
+                    },
+                    index=["train", "test"],
+                ),
+                "mean_train": 0.1,
+                "mean_test": 0.15,
+                "variables": ["cat_var"],
             },
-        }
+        },
+        "QRF": {
+            "quantile_loss": {
+                "results": pd.DataFrame(
+                    {
+                        0.1: [0.012, 0.022],
+                        0.5: [0.017, 0.027],
+                        0.9: [0.022, 0.032],
+                    },
+                    index=["train", "test"],
+                ),
+                "mean_train": 0.017,
+                "mean_test": 0.027,
+                "variables": ["var1", "var2"],
+            },
+        },
     }
 
 

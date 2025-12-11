@@ -304,7 +304,7 @@ def format_csv(
 
     autoimpute_result : Dict, optional
         Result from autoimpute containing cv_results with benchmark losses.
-        Expected structure: {'cv_results': {method: {'quantile_loss': {...}, 'log_loss': {...}}}}
+        Expected structure: {method: {'quantile_loss': {...}, 'log_loss': {...}}}
 
     comparison_metrics_df : pd.DataFrame, optional
         DataFrame from compare_metrics() with columns:
@@ -358,60 +358,68 @@ def format_csv(
     rows = []
 
     # 1. Process autoimpute benchmark losses from cv_results
-    if autoimpute_result and "cv_results" in autoimpute_result:
-        for method, cv_result in autoimpute_result["cv_results"].items():
-            # Append "_best_method" if this is the best method
-            method_label = (
-                f"{method}_best_method"
-                if method == best_method_name
-                else method
-            )
+    if autoimpute_result and isinstance(autoimpute_result, dict):
+        first_value = next(iter(autoimpute_result.values()), None)
+        if isinstance(first_value, dict) and (
+            "quantile_loss" in first_value or "log_loss" in first_value
+        ):
+            for method, cv_result in autoimpute_result.items():
+                # Append "_best_method" if this is the best method
+                method_label = (
+                    f"{method}_best_method"
+                    if method == best_method_name
+                    else method
+                )
 
-            for metric_type in ["quantile_loss", "log_loss"]:
-                if metric_type in cv_result:
-                    data = cv_result[metric_type]
-                    results_df = data.get("results")
-                    variables = data.get("variables", [])
+                for metric_type in ["quantile_loss", "log_loss"]:
+                    if metric_type in cv_result:
+                        data = cv_result[metric_type]
+                        results_df = data.get("results")
+                        variables = data.get("variables", [])
 
-                    if results_df is not None:
-                        # Add individual quantile results
-                        for split in ["train", "test"]:
-                            if split in results_df.index:
-                                for quantile in results_df.columns:
-                                    # Add mean_all row for this quantile
-                                    rows.append(
-                                        {
-                                            "type": "benchmark_loss",
-                                            "method": method_label,
-                                            "variable": f"{metric_type}_mean_all",
-                                            "quantile": float(quantile),
-                                            "metric_name": metric_type,
-                                            "metric_value": results_df.loc[
-                                                split, quantile
-                                            ],
-                                            "split": split,
-                                            "additional_info": json.dumps(
-                                                {"n_variables": len(variables)}
-                                            ),
-                                        }
-                                    )
+                        if results_df is not None:
+                            # Add individual quantile results
+                            for split in ["train", "test"]:
+                                if split in results_df.index:
+                                    for quantile in results_df.columns:
+                                        # Add mean_all row for this quantile
+                                        rows.append(
+                                            {
+                                                "type": "benchmark_loss",
+                                                "method": method_label,
+                                                "variable": f"{metric_type}_mean_all",
+                                                "quantile": float(quantile),
+                                                "metric_name": metric_type,
+                                                "metric_value": results_df.loc[
+                                                    split, quantile
+                                                ],
+                                                "split": split,
+                                                "additional_info": json.dumps(
+                                                    {
+                                                        "n_variables": len(
+                                                            variables
+                                                        )
+                                                    }
+                                                ),
+                                            }
+                                        )
 
-                        # Add mean across all quantiles
-                        if "mean_train" in data:
-                            rows.append(
-                                {
-                                    "type": "benchmark_loss",
-                                    "method": method_label,
-                                    "variable": f"{metric_type}_mean_all",
-                                    "quantile": "mean",
-                                    "metric_name": metric_type,
-                                    "metric_value": data["mean_train"],
-                                    "split": "train",
-                                    "additional_info": json.dumps(
-                                        {"n_variables": len(variables)}
-                                    ),
-                                }
-                            )
+                            # Add mean across all quantiles
+                            if "mean_train" in data:
+                                rows.append(
+                                    {
+                                        "type": "benchmark_loss",
+                                        "method": method_label,
+                                        "variable": f"{metric_type}_mean_all",
+                                        "quantile": "mean",
+                                        "metric_name": metric_type,
+                                        "metric_value": data["mean_train"],
+                                        "split": "train",
+                                        "additional_info": json.dumps(
+                                            {"n_variables": len(variables)}
+                                        ),
+                                    }
+                                )
 
                         if "mean_test" in data:
                             rows.append(

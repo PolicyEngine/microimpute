@@ -294,7 +294,6 @@ def _generate_imputations_for_all_models(
     weight_col: Optional[str],
     imputation_q: float,
     train_size: float,
-    tune_hyperparameters: bool,
     hyperparams: Optional[Dict[str, Any]],
     log_level: str,
     preprocessing: Optional[Dict[str, str]] = None,
@@ -344,7 +343,7 @@ def _generate_imputations_for_all_models(
 
         # Get model-specific hyperparameters if available
         model_hyperparams = None
-        if tune_hyperparameters and hyperparams and model_name in hyperparams:
+        if hyperparams and model_name in hyperparams:
             model_hyperparams = hyperparams[model_name]
 
         # Fit and predict
@@ -601,6 +600,16 @@ def autoimpute(
         ):
             model_hyperparams = best_hyperparams[best_method]
 
+        # Merge with original hyperparameters (e.g., force_retrain for MDN)
+        # Tuned params take precedence over original params
+        if hyperparameters and best_method in hyperparameters:
+            original_params = hyperparameters[best_method]
+            if model_hyperparams:
+                # Tuned params override original params
+                model_hyperparams = {**original_params, **model_hyperparams}
+            else:
+                model_hyperparams = original_params
+
         # Fit and predict with best model
         best_fitted_model, imputations = fit_and_predict_model(
             chosen_model,
@@ -646,6 +655,19 @@ def autoimpute(
 
         # Step 5: Generate imputations for all models if requested
         if impute_all:
+            # Merge original hyperparameters with tuned ones
+            # Tuned params take precedence over original params
+            merged_hyperparams = {}
+            if hyperparameters:
+                for model_name, params in hyperparameters.items():
+                    merged_hyperparams[model_name] = params.copy()
+            if best_hyperparams:
+                for model_name, params in best_hyperparams.items():
+                    if model_name in merged_hyperparams:
+                        merged_hyperparams[model_name].update(params)
+                    else:
+                        merged_hyperparams[model_name] = params
+
             other_imputations, other_models = (
                 _generate_imputations_for_all_models(
                     model_classes,
@@ -657,8 +679,7 @@ def autoimpute(
                     weight_col,
                     imputation_q,
                     train_size,
-                    tune_hyperparameters,
-                    best_hyperparams,
+                    merged_hyperparams if merged_hyperparams else None,
                     log_level,
                     preprocessing=preprocessing,
                 )
