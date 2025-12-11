@@ -309,6 +309,8 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
                     }
                     return [value.toFixed(6), 'Loss Increase'];
                   }}
+                  contentStyle={{ color: '#000000' }}
+                  labelStyle={{ color: '#000000' }}
                 />
                 <Legend wrapperStyle={{ color: '#000000' }} />
                 <Bar dataKey="relativeImpact" name="Relative Impact (%)">

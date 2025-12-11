@@ -500,7 +500,7 @@ export default function VisualizationDashboard({
             {dataAnalysis.bestModel ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-lg font-bold text-blue-700">
+                  <span className="text-base font-bold text-blue-700">
                     {dataAnalysis.bestModel}
                   </span>
                   {dataAnalysis.allMethods.length === 1 && (

@@ -1,0 +1,23 @@
+\section{Data}\label{sec:data}
+
+\subsection{Survey of Consumer Finances}
+
+The Survey of Consumer Finances (SCF), sponsored by the Federal Reserve Board, is a triennial survey providing detailed information on U.S. households' assets, liabilities, income, and demographic characteristics. Its dual-frame sample design includes a standard national area-probability sample and a list sample deliberately oversampling wealthy households to better capture the skewed wealth distribution \citep{barcelo2006imputation}. The SCF is a benchmark for wealth imputation research due to its detailed financial data and the known complexities arising from its design and the nature of wealth. Item nonresponse in public-use SCF datasets is addressed by the Federal Reserve through a multiple imputation approach that generates five complete datasets with different imputed values, using sequential regression-based procedures that incorporate range constraints, logical data structures, and empirical residuals to preserve the complex multivariate relationships inherent in wealth data \citep{kennickell1998multiple}. 
+
+Specifically, we use the 2022 summarized SCF as our donor dataset. 
+
+\subsection{Current Population Survey}
+
+The Current Population Survey (CPS), conducted by the U.S. Census Bureau and the U.S. Bureau of Labor Statistics, is a monthly survey primarily focused on labor market information. The Annual Social and Economic Supplement (ASEC) collects detailed annual income data and some information on assets and liabilities, though far less comprehensively than the SCF. The CPS uses a national probability sample and is a key source for income and poverty statistics. Missing data, particularly for income items, is also a feature of the CPS.
+
+\subsection{Comparative analysis and characteristics for imputation}
+
+Beyond wealth data's inherent challenges, imputing between SCF and CPS presents additional complications due to their differences in scope, design, and wealth data measurement. These complications include:
+
+\begin{enumerate}
+    \item \textbf{Sampling approach}: The SCF employs a dual-frame sample design, deliberately oversampling wealthy households through a list sample derived from tax returns. The CPS uses a more standard probability sample that does not effectively capture the upper tail of the wealth distribution \citep{bryant2023general}.
+    \item \textbf{Sample size and frequency}: The SCF typically includes about 4,500-6,000 households and is conducted triennially, while the CPS surveys approximately 60,000 households monthly.
+    \item \textbf{Wealth variable coverage}: The SCF collects extremely detailed information on financial assets and liabilities, while the CPS survey design does not request most of this data from its respondents, making direct matching of asset categories difficult.
+\end{enumerate}
+
+These structural differences create challenges for transferring wealth information between surveys through traditional imputation methods. The predictors available in both datasets may not involve linear relationships with wealth, and the surveys may have vastly different sample sizes at various points along the wealth distribution.

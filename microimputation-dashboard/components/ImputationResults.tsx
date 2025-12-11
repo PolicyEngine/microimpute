@@ -14,12 +14,42 @@ interface DistributionMetric {
   method: string;
   metricName: string;
   value: number;
+  normalizedValue?: number;  // Wasserstein distance as percentage of variable range
+  variableRange?: number;    // Range of the variable for context
 }
 
 export default function ImputationResults({ data }: ImputationResultsProps) {
   // Filter for distribution distance data
   const distributionData = useMemo(() => {
     return data.filter(d => d.type === 'distribution_distance');
+  }, [data]);
+
+  // Extract variable ranges from distribution_bins data
+  const variableRanges = useMemo(() => {
+    const ranges: Record<string, { min: number; max: number }> = {};
+    const distributionBins = data.filter(d => d.type === 'distribution_bins' && d.metric_name === 'histogram_distribution');
+
+    distributionBins.forEach(d => {
+      try {
+        const info = JSON.parse(d.additional_info);
+        const variable = d.variable;
+
+        if (!ranges[variable]) {
+          ranges[variable] = { min: Infinity, max: -Infinity };
+        }
+
+        if (info.bin_start !== undefined) {
+          ranges[variable].min = Math.min(ranges[variable].min, info.bin_start);
+        }
+        if (info.bin_end !== undefined) {
+          ranges[variable].max = Math.max(ranges[variable].max, info.bin_end);
+        }
+      } catch (e) {
+        // Ignore parsing errors
+      }
+    });
+
+    return ranges;
   }, [data]);
 
   // Group by metric type
@@ -36,21 +66,28 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
       };
 
       if (d.metric_name === 'wasserstein_distance') {
+        // Calculate normalized value as percentage of variable range
+        const range = variableRanges[d.variable];
+        if (range && range.max > range.min) {
+          const variableRange = range.max - range.min;
+          metric.variableRange = variableRange;
+          metric.normalizedValue = (metric.value / variableRange) * 100;
+        }
         wasserstein.push(metric);
       } else if (d.metric_name === 'kl_divergence') {
         klDiv.push(metric);
       }
     });
 
-    // Sort by value (ascending - lower is better)
-    wasserstein.sort((a, b) => a.value - b.value);
+    // Sort by normalized value if available, otherwise by raw value (ascending - lower is better)
+    wasserstein.sort((a, b) => (a.normalizedValue ?? a.value) - (b.normalizedValue ?? b.value));
     klDiv.sort((a, b) => a.value - b.value);
 
     return {
       wassersteinData: wasserstein,
       klDivergenceData: klDiv
     };
-  }, [distributionData]);
+  }, [distributionData, variableRanges]);
 
   const hasWasserstein = wassersteinData.length > 0;
   const hasKLDivergence = klDivergenceData.length > 0;
@@ -59,13 +96,17 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
     return null;
   }
 
-  // Color function based on value quality (lower is better)
-  const getWassersteinColor = (value: number): string => {
-    if (value < 0.01) return '#16a34a'; // Dark green - excellent
-    if (value < 0.05) return '#22c55e'; // Green - good
-    if (value < 0.1) return '#eab308'; // Yellow - moderate
-    if (value < 0.2) return '#f97316'; // Orange - fair
-    return '#ef4444'; // Red - poor
+  // Color function based on normalized value (percentage of range) - lower is better
+  const getWassersteinColor = (normalizedValue: number | undefined, rawValue: number): string => {
+    // Use normalized value if available, otherwise fall back to raw thresholds
+    const value = normalizedValue ?? (rawValue * 100);  // Assume raw is already a fraction if no range
+
+    // Thresholds as percentage of variable range
+    if (value < 1) return '#16a34a';   // Dark green - excellent (<1% of range)
+    if (value < 3) return '#22c55e';   // Green - good (<3% of range)
+    if (value < 5) return '#eab308';   // Yellow - moderate (<5% of range)
+    if (value < 10) return '#f97316';  // Orange - fair (<10% of range)
+    return '#ef4444';                   // Red - poor (>=10% of range)
   };
 
   const getKLColor = (value: number): string => {
@@ -112,9 +153,9 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
               greater differences between imputed and true distributions.
             </p>
             <p className="text-sm text-gray-700">
-              <strong>Interpretation:</strong> Values closer to 0 are better. Generally, values below
-              0.05 indicate good imputation quality, while values above 0.2 suggest significant
-              distributional differences.
+              <strong>Interpretation:</strong> Since Wasserstein distance is scale-dependent, quality is assessed
+              relative to each variable&apos;s range. A distance of &lt;1% of the variable range is excellent,
+              &lt;3% is good, &lt;5% is moderate, &lt;10% is fair, and &ge;10% suggests poor distributional match.
             </p>
           </div>
 
@@ -130,14 +171,21 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                 <XAxis type="number" tick={{ fill: '#000000' }} />
                 <YAxis type="category" dataKey="variable" width={90} tick={{ fill: '#000000' }} />
                 <Tooltip
-                  formatter={(value: number) => [value.toFixed(6), 'Wasserstein Distance']}
+                  formatter={(value: number, _name: string, props: { payload?: DistributionMetric }) => {
+                    const normalizedValue = props.payload?.normalizedValue;
+                    const distanceStr = value.toFixed(6);
+                    const pctStr = normalizedValue !== undefined ? ` (${normalizedValue.toFixed(2)}% of range)` : '';
+                    return [`${distanceStr}${pctStr}`, 'Wasserstein Distance'];
+                  }}
+                  contentStyle={{ color: '#000000' }}
+                  labelStyle={{ color: '#000000' }}
                 />
                 <Legend wrapperStyle={{ color: '#000000' }} />
                 <Bar dataKey="value" name="Wasserstein Distance">
                   {wassersteinData.map((entry, index) => (
                     <Cell
                       key={`cell-${index}`}
-                      fill={getWassersteinColor(entry.value)}
+                      fill={getWassersteinColor(entry.normalizedValue, entry.value)}
                     />
                   ))}
                 </Bar>
@@ -157,6 +205,9 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                     Wasserstein Distance
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    % of Range
+                  </th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Quality Assessment
                   </th>
                 </tr>
@@ -166,16 +217,19 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                   let assessment = '';
                   let assessmentColor = '';
 
-                  if (item.value < 0.01) {
+                  // Use normalized value (percentage of range) for assessment
+                  const normalizedValue = item.normalizedValue ?? (item.value * 100);
+
+                  if (normalizedValue < 1) {
                     assessment = 'Excellent';
                     assessmentColor = 'text-green-700 font-semibold';
-                  } else if (item.value < 0.05) {
+                  } else if (normalizedValue < 3) {
                     assessment = 'Good';
                     assessmentColor = 'text-green-600';
-                  } else if (item.value < 0.1) {
+                  } else if (normalizedValue < 5) {
                     assessment = 'Moderate';
                     assessmentColor = 'text-yellow-600';
-                  } else if (item.value < 0.2) {
+                  } else if (normalizedValue < 10) {
                     assessment = 'Fair';
                     assessmentColor = 'text-orange-600';
                   } else {
@@ -190,6 +244,9 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                       </td>
                       <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
                         {item.value.toFixed(6)}
+                      </td>
+                      <td className="px-4 py-3 whitespace-nowrap text-sm text-gray-700">
+                        {item.normalizedValue !== undefined ? `${item.normalizedValue.toFixed(2)}%` : 'N/A'}
                       </td>
                       <td className={`px-4 py-3 whitespace-nowrap text-sm ${assessmentColor}`}>
                         {assessment}
@@ -243,6 +300,8 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                 <YAxis type="category" dataKey="variable" width={90} tick={{ fill: '#000000' }} />
                 <Tooltip
                   formatter={(value: number) => [value.toFixed(6), 'KL-Divergence']}
+                  contentStyle={{ color: '#000000' }}
+                  labelStyle={{ color: '#000000' }}
                 />
                 <Legend wrapperStyle={{ color: '#000000' }} />
                 <Bar dataKey="value" name="KL-Divergence">

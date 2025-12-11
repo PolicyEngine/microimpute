@@ -3,6 +3,7 @@
 import hashlib
 import logging
 import os
+import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -35,6 +36,13 @@ try:
     # Suppress pytorch_tabular warnings
     import warnings
 
+    # Suppress all FutureWarnings from pytorch_tabular
+    warnings.filterwarnings(
+        "ignore",
+        category=FutureWarning,
+        module="pytorch_tabular.*",
+    )
+
     warnings.filterwarnings(
         "ignore",
         message=".*does not have many workers.*",
@@ -44,13 +52,6 @@ try:
         "ignore",
         message=".*pin_memory.*argument is set as true but not supported on MPS.*",
         module="torch.utils.data.dataloader",
-    )
-
-    warnings.filterwarnings(
-        "ignore",
-        message=".*Setting an item of incompatible dtype is deprecated.*",
-        category=FutureWarning,
-        module="pytorch_tabular.tabular_datamodule",
     )
 
     warnings.filterwarnings(
@@ -205,29 +206,36 @@ class _MDNModel:
         self,
         X: pd.DataFrame,
         y: pd.Series,
+        categorical_cols: Optional[List[str]] = None,
     ) -> None:
         """Fit the MDN model.
 
         Args:
             X: Feature DataFrame (predictors are already dummy-encoded).
             y: Target Series.
+            categorical_cols: Optional list of column names that are dummy-encoded
+                categorical variables. These will be passed to PyTorch Tabular
+                as categorical columns for embedding.
         """
         _suppress_pytorch_logging()
         self.output_column = y.name
+        categorical_cols = categorical_cols or []
 
         # Combine X and y for PyTorch Tabular
         train_data = X.copy()
         train_data[y.name] = y
 
-        # All predictors are continuous (categorical predictors were
-        # dummy-encoded during preprocessing in the base Imputer class)
-        continuous_cols = X.columns.tolist()
+        # Separate continuous and categorical columns
+        # Categorical columns get embeddings, continuous columns are passed as-is
+        continuous_cols = [
+            col for col in X.columns.tolist() if col not in categorical_cols
+        ]
 
         # Configure data
         data_config = DataConfig(
             target=[y.name],
             continuous_cols=continuous_cols,
-            categorical_cols=[],
+            categorical_cols=categorical_cols,
         )
 
         # Configure trainer
@@ -375,6 +383,7 @@ class _NeuralClassifierModel:
         y: pd.Series,
         var_type: str,
         categories: Optional[List] = None,
+        categorical_cols: Optional[List[str]] = None,
     ) -> None:
         """Fit the neural classifier.
 
@@ -383,10 +392,14 @@ class _NeuralClassifierModel:
             y: Target Series (original categorical/boolean column).
             var_type: Type of variable ("boolean" or "categorical").
             categories: List of categories for categorical variables.
+            categorical_cols: Optional list of column names that are dummy-encoded
+                categorical variables. These will be passed to PyTorch Tabular
+                as categorical columns for embedding.
         """
         _suppress_pytorch_logging()
         self.output_column = y.name
         self.var_type = var_type
+        categorical_cols = categorical_cols or []
 
         if var_type == "boolean":
             y_encoded = y.astype(int)
@@ -407,15 +420,17 @@ class _NeuralClassifierModel:
         train_data = X.copy()
         train_data[y.name] = y_encoded.astype(int)
 
-        # All predictors are continuous (categorical predictors were
-        # dummy-encoded during preprocessing in the base Imputer class)
-        continuous_cols = X.columns.tolist()
+        # Separate continuous and categorical columns
+        # Categorical columns get embeddings, continuous columns are passed as-is
+        continuous_cols = [
+            col for col in X.columns.tolist() if col not in categorical_cols
+        ]
 
         # Configure data
         data_config = DataConfig(
             target=[y.name],
             continuous_cols=continuous_cols,
-            categorical_cols=[],
+            categorical_cols=categorical_cols,
         )
 
         # Configure trainer
@@ -920,8 +935,21 @@ class MDN(Imputer):
 
             self.models = {}
 
+            # If force_retrain is True, delete existing cached models
+            if self.force_retrain and Path(self.model_dir).exists():
+                shutil.rmtree(self.model_dir)
+                self.logger.info(
+                    f"Deleted cached models directory: {self.model_dir}"
+                )
+
             # Ensure model directory exists
             Path(self.model_dir).mkdir(parents=True, exist_ok=True)
+
+            # Extract categorical columns from dummy_processor
+            categorical_cols = []
+            if hasattr(self, "dummy_processor") and self.dummy_processor:
+                for dummy_cols in self.dummy_processor.dummy_mapping.values():
+                    categorical_cols.extend(dummy_cols)
 
             for variable in imputed_variables:
                 # Handle constant targets (no caching needed)
@@ -991,6 +1019,7 @@ class MDN(Imputer):
                         categories=categorical_targets[variable].get(
                             "categories"
                         ),
+                        categorical_cols=categorical_cols,
                     )
                     self.logger.info(
                         f"Neural classifier fitted for categorical variable "
@@ -1013,13 +1042,13 @@ class MDN(Imputer):
                         use_batch_norm=self.use_batch_norm,
                         learning_rate=self.learning_rate,
                         max_epochs=self.max_epochs,
-                        early_stopping_patience=self.early_stopping_patience,
                         batch_size=self.batch_size,
                     )
                     model.fit(
                         X_train[predictors],
                         Y,
                         var_type="boolean",
+                        categorical_cols=categorical_cols,
                     )
                     self.logger.info(
                         f"Neural classifier fitted for boolean variable "
@@ -1044,12 +1073,12 @@ class MDN(Imputer):
                         n_samples=self.n_samples,
                         learning_rate=self.learning_rate,
                         max_epochs=self.max_epochs,
-                        early_stopping_patience=self.early_stopping_patience,
                         batch_size=self.batch_size,
                     )
                     model.fit(
                         X_train[predictors],
                         Y,
+                        categorical_cols=categorical_cols,
                     )
                     self.logger.info(
                         f"MDN fitted for numeric variable {variable}"
@@ -1156,7 +1185,6 @@ class MDN(Imputer):
                         n_samples=self.n_samples,
                         learning_rate=learning_rate,
                         max_epochs=40,  # Reduced for tuning
-                        early_stopping_patience=self.early_stopping_patience,
                         batch_size=self.batch_size,
                     )
                     model.fit(X_train_fold[predictors], y_train)
@@ -1293,7 +1321,6 @@ class MDN(Imputer):
                         use_batch_norm=self.use_batch_norm,
                         learning_rate=learning_rate,
                         max_epochs=40,  # Reduced for tuning
-                        early_stopping_patience=self.early_stopping_patience,
                         batch_size=self.batch_size,
                     )
                     model.fit(
