@@ -372,7 +372,7 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                   <span className="font-semibold text-gray-900">{bestModel.quantileLoss.toFixed(6)}</span>
                 </div>
                 {bestModel.quantileTrainTestRatio !== undefined && (
-                  <span className={`text-xs ${bestModel.quantileTrainTestRatio > 1.1 ? 'text-amber-600' : 'text-gray-700'}`}>
+                  <span className={`text-xs ${bestModel.quantileTrainTestRatio > 1.1 ? 'text-gray-700' : 'text-gray-900'}`}>
                     Train/test ratio: {bestModel.quantileTrainTestRatio.toFixed(3)}
                   </span>
                 )}

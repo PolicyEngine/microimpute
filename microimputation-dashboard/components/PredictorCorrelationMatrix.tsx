@@ -179,7 +179,7 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
     return '#f3f4f6'; // Nearly white
   };
 
-  const cellSize = 80; // Size of each cell in pixels
+  const cellSize = 100; // Size of each cell in pixels
 
   return (
     <div className="bg-white p-6 rounded-lg shadow">
@@ -219,7 +219,7 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
       </div>
 
       {/* Correlation Matrix */}
-      <div className="overflow-x-auto overflow-y-hidden">
+      <div className="overflow-auto max-h-[600px]">
         <div className="inline-block">
           <div style={{ display: 'grid', gridTemplateColumns: `${cellSize}px repeat(${predictors.length}, ${cellSize}px)`, border: '1px solid #e5e7eb' }}>
             {/* Top-left empty cell */}
@@ -235,13 +235,18 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                   borderRight: idx < predictors.length - 1 ? '1px solid #e5e7eb' : 'none',
                   borderBottom: '1px solid #e5e7eb'
                 }}
-                className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900 text-sm"
+                className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900"
+                title={pred}
               >
                 <div
                   style={{
                     transform: 'rotate(-45deg)',
                     transformOrigin: 'center',
                     whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    maxWidth: cellSize * 1.2,
+                    fontSize: '11px',
                   }}
                 >
                   {pred}
@@ -261,9 +266,21 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                     borderRight: '1px solid #e5e7eb',
                     borderBottom: rowIdx < predictors.length - 1 ? '1px solid #e5e7eb' : 'none'
                   }}
-                  className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900 text-sm"
+                  className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900"
+                  title={pred1}
                 >
-                  {pred1}
+                  <div
+                    style={{
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      maxWidth: cellSize - 8,
+                      fontSize: '11px',
+                      padding: '0 4px',
+                    }}
+                  >
+                    {pred1}
+                  </div>
                 </div>
 
                 {/* Correlation cells */}
@@ -343,7 +360,7 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
             </p>
 
             {/* MI Matrix */}
-            <div className="overflow-x-auto overflow-y-hidden mb-4">
+            <div className="overflow-auto max-h-[600px] mb-4">
               <div className="inline-block">
                 <div style={{ display: 'grid', gridTemplateColumns: `${cellSize}px repeat(${targetsList.length}, ${cellSize}px)`, border: '1px solid #e5e7eb' }}>
                   {/* Top-left empty cell */}
@@ -359,13 +376,18 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                         borderRight: idx < targetsList.length - 1 ? '1px solid #e5e7eb' : 'none',
                         borderBottom: '1px solid #e5e7eb'
                       }}
-                      className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900 text-sm"
+                      className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900"
+                      title={target}
                     >
                       <div
                         style={{
                           transform: 'rotate(-45deg)',
                           transformOrigin: 'center',
                           whiteSpace: 'nowrap',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          maxWidth: cellSize * 1.2,
+                          fontSize: '11px',
                         }}
                       >
                         {target}
@@ -385,9 +407,21 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                           borderRight: '1px solid #e5e7eb',
                           borderBottom: rowIdx < predictorsList.length - 1 ? '1px solid #e5e7eb' : 'none'
                         }}
-                        className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900 text-sm"
+                        className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900"
+                        title={predictor}
                       >
-                        {predictor}
+                        <div
+                          style={{
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            maxWidth: cellSize - 8,
+                            fontSize: '11px',
+                            padding: '0 4px',
+                          }}
+                        >
+                          {predictor}
+                        </div>
                       </div>
 
                       {/* MI cells */}

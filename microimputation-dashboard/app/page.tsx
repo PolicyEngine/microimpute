@@ -8,12 +8,61 @@ import { parseImputationCSV } from '@/utils/csvParser';
 import { ImputationDataPoint } from '@/types/imputation';
 import { parseDeeplinkParams, GitHubArtifactInfo } from '@/utils/deeplinks';
 
+function PrivacyModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+      <div className="bg-white rounded-lg max-w-lg w-full p-6 shadow-xl">
+        <h2 className="text-xl font-bold text-gray-900 mb-4">Privacy & Terms of Use</h2>
+
+        <div className="space-y-4 text-sm text-gray-700">
+          <div>
+            <h3 className="font-semibold text-gray-900 mb-1">Data Privacy</h3>
+            <p>
+              All data uploaded to this dashboard is processed entirely within your browser.
+              No data is transmitted to or stored on PolicyEngine servers. When you close or
+              refresh this page, all loaded data is cleared from memory.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="font-semibold text-gray-900 mb-1">Disclaimer</h3>
+            <p>
+              This tool is provided &quot;as is&quot; without warranty of any kind, express or implied.
+              PolicyEngine assumes no responsibility for the security, accuracy, or confidentiality
+              of any data you choose to load into this application.
+            </p>
+          </div>
+
+          <div>
+            <h3 className="font-semibold text-gray-900 mb-1">User Responsibility</h3>
+            <p>
+              Users are solely responsible for ensuring they have appropriate rights to use any
+              data loaded into this dashboard and for compliance with applicable data protection
+              regulations.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={onClose}
+          className="mt-6 w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function HomeContent() {
   const [data, setData] = useState<ImputationDataPoint[]>([]);
   const [fileName, setFileName] = useState<string>('');
   const [showDashboard, setShowDashboard] = useState(false);
   const [isLoadingFromDeeplink, setIsLoadingFromDeeplink] = useState(false);
   const [githubArtifactInfo, setGithubArtifactInfo] = useState<GitHubArtifactInfo | null>(null);
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   const searchParams = useSearchParams();
   const deeplinkParams = parseDeeplinkParams(searchParams);
@@ -109,10 +158,20 @@ function HomeContent() {
               >
                 PolicyEngine.org
               </a>
+              {' • '}
+              <button
+                onClick={() => setShowPrivacyModal(true)}
+                className="text-blue-600 hover:text-blue-800"
+              >
+                Privacy & Terms
+              </button>
             </p>
           </div>
         </div>
       </footer>
+
+      {/* Privacy Modal */}
+      <PrivacyModal isOpen={showPrivacyModal} onClose={() => setShowPrivacyModal(false)} />
     </main>
   );
 }

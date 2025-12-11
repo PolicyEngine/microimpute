@@ -11,7 +11,25 @@ import {
   Tooltip,
   Legend,
   ResponsiveContainer,
+  Brush,
 } from 'recharts';
+
+/**
+ * Format a number to scientific notation if it's very large or very small
+ * Returns the original number formatted normally if within reasonable range
+ */
+function formatLargeNumber(value: number, precision: number = 2): string {
+  const absValue = Math.abs(value);
+  // Use scientific notation for values >= 100,000 or <= 0.0001 (but not 0)
+  if (absValue >= 100000 || (absValue > 0 && absValue <= 0.0001)) {
+    return value.toExponential(precision);
+  }
+  // For smaller numbers, use fixed notation
+  if (absValue < 1 && absValue > 0) {
+    return value.toFixed(precision + 2);
+  }
+  return value.toFixed(precision);
+}
 
 interface DistributionOverlayProps {
   data: ImputationDataPoint[];
@@ -72,14 +90,16 @@ export default function DistributionOverlay({
         const info = JSON.parse(d.additional_info);
 
         if (d.metric_name === 'histogram_distribution') {
-          // Numerical variable
+          // Numerical variable - use scientific notation for large values
+          const binStartFormatted = formatLargeNumber(info.bin_start);
+          const binEndFormatted = formatLargeNumber(info.bin_end);
           (distributions[variable].data as BinData[]).push({
             binIndex: info.bin_index,
             binStart: info.bin_start,
             binEnd: info.bin_end,
             donorHeight: info.donor_height,
             receiverHeight: info.receiver_height,
-            binLabel: `${info.bin_start.toFixed(2)}-${info.bin_end.toFixed(2)}`,
+            binLabel: `${binStartFormatted}-${binEndFormatted}`,
           });
           distributions[variable].nSamplesDonor = info.n_samples_donor;
           distributions[variable].nSamplesReceiver = info.n_samples_receiver;
@@ -130,7 +150,7 @@ export default function DistributionOverlay({
 
     return (
       <div>
-        <ResponsiveContainer width="100%" height={400}>
+        <ResponsiveContainer width="100%" height={580}>
           <BarChart
             data={chartData}
             margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
@@ -161,11 +181,19 @@ export default function DistributionOverlay({
             />
             <Tooltip
               formatter={(value: number) => [`${value.toFixed(2)}%`, '']}
-              labelFormatter={(label) => `Bin: ${label}`}
+              labelFormatter={(_label, payload) => {
+                if (payload && payload.length > 0 && payload[0].payload) {
+                  const { binStart, binEnd } = payload[0].payload;
+                  // Show full values with commas in tooltip for readability
+                  const startStr = binStart.toLocaleString(undefined, { maximumFractionDigits: 2 });
+                  const endStr = binEnd.toLocaleString(undefined, { maximumFractionDigits: 2 });
+                  return `Bin: ${startStr} - ${endStr}`;
+                }
+                return `Bin: ${_label}`;
+              }}
               contentStyle={{ color: '#000000' }}
               labelStyle={{ color: '#000000' }}
             />
-            <Legend wrapperStyle={{ color: '#000000', paddingTop: '10px' }} />
             <Bar
               dataKey="Donor"
               fill="#3b82f6"
@@ -178,10 +206,21 @@ export default function DistributionOverlay({
               fillOpacity={0.7}
               name={`Receiver (n=${dist.nSamplesReceiver})`}
             />
+            <Brush
+              dataKey="name"
+              height={30}
+              stroke="#8884d8"
+              fill="#f3f4f6"
+              tickFormatter={() => ''}
+            />
+            <Legend
+              verticalAlign="bottom"
+              wrapperStyle={{ color: '#000000', paddingTop: '45px' }}
+            />
           </BarChart>
         </ResponsiveContainer>
         <p className="text-xs text-gray-600 mt-2 text-center">
-          Histogram with {(dist.data as BinData[]).length} bins. Each bin shows the percentage of values falling within that range.
+          Histogram with {(dist.data as BinData[]).length} bins. Drag the handles below to zoom into a specific range.
           Overlapping bars indicate similar distributions.
         </p>
       </div>
