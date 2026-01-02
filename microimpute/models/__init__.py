@@ -34,3 +34,4 @@ except ImportError:
 from microimpute.models.ols import OLS
 from microimpute.models.qrf import QRF
 from microimpute.models.quantreg import QuantReg
+from microimpute.models.ziqrf import ZIQRF
