@@ -2,11 +2,11 @@
 
 \subsection{$\texttt{microimpute}$ package implementation}
 
-$\texttt{microimpute}$\footnote{Complete documentation, implementation details, and usage examples are available at https://policyengine.github.io/microimpute/.} is PolicyEngine's specialized Python framework that enables variable imputation through multiple statistical methods, providing a consistent interface for comparing and benchmarking different imputation approaches using quantile loss calculations.
+$\texttt{microimpute}$\footnote{Complete documentation, implementation details, and usage examples are available at https://policyengine.github.io/microimpute/.} is a Python framework that enables variable imputation through multiple statistical methods, providing a consistent interface for comparing and benchmarking different imputation approaches using quantile loss calculations.
 
 \subsubsection{Core capabilities}
 
-The package currently supports four primary imputation methods: Hot Deck Matching, Ordinary Least Squares Linear Regression, Quantile Regression Forests (QRF), and Quantile Regression. This approach allows researchers to systematically evaluate which technique provides the most accurate results for their specific dataset and research objectives.
+The package currently supports four primary imputation methods: Hot Deck Matching, Ordinary Least Squares Linear Regression, Quantile Regression Forests (QRF), and Quantile Regression. This approach allows researchers to systematically evaluate which technique provides the most accurate results for their specific dataset and research objectives. Additionally, the package is designed to be modular, allowing for easy extension with additional imputation methods in the future.
 
 \subsubsection{Key features for microimputation}
 
@@ -20,6 +20,19 @@ $\texttt{microimpute}$ addresses imputation challenges between complex survey da
     \item \textbf{Autoimputation}: Provides an integrated imputation pipeline that tunes method hyperparameters to the specific datasets, compares methods, and selects the best-performing to conduct the requested imputation in a single function call.
 \end{enumerate}
 
-\subsubsection{Implementation details}
+\subsection{Evaluation Framework}
 
-$\texttt{microimpute}$'s QRF implementation extends $\texttt{scikit-learn}$'s Random Forest to provide full conditional quantile estimation, enabling stochastic imputation that preserves distributional properties rather than relying solely on point estimates. OLS and QuantReg methods are implemented using $\texttt{statsmodels}$, while Matching uses the R $\texttt{StatMatch}$ package's Hot Deck Matching capabilities. The $\texttt{microimpute}$ package is designed to be modular, allowing for easy extension with additional imputation methods in the future.
+Comparing imputation methods requires metrics that assess distributional accuracy, not just point prediction. The \texttt{microimpute} package uses quantile loss as the primary evaluation metric:
+\begin{equation}
+    \mathcal{L}_\tau = \rho_\tau(y - \hat{Q}_\tau(y|x)) = (y - \hat{Q}_\tau(y|x)) \cdot (\tau - \mathbf{1}_{y < \hat{Q}_\tau(y|x)})
+\end{equation}
+
+Averaging over multiple quantiles $\tau \in \{0.1, 0.2, \ldots, 0.9\}$ provides a comprehensive measure of how well the method estimates the conditional distribution across its entire range. Lower average quantile loss indicates better distributional calibration.
+
+Additional metrics include:
+\begin{itemize}
+    \item \textbf{Wasserstein distance}: Measures the distance between the marginal distributions of observed and imputed values
+    \item \textbf{Kolmogorov-Smirnov statistic}: Tests whether observed and imputed values come from the same distribution
+\end{itemize}
+
+These metrics enable systematic comparison across methods, allowing researchers to select the approach best suited to their specific data characteristics.
