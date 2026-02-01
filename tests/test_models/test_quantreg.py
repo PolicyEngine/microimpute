@@ -13,7 +13,6 @@ from microimpute.models.quantreg import QuantReg
 from microimpute.utils.data import preprocess_data
 from microimpute.visualizations import *
 
-
 # === Fixtures ===
 
 

@@ -661,3 +661,124 @@ class TestErrorHandling:
             # Should handle NaNs gracefully
             fig = viz.plot()
             assert fig is not None
+
+
+class TestErrorBars:
+    """Test error bar functionality in visualizations."""
+
+    def test_performance_results_with_error_bars(self):
+        """Test PerformanceResults displays error bars when std data is present."""
+        np.random.seed(42)
+        quantiles = [0.1, 0.5, 0.9]
+
+        results_df = pd.DataFrame(
+            {q: np.random.uniform(0.1, 0.5, 2) for q in quantiles},
+            index=["train", "test"],
+        )
+        std_df = pd.DataFrame(
+            {q: np.random.uniform(0.01, 0.05, 2) for q in quantiles},
+            index=["train", "test"],
+        )
+
+        results = {
+            "quantile_loss": {
+                "results": results_df,
+                "results_std": std_df,
+                "mean_train": results_df.loc["train"].mean(),
+                "mean_test": results_df.loc["test"].mean(),
+                "std_train": std_df.loc["train"].mean(),
+                "std_test": std_df.loc["test"].mean(),
+                "variables": ["var1"],
+            }
+        }
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+
+            viz = PerformanceResults(
+                results=results,
+                metric="quantile_loss",
+                model_name="TestModel",
+            )
+
+            fig = viz.plot(show_error_bars=True)
+            assert fig is not None
+
+            # Check that error bars are present
+            has_error_bars = any(
+                trace.error_y is not None and trace.error_y.array is not None
+                for trace in fig.data
+            )
+            assert has_error_bars
+
+    def test_comparison_results_with_error_bars(self):
+        """Test MethodComparisonResults displays error bars when std is present."""
+        np.random.seed(42)
+        quantiles = [0.1, 0.5, 0.9]
+
+        results_df = pd.DataFrame(
+            {q: np.random.uniform(0.1, 0.5, 2) for q in quantiles},
+            index=["train", "test"],
+        )
+        std_df = pd.DataFrame(
+            {q: np.random.uniform(0.01, 0.05, 2) for q in quantiles},
+            index=["train", "test"],
+        )
+
+        comparison_results = {
+            "OLS": {
+                "quantile_loss": {
+                    "results": results_df,
+                    "results_std": std_df,
+                    "mean_test": results_df.loc["test"].mean(),
+                    "std_test": std_df.loc["test"].mean(),
+                    "variables": ["var1"],
+                }
+            },
+            "QRF": {
+                "quantile_loss": {
+                    "results": results_df * 0.9,
+                    "results_std": std_df * 1.1,
+                    "mean_test": (results_df * 0.9).loc["test"].mean(),
+                    "std_test": (std_df * 1.1).loc["test"].mean(),
+                    "variables": ["var1"],
+                }
+            },
+        }
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+
+            viz = MethodComparisonResults(
+                comparison_results, metric="quantile_loss"
+            )
+
+            fig = viz.plot(show_error_bars=True)
+            assert fig is not None
+
+            # Check that Std column is in the data
+            assert "Std" in viz.comparison_data.columns
+            assert not viz.comparison_data["Std"].isna().all()
+
+    def test_cv_results_contain_std(self, diabetes_data):
+        """Test that cross_validate_model returns std information."""
+        predictors = ["age", "sex", "bmi", "bp"]
+        imputed_variables = ["s1"]
+
+        data = diabetes_data[predictors + imputed_variables]
+        data = preprocess_data(data, full_data=True)
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+
+            results = cross_validate_model(
+                OLS, data, predictors, imputed_variables, n_splits=3
+            )
+
+            ql = results["quantile_loss"]
+            assert "results_std" in ql
+            assert "std_train" in ql
+            assert "std_test" in ql
+            assert ql["std_train"] >= 0
+            assert ql["std_test"] >= 0
+            assert (ql["results_std"] >= 0).all().all()

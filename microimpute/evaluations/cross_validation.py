@@ -494,15 +494,21 @@ def cross_validate_model(
         Dictionary containing separate results for quantile_loss and log_loss:
         {
             "quantile_loss": {
-                "results": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles
+                "results": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles (mean across folds)
+                "results_std": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles (std across folds)
                 "mean_train": float,
                 "mean_test": float,
+                "std_train": float,  # std of mean loss across folds
+                "std_test": float,  # std of mean loss across folds
                 "variables": List[str]
             },
             "log_loss": {
                 "results": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles (constant values)
+                "results_std": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles (std across folds)
                 "mean_train": float,
                 "mean_test": float,
+                "std_train": float,
+                "std_test": float,
                 "variables": List[str]
             }
         }
@@ -676,26 +682,54 @@ def cross_validate_model(
                     index=["train", "test"],
                 )
 
-                # Calculate means
+                # Create std DataFrame for error bars
+                std_df = pd.DataFrame(
+                    [
+                        {
+                            q: np.std(values) if len(values) > 1 else 0.0
+                            for q, values in metric_results[metric_type][
+                                "train"
+                            ].items()
+                        },
+                        {
+                            q: np.std(values) if len(values) > 1 else 0.0
+                            for q, values in metric_results[metric_type][
+                                "test"
+                            ].items()
+                        },
+                    ],
+                    index=["train", "test"],
+                )
+
+                # Calculate means and stds across all quantiles
                 mean_test = combined_df.loc["test"].mean()
                 mean_train = combined_df.loc["train"].mean()
+                std_test = std_df.loc["test"].mean()
+                std_train = std_df.loc["train"].mean()
 
                 final_results[metric_type] = {
                     "results": combined_df,  # Single DataFrame with train/test rows
+                    "results_std": std_df,  # Std across folds for each quantile
                     "mean_train": mean_train,
                     "mean_test": mean_test,
+                    "std_train": std_train,
+                    "std_test": std_test,
                     "variables": metric_results[metric_type]["variables"],
                 }
 
                 log.info(
-                    f"{metric_type} - Mean Train: {mean_train:.6f}, Mean Test: {mean_test:.6f}"
+                    f"{metric_type} - Mean Train: {mean_train:.6f} (±{std_train:.6f}), "
+                    f"Mean Test: {mean_test:.6f} (±{std_test:.6f})"
                 )
             else:
                 # No variables use this metric
                 final_results[metric_type] = {
                     "results": pd.DataFrame(),  # Empty DataFrame
+                    "results_std": pd.DataFrame(),  # Empty DataFrame
                     "mean_train": np.nan,
                     "mean_test": np.nan,
+                    "std_train": np.nan,
+                    "std_test": np.nan,
                     "variables": [],
                 }
 

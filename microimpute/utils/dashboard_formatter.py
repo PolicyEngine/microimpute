@@ -179,6 +179,7 @@ def _format_histogram_rows(
                     "quantile": "N/A",
                     "metric_name": "categorical_distribution",
                     "metric_value": None,  # Not used for histograms
+                    "metric_std": None,
                     "split": "full",
                     "additional_info": json.dumps(
                         {
@@ -211,6 +212,7 @@ def _format_histogram_rows(
                     "quantile": "N/A",
                     "metric_name": "histogram_distribution",
                     "metric_value": None,  # Not used for histograms
+                    "metric_std": None,
                     "split": "full",
                     "additional_info": json.dumps(
                         {
@@ -375,6 +377,7 @@ def format_csv(
                     if metric_type in cv_result:
                         data = cv_result[metric_type]
                         results_df = data.get("results")
+                        results_std_df = data.get("results_std")
                         variables = data.get("variables", [])
 
                         if results_df is not None:
@@ -382,7 +385,18 @@ def format_csv(
                             for split in ["train", "test"]:
                                 if split in results_df.index:
                                     for quantile in results_df.columns:
-                                        # Add mean_all row for this quantile
+                                        # Get std value if available
+                                        std_value = None
+                                        if (
+                                            results_std_df is not None
+                                            and split in results_std_df.index
+                                        ):
+                                            std_value = float(
+                                                results_std_df.loc[
+                                                    split, quantile
+                                                ]
+                                            )
+
                                         rows.append(
                                             {
                                                 "type": "benchmark_loss",
@@ -393,6 +407,7 @@ def format_csv(
                                                 "metric_value": results_df.loc[
                                                     split, quantile
                                                 ],
+                                                "metric_std": std_value,
                                                 "split": split,
                                                 "additional_info": json.dumps(
                                                     {
@@ -406,6 +421,11 @@ def format_csv(
 
                             # Add mean across all quantiles
                             if "mean_train" in data:
+                                std_train = (
+                                    float(data["std_train"])
+                                    if "std_train" in data
+                                    else None
+                                )
                                 rows.append(
                                     {
                                         "type": "benchmark_loss",
@@ -414,6 +434,7 @@ def format_csv(
                                         "quantile": "mean",
                                         "metric_name": metric_type,
                                         "metric_value": data["mean_train"],
+                                        "metric_std": std_train,
                                         "split": "train",
                                         "additional_info": json.dumps(
                                             {"n_variables": len(variables)}
@@ -422,6 +443,11 @@ def format_csv(
                                 )
 
                         if "mean_test" in data:
+                            std_test = (
+                                float(data["std_test"])
+                                if "std_test" in data
+                                else None
+                            )
                             rows.append(
                                 {
                                     "type": "benchmark_loss",
@@ -430,6 +456,7 @@ def format_csv(
                                     "quantile": "mean",
                                     "metric_name": metric_type,
                                     "metric_value": data["mean_test"],
+                                    "metric_std": std_test,
                                     "split": "test",
                                     "additional_info": json.dumps(
                                         {"n_variables": len(variables)}
@@ -461,6 +488,13 @@ def format_csv(
             else:
                 quantile = float(percentile) if pd.notna(percentile) else "N/A"
 
+            # Get std if available in the DataFrame
+            std_value = (
+                float(row["Std"])
+                if "Std" in row.index and pd.notna(row["Std"])
+                else None
+            )
+
             rows.append(
                 {
                     "type": "benchmark_loss",
@@ -469,6 +503,7 @@ def format_csv(
                     "quantile": quantile,
                     "metric_name": row["Metric"],
                     "metric_value": row["Loss"],
+                    "metric_std": std_value,
                     "split": "test",  # Comparison metrics are typically on test set
                     "additional_info": "{}",
                 }
@@ -490,6 +525,7 @@ def format_csv(
                     .lower()
                     .replace(" ", "_"),  # e.g., "wasserstein_distance"
                     "metric_value": row["Distance"],
+                    "metric_std": None,
                     "split": "full",
                     "additional_info": "{}",
                 }
@@ -514,6 +550,7 @@ def format_csv(
                                 "quantile": "N/A",
                                 "metric_name": corr_type,
                                 "metric_value": corr_matrix.iloc[i, j],
+                                "metric_std": None,
                                 "split": "full",
                                 "additional_info": json.dumps(
                                     {"predictor2": pred2}
@@ -534,6 +571,7 @@ def format_csv(
                             "quantile": "N/A",
                             "metric_name": "mutual_info",
                             "metric_value": mi_df.loc[predictor, target],
+                            "metric_std": None,
                             "split": "full",
                             "additional_info": json.dumps({"target": target}),
                         }
@@ -556,6 +594,7 @@ def format_csv(
                     "quantile": "N/A",
                     "metric_name": "relative_impact",
                     "metric_value": row["relative_impact"],
+                    "metric_std": None,
                     "split": "test",
                     "additional_info": json.dumps(
                         {"removed_predictor": predictor}
@@ -572,6 +611,7 @@ def format_csv(
                     "quantile": "N/A",
                     "metric_name": "loss_increase",
                     "metric_value": row["loss_increase"],
+                    "metric_std": None,
                     "split": "test",
                     "additional_info": json.dumps(
                         {"removed_predictor": predictor}
@@ -603,6 +643,7 @@ def format_csv(
                         "quantile": "N/A",
                         "metric_name": "cumulative_improvement",
                         "metric_value": row["cumulative_improvement"],
+                        "metric_std": None,
                         "split": "test",
                         "additional_info": json.dumps(
                             {
@@ -632,6 +673,7 @@ def format_csv(
                         "quantile": "N/A",
                         "metric_name": "marginal_improvement",
                         "metric_value": row["marginal_improvement"],
+                        "metric_std": None,
                         "split": "test",
                         "additional_info": json.dumps(
                             {
@@ -693,6 +735,7 @@ def format_csv(
                 "quantile",
                 "metric_name",
                 "metric_value",
+                "metric_std",
                 "split",
                 "additional_info",
             ]

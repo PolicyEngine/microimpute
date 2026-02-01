@@ -98,6 +98,7 @@ class PerformanceResults:
             PLOT_CONFIG["width"],
             PLOT_CONFIG["height"],
         ),
+        show_error_bars: bool = True,
     ) -> go.Figure:
         """Plot the performance based on the specified metric.
 
@@ -105,6 +106,7 @@ class PerformanceResults:
             title: Custom title for the plot. If None, a default title is used.
             save_path: Path to save the plot. If None, the plot is displayed.
             figsize: Figure size as (width, height) in pixels.
+            show_error_bars: Whether to show error bars for variation across CV folds.
 
         Returns:
             Plotly figure object
@@ -115,11 +117,17 @@ class PerformanceResults:
         logger.debug(f"Creating performance plot for metric: {self.metric}")
 
         if self.metric == "quantile_loss":
-            return self._plot_quantile_loss(title, save_path, figsize)
+            return self._plot_quantile_loss(
+                title, save_path, figsize, show_error_bars
+            )
         elif self.metric == "log_loss":
-            return self._plot_log_loss(title, save_path, figsize)
+            return self._plot_log_loss(
+                title, save_path, figsize, show_error_bars
+            )
         elif self.metric == "combined":
-            return self._plot_combined(title, save_path, figsize)
+            return self._plot_combined(
+                title, save_path, figsize, show_error_bars
+            )
         else:
             raise ValueError(f"Invalid metric: {self.metric}")
 
@@ -128,13 +136,14 @@ class PerformanceResults:
         title: Optional[str],
         save_path: Optional[str],
         figsize: Tuple[int, int],
+        show_error_bars: bool = True,
     ) -> go.Figure:
         """Plot quantile loss performance across quantiles."""
         if not self.has_quantile_loss:
             logger.warning("No quantile loss data available")
             return go.Figure()
 
-        palette = px.colors.qualitative.Plotly
+        palette = PLOT_CONFIG["color_palette"]
         train_color = palette[2]
         test_color = palette[3]
 
@@ -144,25 +153,48 @@ class PerformanceResults:
             # Get the DataFrame for quantile loss
             ql_data = self.results["quantile_loss"]["results"]
 
+            # Get std data for error bars if available
+            ql_std = self.results["quantile_loss"].get("results_std")
+
             # Add bars for training data
             if "train" in ql_data.index:
+                error_y_dict = None
+                if (
+                    show_error_bars
+                    and ql_std is not None
+                    and "train" in ql_std.index
+                ):
+                    error_y_dict = dict(
+                        type="data", array=ql_std.loc["train"].values
+                    )
                 fig.add_trace(
                     go.Bar(
                         x=[str(x) for x in ql_data.columns],
                         y=ql_data.loc["train"].values,
                         name="Train",
                         marker_color=train_color,
+                        error_y=error_y_dict,
                     )
                 )
 
             # Add bars for test data
             if "test" in ql_data.index:
+                error_y_dict = None
+                if (
+                    show_error_bars
+                    and ql_std is not None
+                    and "test" in ql_std.index
+                ):
+                    error_y_dict = dict(
+                        type="data", array=ql_std.loc["test"].values
+                    )
                 fig.add_trace(
                     go.Bar(
                         x=[str(x) for x in ql_data.columns],
                         y=ql_data.loc["test"].values,
                         name="Test",
                         marker_color=test_color,
+                        error_y=error_y_dict,
                     )
                 )
 
@@ -176,14 +208,28 @@ class PerformanceResults:
                 barmode="group",
                 width=figsize[0],
                 height=figsize[1],
-                paper_bgcolor="#F0F0F0",
-                plot_bgcolor="#F0F0F0",
+                paper_bgcolor=PLOT_CONFIG["paper_bgcolor"],
+                plot_bgcolor=PLOT_CONFIG["plot_bgcolor"],
                 legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99),
                 margin=dict(l=50, r=50, t=80, b=50),
             )
 
-            fig.update_xaxes(showgrid=False, zeroline=False)
-            fig.update_yaxes(showgrid=False, zeroline=False)
+            fig.update_xaxes(
+                showgrid=PLOT_CONFIG["showgrid_x"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                gridwidth=PLOT_CONFIG["gridwidth"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
+                zeroline=False,
+            )
+            fig.update_yaxes(
+                showgrid=PLOT_CONFIG["showgrid_y"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                gridwidth=PLOT_CONFIG["gridwidth"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
+                zeroline=False,
+            )
 
             if save_path:
                 _save_figure(fig, save_path)
@@ -200,6 +246,7 @@ class PerformanceResults:
         title: Optional[str],
         save_path: Optional[str],
         figsize: Tuple[int, int],
+        show_error_bars: bool = True,
     ) -> go.Figure:
         """Plot log loss performance and additional categorical metrics."""
         if not self.has_log_loss:
@@ -235,16 +282,23 @@ class PerformanceResults:
         )
 
         # Plot 1: Log Loss bars
-        palette = px.colors.qualitative.Plotly
+        palette = PLOT_CONFIG["color_palette"]
         train_color = palette[2]
         test_color = palette[3]
 
         # Get log loss values from the results DataFrame
         ll_results_df = ll_data["results"]
 
+        # Get std values for error bars
+        ll_std = ll_data.get("std_train")
+        ll_std_test = ll_data.get("std_test")
+
         if "train" in ll_results_df.index:
             # Log loss should be constant across quantiles, so take the mean
             train_loss = ll_results_df.loc["train"].mean()
+            error_y_dict = None
+            if show_error_bars and ll_std is not None:
+                error_y_dict = dict(type="data", array=[ll_std])
             fig.add_trace(
                 go.Bar(
                     x=["Train"],
@@ -252,6 +306,7 @@ class PerformanceResults:
                     name="Train",
                     marker_color=train_color,
                     showlegend=True,
+                    error_y=error_y_dict,
                 ),
                 row=1,
                 col=1,
@@ -259,6 +314,9 @@ class PerformanceResults:
 
         if "test" in ll_results_df.index:
             test_loss = ll_results_df.loc["test"].mean()
+            error_y_dict = None
+            if show_error_bars and ll_std_test is not None:
+                error_y_dict = dict(type="data", array=[ll_std_test])
             fig.add_trace(
                 go.Bar(
                     x=["Test"],
@@ -266,6 +324,7 @@ class PerformanceResults:
                     name="Test",
                     marker_color=test_color,
                     showlegend=True,
+                    error_y=error_y_dict,
                 ),
                 row=1,
                 col=1,
@@ -336,9 +395,24 @@ class PerformanceResults:
             title=title,
             height=figsize[1] * num_subplots * 0.7,
             width=figsize[0],
-            paper_bgcolor="#F0F0F0",
-            plot_bgcolor="#F0F0F0",
+            paper_bgcolor=PLOT_CONFIG["paper_bgcolor"],
+            plot_bgcolor=PLOT_CONFIG["plot_bgcolor"],
             showlegend=True,
+        )
+
+        fig.update_xaxes(
+            showgrid=PLOT_CONFIG["showgrid_x"],
+            gridcolor=PLOT_CONFIG["gridcolor"],
+            gridwidth=PLOT_CONFIG["gridwidth"],
+            showline=PLOT_CONFIG["showline"],
+            linecolor=PLOT_CONFIG["linecolor"],
+        )
+        fig.update_yaxes(
+            showgrid=PLOT_CONFIG["showgrid_y"],
+            gridcolor=PLOT_CONFIG["gridcolor"],
+            gridwidth=PLOT_CONFIG["gridwidth"],
+            showline=PLOT_CONFIG["showline"],
+            linecolor=PLOT_CONFIG["linecolor"],
         )
 
         if save_path:
@@ -351,6 +425,7 @@ class PerformanceResults:
         title: Optional[str],
         save_path: Optional[str],
         figsize: Tuple[int, int],
+        show_error_bars: bool = True,
     ) -> go.Figure:
         """Plot combined view of both metrics."""
         if not self.has_quantile_loss and not self.has_log_loss:
@@ -375,7 +450,7 @@ class PerformanceResults:
             vertical_spacing=0.2,
         )
 
-        palette = px.colors.qualitative.Plotly
+        palette = PLOT_CONFIG["color_palette"]
         train_color = palette[2]
         test_color = palette[3]
         current_row = 1
@@ -383,8 +458,18 @@ class PerformanceResults:
         # Add quantile loss plot
         if self.has_quantile_loss:
             ql_data = self.results["quantile_loss"]["results"]
+            ql_std = self.results["quantile_loss"].get("results_std")
 
             if "train" in ql_data.index:
+                error_y_dict = None
+                if (
+                    show_error_bars
+                    and ql_std is not None
+                    and "train" in ql_std.index
+                ):
+                    error_y_dict = dict(
+                        type="data", array=ql_std.loc["train"].values
+                    )
                 fig.add_trace(
                     go.Bar(
                         x=[str(x) for x in ql_data.columns],
@@ -392,12 +477,22 @@ class PerformanceResults:
                         name="QL Train",
                         marker_color=train_color,
                         legendgroup="train",
+                        error_y=error_y_dict,
                     ),
                     row=current_row,
                     col=1,
                 )
 
             if "test" in ql_data.index:
+                error_y_dict = None
+                if (
+                    show_error_bars
+                    and ql_std is not None
+                    and "test" in ql_std.index
+                ):
+                    error_y_dict = dict(
+                        type="data", array=ql_std.loc["test"].values
+                    )
                 fig.add_trace(
                     go.Bar(
                         x=[str(x) for x in ql_data.columns],
@@ -405,6 +500,7 @@ class PerformanceResults:
                         name="QL Test",
                         marker_color=test_color,
                         legendgroup="test",
+                        error_y=error_y_dict,
                     ),
                     row=current_row,
                     col=1,
@@ -417,9 +513,14 @@ class PerformanceResults:
         # Add log loss plot
         if self.has_log_loss:
             ll_data = self.results["log_loss"]["results"]
+            ll_std_train = self.results["log_loss"].get("std_train")
+            ll_std_test = self.results["log_loss"].get("std_test")
 
             if "train" in ll_data.index:
                 train_loss = ll_data.loc["train"].mean()
+                error_y_dict = None
+                if show_error_bars and ll_std_train is not None:
+                    error_y_dict = dict(type="data", array=[ll_std_train])
                 fig.add_trace(
                     go.Bar(
                         x=["Log loss"],
@@ -427,7 +528,8 @@ class PerformanceResults:
                         name="Log loss train",
                         marker_color=train_color,
                         legendgroup="train",
-                        showlegend=self.has_quantile_loss == False,
+                        showlegend=self.has_quantile_loss is False,
+                        error_y=error_y_dict,
                     ),
                     row=current_row,
                     col=1,
@@ -435,6 +537,9 @@ class PerformanceResults:
 
             if "test" in ll_data.index:
                 test_loss = ll_data.loc["test"].mean()
+                error_y_dict = None
+                if show_error_bars and ll_std_test is not None:
+                    error_y_dict = dict(type="data", array=[ll_std_test])
                 fig.add_trace(
                     go.Bar(
                         x=["Log loss"],
@@ -442,7 +547,8 @@ class PerformanceResults:
                         name="Log loss test",
                         marker_color=test_color,
                         legendgroup="test",
-                        showlegend=self.has_quantile_loss == False,
+                        showlegend=self.has_quantile_loss is False,
+                        error_y=error_y_dict,
                     ),
                     row=current_row,
                     col=1,
@@ -458,13 +564,27 @@ class PerformanceResults:
             barmode="group",
             height=figsize[1] * num_subplots * 0.6,
             width=figsize[0],
-            paper_bgcolor="#F0F0F0",
-            plot_bgcolor="#F0F0F0",
+            paper_bgcolor=PLOT_CONFIG["paper_bgcolor"],
+            plot_bgcolor=PLOT_CONFIG["plot_bgcolor"],
             showlegend=True,
         )
 
-        fig.update_xaxes(showgrid=False, zeroline=False)
-        fig.update_yaxes(showgrid=False, zeroline=False)
+        fig.update_xaxes(
+            showgrid=PLOT_CONFIG["showgrid_x"],
+            gridcolor=PLOT_CONFIG["gridcolor"],
+            gridwidth=PLOT_CONFIG["gridwidth"],
+            showline=PLOT_CONFIG["showline"],
+            linecolor=PLOT_CONFIG["linecolor"],
+            zeroline=False,
+        )
+        fig.update_yaxes(
+            showgrid=PLOT_CONFIG["showgrid_y"],
+            gridcolor=PLOT_CONFIG["gridcolor"],
+            gridwidth=PLOT_CONFIG["gridwidth"],
+            showline=PLOT_CONFIG["showline"],
+            linecolor=PLOT_CONFIG["linecolor"],
+            zeroline=False,
+        )
 
         if save_path:
             _save_figure(fig, save_path)
