@@ -32,6 +32,7 @@ class QuantRegResults(ImputerResults):
         quantiles_specified: bool = False,
         boolean_targets: Optional[Dict[str, Dict]] = None,
         constant_targets: Optional[Dict[str, Dict]] = None,
+        dummy_processor: Optional[Any] = None,
     ) -> None:
         """Initialize the QuantReg results.
 
@@ -46,6 +47,7 @@ class QuantRegResults(ImputerResults):
                 names before dummy encoding.
             quantiles_specified: Whether quantiles were explicitly specified during fit.
             boolean_targets: Dictionary of boolean target info for conversion back to bool.
+            dummy_processor: Processor for handling dummy encoding in test data.
         """
         super().__init__(
             predictors,
@@ -59,6 +61,7 @@ class QuantRegResults(ImputerResults):
         self.quantiles_specified = quantiles_specified
         self.boolean_targets = boolean_targets or {}
         self.constant_targets = constant_targets or {}
+        self.dummy_processor = dummy_processor
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
@@ -414,6 +417,7 @@ class QuantReg(Imputer):
                 quantiles_specified=(quantiles is not None),
                 boolean_targets=boolean_targets,
                 constant_targets=constant_targets,
+                dummy_processor=getattr(self, "dummy_processor", None),
             )
         except Exception as e:
             self.logger.error(f"Error fitting QuantReg model: {str(e)}")

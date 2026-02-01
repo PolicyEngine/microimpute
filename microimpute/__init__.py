@@ -72,6 +72,11 @@ try:
 except ImportError:
     pass
 
+try:
+    from microimpute.models.mdn import MDN
+except ImportError:
+    pass
+
 # Import visualization modules
 from microimpute.visualizations import (
     MethodComparisonResults,
