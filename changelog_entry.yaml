@@ -2,3 +2,4 @@
   changes:
     added:
     - Error bars and grid lines to visualizations.
+    - Notebook benchmarking models on additional datasets.
