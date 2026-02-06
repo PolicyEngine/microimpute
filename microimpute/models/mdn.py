@@ -253,6 +253,7 @@ class _MDNModel:
             trainer_kwargs={
                 "enable_progress_bar": False,
                 "enable_model_summary": False,
+                "logger": False,
             },
         )
 
@@ -448,6 +449,7 @@ class _NeuralClassifierModel:
             trainer_kwargs={
                 "enable_progress_bar": False,
                 "enable_model_summary": False,
+                "logger": False,
             },
         )
 
