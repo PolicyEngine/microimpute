@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), 
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.14.0] - 2026-02-07 04:51:52
+
+### Added
+
+- Error bars and grid lines to visualizations.
+- Notebook benchmarking models on additional datasets.
+
 ## [1.13.0] - 2026-01-20 05:25:02
 
 ## [1.12.0] - 2025-12-11 14:03:49
@@ -300,6 +307,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 
 
+[1.14.0]: https://github.com/PolicyEngine/microimpute/compare/1.13.0...1.14.0
 [1.13.0]: https://github.com/PolicyEngine/microimpute/compare/1.12.0...1.13.0
 [1.12.0]: https://github.com/PolicyEngine/microimpute/compare/1.11.0...1.12.0
 [1.11.0]: https://github.com/PolicyEngine/microimpute/compare/1.10.0...1.11.0

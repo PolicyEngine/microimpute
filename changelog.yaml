@@ -261,3 +261,9 @@
     updated:
     - Introduction, Background and Data sections with more detailed literature review.
   date: 2026-01-20 05:25:02
+- bump: minor
+  changes:
+    added:
+    - Error bars and grid lines to visualizations.
+    - Notebook benchmarking models on additional datasets.
+  date: 2026-02-07 04:51:52
