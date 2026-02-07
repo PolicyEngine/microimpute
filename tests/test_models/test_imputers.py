@@ -17,7 +17,6 @@ from microimpute.config import QUANTILES
 from microimpute.models import *
 from microimpute.utils.data import preprocess_data
 
-
 # === Fixtures ===
 
 

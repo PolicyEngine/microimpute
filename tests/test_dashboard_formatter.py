@@ -14,7 +14,6 @@ import pytest
 
 from microimpute.utils.dashboard_formatter import format_csv
 
-
 # Valid type values that should appear in the output
 VALID_TYPES = {
     "benchmark_loss",
@@ -34,6 +33,7 @@ EXPECTED_COLUMNS = [
     "quantile",
     "metric_name",
     "metric_value",
+    "metric_std",
     "split",
     "additional_info",
 ]
@@ -57,8 +57,18 @@ def sample_autoimpute_result():
                     },
                     index=["train", "test"],
                 ),
+                "results_std": pd.DataFrame(
+                    {
+                        0.1: [0.001, 0.002],
+                        0.5: [0.0015, 0.0025],
+                        0.9: [0.002, 0.003],
+                    },
+                    index=["train", "test"],
+                ),
                 "mean_train": 0.015,
                 "mean_test": 0.025,
+                "std_train": 0.0015,
+                "std_test": 0.0025,
                 "variables": ["var1", "var2"],
             },
             "log_loss": {
@@ -68,8 +78,16 @@ def sample_autoimpute_result():
                     },
                     index=["train", "test"],
                 ),
+                "results_std": pd.DataFrame(
+                    {
+                        0.5: [0.01, 0.015],
+                    },
+                    index=["train", "test"],
+                ),
                 "mean_train": 0.1,
                 "mean_test": 0.15,
+                "std_train": 0.01,
+                "std_test": 0.015,
                 "variables": ["cat_var"],
             },
         },
@@ -83,8 +101,18 @@ def sample_autoimpute_result():
                     },
                     index=["train", "test"],
                 ),
+                "results_std": pd.DataFrame(
+                    {
+                        0.1: [0.0012, 0.0022],
+                        0.5: [0.0017, 0.0027],
+                        0.9: [0.0022, 0.0032],
+                    },
+                    index=["train", "test"],
+                ),
                 "mean_train": 0.017,
                 "mean_test": 0.027,
+                "std_train": 0.0017,
+                "std_test": 0.0027,
                 "variables": ["var1", "var2"],
             },
         },
@@ -347,6 +375,60 @@ class TestFormatCSVBenchmarkLoss:
             assert all(
                 "_best_method" not in method for method in qrf_rows["method"]
             )
+        finally:
+            Path(output_path).unlink()
+
+    def test_metric_std_column_populated(self, sample_autoimpute_result):
+        """Test that metric_std column is populated from CV results."""
+        with tempfile.NamedTemporaryFile(
+            mode="w", delete=False, suffix=".csv"
+        ) as f:
+            output_path = f.name
+
+        try:
+            result = format_csv(
+                output_path=output_path,
+                autoimpute_result=sample_autoimpute_result,
+            )
+
+            # Check that metric_std column exists
+            assert "metric_std" in result.columns
+
+            benchmark_rows = result[result["type"] == "benchmark_loss"]
+
+            # Check per-quantile rows have std values
+            ols_quantile_rows = benchmark_rows[
+                (benchmark_rows["method"] == "OLS")
+                & (benchmark_rows["quantile"] != "mean")
+                & (benchmark_rows["metric_name"] == "quantile_loss")
+            ]
+
+            # All per-quantile rows should have non-null std
+            assert not ols_quantile_rows["metric_std"].isna().any()
+            assert (ols_quantile_rows["metric_std"] >= 0).all()
+
+            # Check mean rows have std values
+            ols_mean_rows = benchmark_rows[
+                (benchmark_rows["method"] == "OLS")
+                & (benchmark_rows["quantile"] == "mean")
+                & (benchmark_rows["metric_name"] == "quantile_loss")
+            ]
+
+            assert not ols_mean_rows["metric_std"].isna().any()
+
+            # Verify specific std value matches fixture
+            # Test split should have std_test = 0.0025 for OLS quantile_loss
+            test_mean_row = benchmark_rows[
+                (benchmark_rows["method"] == "OLS")
+                & (benchmark_rows["quantile"] == "mean")
+                & (benchmark_rows["metric_name"] == "quantile_loss")
+                & (benchmark_rows["split"] == "test")
+            ]
+            assert len(test_mean_row) == 1
+            assert np.isclose(
+                test_mean_row.iloc[0]["metric_std"], 0.0025, rtol=1e-10
+            )
+
         finally:
             Path(output_path).unlink()
 

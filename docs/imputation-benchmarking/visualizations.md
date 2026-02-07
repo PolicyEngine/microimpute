@@ -37,6 +37,7 @@ class MethodComparisonResults:
         show_mean: bool = True,
         figsize: Tuple[int, int] = (PLOT_CONFIG["width"], PLOT_CONFIG["height"]),
         plot_type: str = "bar",
+        show_error_bars: bool = True,
     ) -> go.Figure
 
     def summary(self, format: str = "wide") -> pd.DataFrame
@@ -53,6 +54,7 @@ class MethodComparisonResults:
 | show_mean | bool | True | Show horizontal lines for mean loss |
 | figsize | tuple | (width, height) | Figure dimensions in pixels |
 | plot_type | str | "bar" | Plot type: "bar" for grouped bars, "stacked" for contribution analysis |
+| show_error_bars | bool | True | Show error bars representing standard deviation across CV folds |
 
 The `"stacked"` plot type shows rank-based contribution scores, useful for understanding how each variable contributes to overall model performance.
 
@@ -134,6 +136,7 @@ class PerformanceResults:
         title: Optional[str] = None,
         save_path: Optional[str] = None,
         figsize: Tuple[int, int] = (PLOT_CONFIG["width"], PLOT_CONFIG["height"]),
+        show_error_bars: bool = True,
     ) -> go.Figure
 
     def summary(self) -> pd.DataFrame
@@ -146,6 +149,7 @@ class PerformanceResults:
 | title | str | None | Custom plot title |
 | save_path | str | None | Path to save the plot |
 | figsize | tuple | (width, height) | Figure dimensions in pixels |
+| show_error_bars | bool | True | Show error bars representing standard deviation across CV folds |
 
 For quantile loss, the plot shows train and test loss across quantiles as grouped bars. For log loss, the plot includes the loss bars and optionally confusion matrix and class probability distribution subplots. For combined metrics, both are shown in subplots.
 

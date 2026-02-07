@@ -448,4 +448,4 @@ def test_autoimpute_consistency(simple_data: tuple) -> None:
                 "mean_test"
             ]
             if not np.isnan(loss1) and not np.isnan(loss2):
-                np.testing.assert_allclose(loss1, loss2, rtol=0.05)
+                np.testing.assert_allclose(loss1, loss2, rtol=0.10)

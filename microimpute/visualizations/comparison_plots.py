@@ -192,17 +192,29 @@ class MethodComparisonResults:
                     # Get test results (single row)
                     if "test" in ql_data["results"].index:
                         test_results = ql_data["results"].loc["test"]
+                        # Get std results if available
+                        std_results = None
+                        if (
+                            ql_data.get("results_std") is not None
+                            and "test" in ql_data["results_std"].index
+                        ):
+                            std_results = ql_data["results_std"].loc["test"]
+
                         for quantile in test_results.index:
                             for var in ql_data.get("variables", ["y"]):
-                                long_format_data.append(
-                                    {
-                                        "Method": method_name,
-                                        "Imputed Variable": var,
-                                        "Percentile": quantile,
-                                        "Loss": test_results[quantile],
-                                        "Metric": "quantile_loss",
-                                    }
-                                )
+                                row = {
+                                    "Method": method_name,
+                                    "Imputed Variable": var,
+                                    "Percentile": quantile,
+                                    "Loss": test_results[quantile],
+                                    "Metric": "quantile_loss",
+                                    "Std": (
+                                        std_results[quantile]
+                                        if std_results is not None
+                                        else np.nan
+                                    ),
+                                }
+                                long_format_data.append(row)
 
                     # Add mean loss
                     if "mean_test" in ql_data:
@@ -214,6 +226,7 @@ class MethodComparisonResults:
                                     "Percentile": "mean_quantile_loss",
                                     "Loss": ql_data["mean_test"],
                                     "Metric": "quantile_loss",
+                                    "Std": ql_data.get("std_test", np.nan),
                                 }
                             )
 
@@ -230,6 +243,7 @@ class MethodComparisonResults:
                     # Log loss is constant across quantiles
                     if "test" in ll_data["results"].index:
                         test_loss = ll_data["results"].loc["test"].mean()
+                        test_std = ll_data.get("std_test", np.nan)
                         for var in ll_data.get("variables", []):
                             long_format_data.append(
                                 {
@@ -238,6 +252,7 @@ class MethodComparisonResults:
                                     "Percentile": "log_loss",
                                     "Loss": test_loss,
                                     "Metric": "log_loss",
+                                    "Std": test_std,
                                 }
                             )
 
@@ -251,6 +266,7 @@ class MethodComparisonResults:
                                     "Percentile": "mean_log_loss",
                                     "Loss": ll_data["mean_test"],
                                     "Metric": "log_loss",
+                                    "Std": ll_data.get("std_test", np.nan),
                                 }
                             )
 
@@ -266,6 +282,7 @@ class MethodComparisonResults:
             PLOT_CONFIG["height"],
         ),
         plot_type: str = "bar",
+        show_error_bars: bool = True,
     ) -> go.Figure:
         """Plot a comparison of performance across different imputation methods.
 
@@ -275,6 +292,7 @@ class MethodComparisonResults:
             show_mean: Whether to show horizontal lines for mean loss values.
             figsize: Figure size as (width, height) in pixels.
             plot_type: Type of plot: 'bar' (default) or 'stacked' (for contribution analysis)
+            show_error_bars: Whether to show error bars for variation across quantiles.
 
         Returns:
             Plotly figure object
@@ -290,12 +308,14 @@ class MethodComparisonResults:
         if plot_type == "stacked":
             return self._plot_stacked_contribution(title, save_path, figsize)
         elif self.metric == "log_loss":
-            return self._plot_log_loss_comparison(title, save_path, figsize)
+            return self._plot_log_loss_comparison(
+                title, save_path, figsize, show_error_bars
+            )
         elif self.metric == "combined":
             return self._plot_combined_metrics(title, save_path, figsize)
         else:
             return self._plot_quantile_loss_comparison(
-                title, save_path, show_mean, figsize
+                title, save_path, show_mean, figsize, show_error_bars
             )
 
     def _plot_quantile_loss_comparison(
@@ -304,6 +324,7 @@ class MethodComparisonResults:
         save_path: Optional[str],
         show_mean: bool,
         figsize: Tuple[int, int],
+        show_error_bars: bool = True,
     ) -> go.Figure:
         """Plot quantile loss comparison across methods."""
 
@@ -354,6 +375,12 @@ class MethodComparisonResults:
             if title is None:
                 title = f"Test {self.metric_name} Across Quantiles for Different Imputation Methods"
 
+            # Use Std column for error bars if requested
+            error_y_col = None
+            if show_error_bars and "Std" in melted_df.columns:
+                melted_df["Std"] = melted_df["Std"].fillna(0)
+                error_y_col = "Std"
+
             # Create the bar chart
             logger.debug("Creating bar chart with plotly express")
             fig = px.bar(
@@ -361,13 +388,14 @@ class MethodComparisonResults:
                 x="Percentile",
                 y=self.metric_name,
                 color="Method",
-                color_discrete_sequence=px.colors.qualitative.Plotly,
+                color_discrete_sequence=PLOT_CONFIG["color_palette"],
                 barmode="group",
                 title=title,
                 labels={
                     "Percentile": "Quantiles",
-                    self.metric_name: f"Test {self.metric_name}",
+                    self.metric_name: f"{self.metric_name}",
                 },
+                error_y=error_y_col,
             )
 
             # Add horizontal lines for mean loss if requested
@@ -385,8 +413,8 @@ class MethodComparisonResults:
                             x1=n_percentiles - 0.5,
                             y1=mean_loss,
                             line=dict(
-                                color=px.colors.qualitative.Plotly[
-                                    i % len(px.colors.qualitative.Plotly)
+                                color=PLOT_CONFIG["color_palette"][
+                                    i % len(PLOT_CONFIG["color_palette"])
                                 ],
                                 width=2,
                                 dash="dot",
@@ -398,15 +426,29 @@ class MethodComparisonResults:
                 title_font_size=14,
                 xaxis_title_font_size=12,
                 yaxis_title_font_size=12,
-                paper_bgcolor="#F0F0F0",
-                plot_bgcolor="#F0F0F0",
+                paper_bgcolor=PLOT_CONFIG["paper_bgcolor"],
+                plot_bgcolor=PLOT_CONFIG["plot_bgcolor"],
                 legend_title="Method",
                 height=figsize[1],
                 width=figsize[0],
             )
 
-            fig.update_xaxes(showgrid=False, zeroline=False)
-            fig.update_yaxes(showgrid=False, zeroline=False)
+            fig.update_xaxes(
+                showgrid=PLOT_CONFIG["showgrid_x"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                gridwidth=PLOT_CONFIG["gridwidth"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
+                zeroline=False,
+            )
+            fig.update_yaxes(
+                showgrid=PLOT_CONFIG["showgrid_y"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                gridwidth=PLOT_CONFIG["gridwidth"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
+                zeroline=False,
+            )
 
             # Save or show the plot
             if save_path:
@@ -426,6 +468,7 @@ class MethodComparisonResults:
         title: Optional[str],
         save_path: Optional[str],
         figsize: Tuple[int, int],
+        show_error_bars: bool = True,
     ) -> go.Figure:
         """Plot log loss comparison across methods."""
         try:
@@ -439,38 +482,55 @@ class MethodComparisonResults:
                 logger.warning("No log loss data available")
                 return go.Figure()
 
-            # Get mean log loss per method
-            method_means = (
-                log_loss_df.groupby("Method")["Loss"].mean().reset_index()
+            # Get mean log loss per method (Loss already contains the mean)
+            method_stats = log_loss_df.groupby("Method", as_index=False).agg(
+                {"Loss": "mean", "Std": "mean"}
             )
+            method_stats["Std"] = method_stats["Std"].fillna(0)
 
             if title is None:
-                title = f"Log Loss Comparison Across Methods"
+                title = "Log Loss Comparison Across Methods"
 
             # Create bar chart
+            error_y_col = "Std" if show_error_bars else None
             fig = px.bar(
-                method_means,
+                method_stats,
                 x="Method",
                 y="Loss",
                 color="Method",
                 title=title,
                 labels={"Loss": "Log Loss"},
-                color_discrete_sequence=px.colors.qualitative.Plotly,
+                color_discrete_sequence=PLOT_CONFIG["color_palette"],
+                error_y=error_y_col,
             )
 
             fig.update_layout(
                 title_font_size=14,
                 xaxis_title_font_size=12,
                 yaxis_title_font_size=12,
-                paper_bgcolor="#F0F0F0",
-                plot_bgcolor="#F0F0F0",
+                paper_bgcolor=PLOT_CONFIG["paper_bgcolor"],
+                plot_bgcolor=PLOT_CONFIG["plot_bgcolor"],
                 height=figsize[1],
                 width=figsize[0],
                 showlegend=False,
             )
 
-            fig.update_xaxes(showgrid=False, zeroline=False)
-            fig.update_yaxes(showgrid=False, zeroline=False)
+            fig.update_xaxes(
+                showgrid=PLOT_CONFIG["showgrid_x"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                gridwidth=PLOT_CONFIG["gridwidth"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
+                zeroline=False,
+            )
+            fig.update_yaxes(
+                showgrid=PLOT_CONFIG["showgrid_y"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                gridwidth=PLOT_CONFIG["gridwidth"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
+                zeroline=False,
+            )
 
             if save_path:
                 _save_figure(fig, save_path)
@@ -543,8 +603,8 @@ class MethodComparisonResults:
                                 y=method_data["Loss"],
                                 name=method,
                                 legendgroup=method,
-                                marker_color=px.colors.qualitative.Plotly[
-                                    i % len(px.colors.qualitative.Plotly)
+                                marker_color=PLOT_CONFIG["color_palette"][
+                                    i % len(PLOT_CONFIG["color_palette"])
                                 ],
                             ),
                             row=1,
@@ -564,8 +624,8 @@ class MethodComparisonResults:
                             x=list(method_means.index),
                             y=list(method_means.values),
                             marker_color=[
-                                px.colors.qualitative.Plotly[
-                                    i % len(px.colors.qualitative.Plotly)
+                                PLOT_CONFIG["color_palette"][
+                                    i % len(PLOT_CONFIG["color_palette"])
                                 ]
                                 for i in range(len(method_means))
                             ],
@@ -583,18 +643,46 @@ class MethodComparisonResults:
                 barmode="group",
                 height=figsize[1] * 1.5,
                 width=figsize[0],
-                paper_bgcolor="#F0F0F0",
-                plot_bgcolor="#F0F0F0",
+                paper_bgcolor=PLOT_CONFIG["paper_bgcolor"],
+                plot_bgcolor=PLOT_CONFIG["plot_bgcolor"],
                 showlegend=True,
             )
 
             fig.update_xaxes(
-                title_text="Quantile", row=1, col=1, showgrid=False
+                title_text="Quantile",
+                row=1,
+                col=1,
+                showgrid=PLOT_CONFIG["showgrid_x"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
             )
-            fig.update_xaxes(title_text="Method", row=2, col=1, showgrid=False)
-            fig.update_yaxes(title_text="Loss", row=1, col=1, showgrid=False)
+            fig.update_xaxes(
+                title_text="Method",
+                row=2,
+                col=1,
+                showgrid=PLOT_CONFIG["showgrid_x"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
+            )
             fig.update_yaxes(
-                title_text="Log loss", row=2, col=1, showgrid=False
+                title_text="Loss",
+                row=1,
+                col=1,
+                showgrid=PLOT_CONFIG["showgrid_y"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
+            )
+            fig.update_yaxes(
+                title_text="Log loss",
+                row=2,
+                col=1,
+                showgrid=PLOT_CONFIG["showgrid_y"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
             )
 
             if save_path:
@@ -726,13 +814,27 @@ class MethodComparisonResults:
                 yaxis_title="Total rank score",
                 height=figsize[1],
                 width=figsize[0],
-                paper_bgcolor="#F0F0F0",
-                plot_bgcolor="#F0F0F0",
+                paper_bgcolor=PLOT_CONFIG["paper_bgcolor"],
+                plot_bgcolor=PLOT_CONFIG["plot_bgcolor"],
                 legend_title="Variable (Metric)",
             )
 
-            fig.update_xaxes(showgrid=False, zeroline=False)
-            fig.update_yaxes(showgrid=False, zeroline=False)
+            fig.update_xaxes(
+                showgrid=PLOT_CONFIG["showgrid_x"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                gridwidth=PLOT_CONFIG["gridwidth"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
+                zeroline=False,
+            )
+            fig.update_yaxes(
+                showgrid=PLOT_CONFIG["showgrid_y"],
+                gridcolor=PLOT_CONFIG["gridcolor"],
+                gridwidth=PLOT_CONFIG["gridwidth"],
+                showline=PLOT_CONFIG["showline"],
+                linecolor=PLOT_CONFIG["linecolor"],
+                zeroline=False,
+            )
 
             if save_path:
                 _save_figure(fig, save_path)
@@ -819,7 +921,6 @@ class MethodComparisonResults:
 
 def method_comparison_results(
     data: Union[pd.DataFrame, Dict[str, Dict[str, Dict]]],
-    metric_name: Optional[str] = None,
     metric: str = "quantile_loss",
     data_format: str = "wide",
 ) -> MethodComparisonResults:

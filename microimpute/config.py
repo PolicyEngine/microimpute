@@ -84,5 +84,28 @@ DEFAULT_MODEL_PARAMS: Dict[str, Dict[str, Any]] = {
 PLOT_CONFIG: Dict[str, Any] = {
     "width": 750,
     "height": 600,
-    "colors": {},
+    # Plotly Safe palette - colorblind-friendly
+    "color_palette": [
+        "#88CCEE",  # Cyan
+        "#CC6677",  # Rose
+        "#DDCC77",  # Sand
+        "#117733",  # Green
+        "#332288",  # Indigo
+        "#AA4499",  # Purple
+        "#44AA99",  # Teal
+        "#999933",  # Olive
+        "#882255",  # Wine
+        "#661100",  # Brown
+    ],
+    # Background colors (same for both)
+    "plot_bgcolor": "#FAFAFA",
+    "paper_bgcolor": "#FAFAFA",
+    # Grid styling (horizontal only)
+    "gridcolor": "#E5E5E5",
+    "gridwidth": 1,
+    "showgrid_x": False,
+    "showgrid_y": True,
+    # Axis line styling
+    "linecolor": "#CCCCCC",
+    "showline": True,
 }

@@ -291,6 +291,9 @@ class _MDNModel:
             verbose=False,
             suppress_lightning_logger=True,
         )
+        # Disable Lightning's default CSVLogger to avoid
+        # "dict contains fields not in fieldnames" errors
+        self.model.logger = False
 
         self.model.fit(train=train_data)
 
@@ -477,6 +480,9 @@ class _NeuralClassifierModel:
             verbose=False,
             suppress_lightning_logger=True,
         )
+        # Disable Lightning's default CSVLogger to avoid
+        # "dict contains fields not in fieldnames" errors
+        self.model.logger = False
 
         self.model.fit(train=train_data)
 

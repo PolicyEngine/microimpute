@@ -44,19 +44,27 @@ Returns a dictionary containing separate results for each metric type:
 ```python
 {
     "quantile_loss": {
-        "results": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles
+        "results": pd.DataFrame,      # rows: ["train", "test"], cols: quantiles (mean across folds)
+        "results_std": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles (std across folds)
         "mean_train": float,
         "mean_test": float,
-        "variables": List[str]   # numerical variables evaluated
+        "std_train": float,
+        "std_test": float,
+        "variables": List[str]        # numerical variables evaluated
     },
     "log_loss": {
-        "results": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles
+        "results": pd.DataFrame,      # rows: ["train", "test"], cols: quantiles
+        "results_std": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles (std across folds)
         "mean_train": float,
         "mean_test": float,
-        "variables": List[str]   # categorical variables evaluated
+        "std_train": float,
+        "std_test": float,
+        "variables": List[str]        # categorical variables evaluated
     }
 }
 ```
+
+The `results_std` DataFrame and `std_train`/`std_test` values provide the standard deviation of the loss across cross-validation folds, which can be used to visualize uncertainty via error bars.
 
 If `tune_hyperparameters=True`, returns a tuple of `(results_dict, best_hyperparameters)`.
 
