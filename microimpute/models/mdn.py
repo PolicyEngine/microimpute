@@ -59,6 +59,11 @@ try:
         message=".*training batches.*smaller than the logging interval.*",
         module="pytorch_lightning.loops.fit_loop",
     )
+    warnings.filterwarnings(
+        "ignore",
+        message=".*have no logger configured.*",
+        module="pytorch_lightning.core.module",
+    )
 
     # After import, also update the rank_zero_module logger
     from lightning_fabric.utilities.rank_zero import rank_zero_module
