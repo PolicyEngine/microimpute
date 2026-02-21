@@ -36,6 +36,17 @@ from rpy2.robjects import conversion, default_converter, numpy2ri, pandas2ri
 from rpy2.robjects.conversion import localconverter
 from rpy2.robjects.packages import importr
 
+# Cache R package imports so they only happen once, avoiding repeated
+# network calls to download CRAN mirror lists during hyperparameter tuning.
+_statmatch_cache = {}
+
+
+def _get_statmatch():
+    """Return the cached StatMatch R package, importing it only once."""
+    if "StatMatch" not in _statmatch_cache:
+        _statmatch_cache["StatMatch"] = importr("StatMatch")
+    return _statmatch_cache["StatMatch"]
+
 
 @validate_call(config=VALIDATE_CONFIG)
 def nnd_hotdeck_using_rpy2(
@@ -66,9 +77,7 @@ def nnd_hotdeck_using_rpy2(
         RuntimeError: If there is an unexpected error during the statistical matching process.
     """
 
-    utils = importr("utils")
-    utils.chooseCRANmirror(ind=1)
-    StatMatch = importr("StatMatch")
+    StatMatch = _get_statmatch()
 
     try:
         missing_in_receiver = [
