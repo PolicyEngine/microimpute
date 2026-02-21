@@ -146,7 +146,7 @@ Nonetheless, its limitations include:
     \item \textbf{Computational cost}: Training is more expensive than parametric methods
 \end{itemize}
 
-\subsubsection{Quantile Random Forests (QRF)}
+\subsubsection{Quantile Random Forests (QRF)}\label{sec:qrf_background}
 
 Quantile Random Forests extend Random Forests to estimate conditional quantiles \citep{meinshausen2006quantile}. A standard Random Forest builds an ensemble of decision trees, each trained on a bootstrap sample, with predictions averaged across trees. QRF modifies this by retaining all training observations in each terminal node rather than just their mean.
 
@@ -194,3 +194,9 @@ In U.S. tax policy microsimulation, regression-based approaches are more common.
 More recent microsimulation efforts have begun incorporating administrative data through record linkage rather than statistical matching \citep{abowd2019census}, but this approach requires access to restricted data and raises privacy concerns. For researchers working with publicly available survey data, statistical matching remains essential, creating a need for methods that can better capture complex distributional features.
 
 The limitations of traditional approaches can be particularly acute for heavily-tailed variables where relationships with predictors vary across the distribution. Machine learning methods such as Quantile Regression Forests offer a promising alternative, as they can capture nonlinear relationships, model the entire conditional distribution, and handle heavy-tailed data without restrictive parametric assumptions. Despite these advantages, QRF and similar methods have seen limited adoption in mainstream microsimulation practice. The \texttt{microimpute} package aims to lower barriers to adopting these more flexible methods by providing a unified framework for comparing traditional and machine learning approaches, enabling researchers to empirically evaluate which method best suits their specific data characteristics.
+
+\subsection{Supplemental Security Income as a Validation Case}
+
+The limitations of traditional imputation approaches in microsimulation have concrete policy consequences, which can be illustrated through the Supplemental Security Income (SSI) program. SSI is a federal means-tested program for aged, blind, and disabled individuals with strict resource limits (\$2,000 for individuals, \$3,000 for couples) that have remained unchanged since 1989 \citep{ssa2023ssi}. The resource test requires household wealth and asset data that the CPS does not collect, making SSI eligibility determination dependent on imputed or heuristic wealth values.
+
+In 2024, SSI served approximately 7.4 million recipients with \$59.6 billion in federal payments \citep{ssa2024ssi}. Because different wealth imputation methods produce different wealth distributions, they directly affect which simulated households pass the resource test and therefore the resulting estimates of SSI recipient counts and expenditure. This makes SSI a particularly informative downstream validation case for comparing imputation approaches, as described in Section~\ref{sec:policy_validation}.

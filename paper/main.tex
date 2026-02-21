@@ -27,15 +27,13 @@
 }
 
 
-\title{Methodological Advances in Microdata Imputation: \\ Quantile Regression Forests for Wealth Imputation \\ \vspace{0.5em} \normalsize \draftnote}
+\title{Methodological Advances in Microdata Imputation: \\ Quantile Random Forests for Wealth Imputation \\ \vspace{0.5em} \normalsize \draftnote}
 % Define the \samethanks command
 \newcommand*\samethanks[1][\value{footnote}]{\footnotemark[#1]}
 
 % Define authors with the same affiliation
 \author{
-    María Juaristi\thanks{PolicyEngine} \and
-    Nikhil Woodruff\samethanks \and
-    Max Ghenis\samethanks
+    María Juaristi\thanks{Minerva University, PolicyEngine}
 }
 \date{\today}
 
@@ -54,5 +52,10 @@
 
 \bibliographystyle{plainnat}
 \bibliography{./bibliography/references}
+
+\clearpage
+\appendix
+\input{sections/appendix_benchmarking}
+\input{sections/appendix_robustness}
 
 \end{document}
