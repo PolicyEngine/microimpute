@@ -1,84 +1,152 @@
 \section{Results}
 
-\subsection{Evaluation metrics}
-
-To properly assess imputation quality for wealth data, we employ quantile loss to evaluate performance across quantiles. Quantile (or pinball) loss evaluates how well a model predicts a chosen conditional quantile by assigning an asymmetric penalty that depends on the sign of the forecast error and the target quantile \citep{koenker1978regression}. Formally, for residual $e_i = y_i - \hat{y}_i$ and quantile level $\tau\in(0,1)$, the loss is 
-
-$$L_\tau(e_i)=\max\!\bigl(\tau\,e_i,\;(\tau-1)\,e_i\bigr);$$
-
-thus, under-prediction of an upper-tail quantile (large positive $e_i$) is penalized at rate $\tau$, whereas over-prediction is penalized at rate $\tau-1$. Minimising this piece-wise linear function ensures that, in expectation, exactly $\tau$ percent of true outcomes fall below the model's prediction, giving the estimator its distribution-calibrating property first formalised by Koenker and Bassett \citep{koenker1978regression}. Because the weights differ for positive versus negative errors, quantile loss captures directional bias. This is a crucial feature when imputing highly skewed variables like wealth, where large under-estimates in the right tail must be discouraged more strongly than equal-sized over-estimates. Compared with mean-squared or mean-absolute error, which optimise the conditional mean or median and penalise errors symmetrically, quantile loss directly targets the entire conditional distribution and remains robust to outliers, making it the appropriate metric for assessing the performance of imputation models when distribution-awareness is a priority \citep{ghenis2018quantile}.
-
-Additionally, we ensure that the resulting wealth distributions resemble that of the donor wealth distribution in the SCF. The SCF includes household weights to quantify how representative each recorded household and its data are. Thus, by sampling the SCF distribution according to its weights, we can get an accurate estimate of the true US wealth distribution, which simultaneously serves as a visual check for imputed wealth distributions.
-
-Lastly, by evaluating the average wealth by disposable income decile that results from each method's imputations, we can compare whether and how sensibly wealth imputations correlate with income as expected for each method's results, with households that have the highest disposable income also having the highest wealth. 
-
-\subsection{Experimental setup}
-
-Using Microimpute's $\texttt{autoimpute}$ function, we evaluate QRF against OLS, standard Quantile Regression, and hot Deck Matching in net worth imputation. To create a ground truth for evaluation, we employ cross-validation, splitting the SCF into 5 folds, or subsets. For each model at a time, we:
-
-\begin{enumerate}
-    \item Mask the wealth values of one holdout subset at a time
-
-    \item Tune the hyperparameters of those models that have a flexible set-up to the SCF data set, namely Matching\footnote{hyperparameters: $\texttt{dist\_fun}$, $\texttt{constrained}$, $\texttt{constr\_alg}$, $\texttt{k}$} and QRF\footnote{hyperparameters: $\texttt{n\_estimators}$, $\texttt{min\_samples\_split}$, $\texttt{min\_samples\_leaf}$, $\texttt{max\_features}$, $\texttt{bootstrap}$}
-    \begin{enumerate}
-        \item Hyperparameter tunning is done through the $\texttt{optuna}$ package, which paralelizes hyperparameter searches to identify the combination of hyperparameters that minimizes the average quantile loss across all quantiles for the SCF dataset. 
-    \end{enumerate}
-
-    \item Impute wealth ($\texttt{networth}$) onto the SCF holdout set using each method with the remaining four folds as the training data
-    \begin{enumerate}
-        \item SCF survey data weights (captured in the variable $\texttt{household\_weight}$) are passed into $\texttt{autoimpute}$ for sampling
-        \item Demographic and financial variables available in both surveys behave as predictors, after being preprocess for consistent variable names and encoding: $\texttt{is\_female}$, $\texttt{age}$, $\texttt{race}$, $\texttt{own\_children\_in\_household}$, $\texttt{employment\_income}$, $\texttt{interest\_dividend\_income}$, $\texttt{pension\_income}$ 
-        \item Each model performs imputation at 20 equally spaced quantiles
-    \end{enumerate}
-
-    \item Compare the imputed values to the SCF training values, measuring quantile loss at each of the imputation quantiles 
-
-    \item Average quantile loss across all folds and quantiles
-\end{enumerate}
-
-This approach allows for direct comparison between methods on a common testing framework, providing a robust assessment of relative performance. The model with the lowest average quantile loss is chosen as the best performing and automatically selected to perform the final imputation onto the CPS data set, for which the full SCF will be used for training. 
-
-Next, the imputation from the SCF onto the CPS is replicated for the other three models that were not selected, with an identical setup that includes training on the full SCF, the same predictor variables, and imputations at the median quantile, avoiding introducing any bias toward a specific side of the distribution. 
-
 \subsection{Imputation results}
 
-The cross-validation results demonstrate QRF's superior performance across the wealth distribution. QRF achieved an average quantile loss of 6.6m across all quantiles, outperforming OLS (8.3m), Hot Deck Matching (7.75m), and standard Quantile Regression (7.05m). This 20.5\% improvement over OLS and 14.8\% over Matching and 6.4\% improvement over Quantile Regression represents a substantial gain in imputation accuracy.
+The cross-validation results demonstrate QRF's strong performance across the wealth distribution. With the asinh transformation applied to the net worth target variable, QRF achieved the lowest average quantile loss across all quantiles, outperforming OLS, Hot Deck Matching, Quantile Regression, and MDN. QRF's overall consistency across the entire distribution made it the best-performing method for wealth imputation in this setting.
 
-The performance advantage was particularly pronounced in the middle portions of the distribution (10th-80th percentiles), where QRF maintained consistently lower quantile loss values. While Quantile Regression showed competitive performance at extreme quantiles (above the 85th percentile), QRF's overall consistency across the entire distribution made it the optimal choice for wealth imputation.
-
-Microimpute's automated hyperparameter tuning contributed significantly to these results. The optimal QRF configuration identified through cross-validation included 200 trees and a minimum of 5 samples per leaf node for a split. These parameters balanced model complexity with generalization capability, preventing overfitting while capturing the nuanced relationships between demographic predictors and wealth outcomes.
+$\texttt{microimpute}$'s automated hyperparameter tuning via the Optuna framework contributed to these results. The optimal QRF configuration identified through cross-validation included 202 trees, a minimum of 1 sample per leaf, a split threshold of 5 samples, approximately 95\% of features considered at each split, and bootstrap sampling enabled. These parameters balanced model complexity with generalization capability, preventing overfitting while capturing the non-linear relationships between demographic predictors and wealth outcomes.
 
 \subsubsection{Quantile loss}
 
-Comparing all four models to each other, we can evaluate performance through quantile loss, as well as comparing the overlap of the imputed wealth distribution with the original SCF data. 
+Comparing all five models to each other, we can evaluate performance through quantile loss, as well as comparing the overlap of the imputed wealth distribution with the original SCF data.
 
-\begin{figure}[h]
+\begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{figures/quantile_loss_comparison.png}
-    \caption{Cross-validation method performance at 20 equally spaced quantiles. Test quantile loss at each quantile is averaged across 5 cross-validation folds, and the dashed lines represent average quantile loss across all quantiles.}
+    \includegraphics[width=\textwidth]{figures/models_loss_benchmark.png}
+    \caption{Cross-validation method performance at 20 equally spaced quantiles for all five imputation methods. Test quantile loss at each quantile is averaged across 5 cross-validation folds, and the dashed lines represent average quantile loss across all quantiles.}
     \label{fig:quantile_loss_comparison}
 \end{figure}
 
-We observe how QRF proves to be the best-performing model out of the four. It significantly outperforms Matching and OLS on average, while only being outperformed by QuantReg past the 80th quantile. Matching's performance presents the perfect opportunity to see the quantile loss's directional bias at work. Because Matching does not incorporate quantile information into its imputation process in any way, it will match donor and receiver units, and thus impute values identically regardless of the quantile at work. The laddering behavior observed above results from the fact that Matching's wealth imputations consistently underpredict relative to the true wealth values, and this property is increasingly favored for quantiles below the median, and increasingly penalized as quantiles approach the right end of the distribution. 
+We observe how QRF proves to be the best-performing model out of the five. It significantly outperforms Matching and OLS on average, while only being outperformed by QuantReg past the 80th quantile. The dashed lines in Figure~\ref{fig:quantile_loss_comparison} indicate each method's average quantile loss across all quantiles, clearly separating QRF and Matching from the remaining methods. Matching's performance presents the perfect opportunity to see the quantile loss's directional bias at work. Because Matching does not incorporate quantile information into its imputation process in any way, it will match donor and receiver units, and thus impute values identically regardless of the quantile at work. The laddering behavior observed above results from the fact that Matching's wealth imputations consistently underpredict relative to the true wealth values, and this property is increasingly favored for quantiles below the median, and increasingly penalized as quantiles approach the right end of the distribution.
+
+Table~\ref{tab:avg_quantile_loss} summarizes average quantile loss across all quantiles and cross-validation folds, with relative improvement computed against the worst-performing method (MDN) as a reference.
+
+\begin{table}[H]
+    \centering
+    \caption{Average quantile loss (asinh scale) across all quantiles and 5-fold cross-validation on the SCF test set. Relative improvement is computed as $(L_{\text{MDN}} - L_{\text{method}}) / L_{\text{MDN}} \times 100\%$.}
+    \label{tab:avg_quantile_loss}
+    \begin{tabular}{lrrr}
+        \toprule
+        Method & Avg Quantile Loss & Std & Improvement (\%) \\
+        \midrule
+        QRF & 0.560 & 0.016 & 76.2 \\
+        Matching & 0.601 & 0.018 & 74.4 \\
+        OLS & 1.866 & 0.196 & 20.6 \\
+        QuantReg & 2.104 & 0.241 & 10.4 \\
+        MDN & 2.349 & 0.227 & --- \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+QRF and Matching achieve substantially lower quantile loss than the remaining methods, with QRF reducing loss by 76.2\% and Matching by 74.4\% relative to MDN. The gap between these two leading methods is modest (0.560 vs.\ 0.601), while OLS, QuantReg, and MDN cluster at substantially higher loss values.
 
 \subsubsection{Imputed wealth distribution comparisons}
 
-\begin{figure}[h]
+By visually comparing the wealth distributions resulting from imputing with each method, and comparing them to the weighted donor distribution, we gain a more comprehensive understanding of imputation performance, moving past the test quantile loss average measured on the SCF. The distribution of wealth values imputed by QRF closely resembles the original SCF distribution, suggesting that QRF is not only the best method in terms of quantile loss but also strong when achieving distributional estimates close to the true wealth distribution in the United States. Because Matching directly takes values from the donor distribution and imputes them onto the receiver, it is unsurprising that its distribution closely resembles the donor distribution. However, Matching may struggle to uncover the non-linear relationship between the different predictors and wealth values, resulting in a seemingly correct marginal distribution but inaccurate imputation given certain household characteristics. Meanwhile, OLS, QuantReg, and MDN fail to capture the variability across the distribution and impute most values at the lower or higher ends of the distribution.
+
+\begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{figures/imputation_distributions_method_comparison.png}
-    \caption{Weight-adjusted imputed wealth distributions model comparisons, relative to the donor SCF wealth distribution. Dashed lines represent median values.}
+    \includegraphics[width=\textwidth]{figures/models_dist_comparison.png}
+    \caption{Log-transformed net worth distributions for all five imputation methods, compared to the weighted SCF donor distribution. Dashed lines represent median values.}
     \label{fig:imputation_distributions_method_comparison}
 \end{figure}
 
-By visually comparing the wealth distributions resulting from imputing with each method, and comparing them to the weighted donor distribution, we gain a more comprehensive understanding of imputation performance, moving past the test quantile loss average measured on the SCF. The distribution of wealth values imputed by QRF closely resembles the original SCF distribution, suggesting that QRF is not only the best method in terms of quantile loss but also strong when achieving distributional estimates close to the true wealth distribution in the United States. Because Matching directly takes values from the donor distribution and imputes them onto the receiver, it is unsurprising that its distribution closely resembles the donor distribution. However, Matching's performance in quantile loss confirms that even if it takes the exact values from the donor, it may struggle to uncover the non-linear relationship between the different predictors and wealth values, resulting in a seemingly correct data distribution but innacurate imputation given certain household characteristics. Meanwhile, OLS and QuantReg fail to capture the variability across the distribution and impute most values at the lower or higher ends of the distribution. 
+\subsubsection{Wasserstein distance}
+
+Table~\ref{tab:wasserstein} reports the Wasserstein distance between each model's imputed wealth distribution and the weighted SCF donor distribution, providing a single scalar summary of marginal distributional accuracy.
+
+\begin{table}[H]
+    \centering
+    \caption{Wasserstein distance (earth mover's distance) between each model's imputed net worth distribution on the CPS and the weighted SCF donor distribution. Lower values indicate closer distributional agreement.}
+    \label{tab:wasserstein}
+    \begin{tabular}{lr}
+        \toprule
+        Model & Wasserstein Distance \\
+        \midrule
+        QRF & 910,299 \\
+        Matching & 1,192,141 \\
+        OLS & 67,994,870 \\
+        QuantReg & $1.22 \times 10^{14}$ \\
+        MDN & $8.23 \times 10^{14}$ \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+QRF achieves the lowest Wasserstein distance (\$910,299), confirming that its imputed distribution most closely reproduces the donor wealth distribution. To contextualize this magnitude, the 2022 SCF reports a median U.S. household net worth of approximately \$192,700 \citep{fed2023scf}; QRF's Wasserstein distance thus represents roughly 4.7 median household net worths of cumulative distributional displacement, which is small relative to the full range of the wealth distribution but non-trivial in absolute terms. Matching follows at \$1.19 million, consistent with its mechanism of drawing values directly from the donor pool. OLS produces a substantially larger distance (\$68.0 million), reflecting its compressed predictions that fail to span the full range of the wealth distribution. QuantReg and MDN exhibit Wasserstein distances several orders of magnitude larger, indicating severe distributional mismatch driven by concentrated imputed values in narrow regions.
 
 \subsubsection{Distribution of wealth by disposable income decile}
 
-\begin{figure}[h]
+Beyond the statistical metrics reported above, we perform a plausibility check by examining whether imputed wealth exhibits economically expected relationships with observable variables. Household wealth should increase monotonically with disposable income, reflecting the well-documented positive correlation between income and wealth accumulation. This check is particularly important for wealth imputation: a method that achieves competitive quantile loss but produces wealth-income patterns that violate basic economic relationships would be unreliable for downstream policy analysis, where the joint distribution of income and wealth drives eligibility and benefit calculations.
+
+\begin{figure}[H]
     \centering
-    \includegraphics[width=\textwidth]{figures/imputation_comparison_by_income_decile.png}
+    \includegraphics[width=\textwidth]{figures/models_median_decile_comparison.png}
     \caption{Average household net worth by disposable income decile model comparison. Households are divided into 10 equally sized groups based on their disposable income.}
     \label{fig:imputation_comparison_by_income_decile}
 \end{figure}
 
-These results support the observations above, with QRF presenting the most consistent and plausible relationship to disposable income, with a gradually increasing average as the deciles increase. This plot also demonstrates the caveats of the other models, for example showing the lower variability in OLS's predictions, and Matching's consistent underprediction across deciles.
+These results support the observations above, with QRF presenting the most consistent and plausible relationship to disposable income, with a monotonically increasing average wealth as deciles increase---a pattern consistent with economic expectations and serving as a plausibility check on the imputation. This plot also demonstrates the caveats of the other models, for example showing the lower variability in OLS's predictions, and Matching's consistent underprediction across deciles.
+
+\subsection{Policy analysis: SSI simulation}
+
+Following the downstream policy analysis framework described in Section~\ref{sec:policy_validation}, we feed each model's imputed net worth into PolicyEngine as \texttt{ssi\_countable\_resources} and simulate SSI eligibility and benefits. Table~\ref{tab:ssi_results} compares simulated recipient counts and total expenditure against SSA administrative totals for 2024.
+
+\begin{table}[H]
+    \centering
+    \caption{SSI simulation outcomes by imputation method compared to SSA administrative totals (2024). The baseline scenario uses PolicyEngine's default behavior, where \texttt{ssi\_countable\_resources} defaults to zero for all CPS households.}
+    \label{tab:ssi_results}
+    \begin{tabular}{lrrr}
+        \toprule
+        Model & Recipients (M) & Expenditure (\$B) & Recipients \% of Admin \\
+        \midrule
+        Admin total & 7.4 & 59.6 & 100.0\% \\
+        Baseline (no wealth) & 19.8 & 152.6 & 267.2\% \\
+        \midrule
+        QuantReg & 8.3 & 74.6 & 111.7\% \\
+        MDN & 9.1 & 79.6 & 122.6\% \\
+        Matching & 11.1 & 90.2 & 150.2\% \\
+        OLS & 11.3 & 100.5 & 153.3\% \\
+        QRF & 12.1 & 102.8 & 163.3\% \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Without imputed wealth data, the baseline produces 19.8 million recipients and \$152.6 billion in expenditure (267.2\% of administrative totals). All five imputation methods substantially reduce this overestimation by screening out households whose imputed wealth exceeds the resource limits. Quantile Regression yields the closest match to administrative totals (111.7\%), while QRF, despite achieving the best quantile loss, produces higher SSI estimates (163.3\%). This divergence reflects the interaction between imputation accuracy and the policy function: QRF faithfully reproduces the conditional distribution of wealth, including the substantial mass of near-zero values in the SCF, which places more households just below the eligibility threshold. QuantReg's linear compression of the wealth distribution, while statistically less accurate, coincidentally pushes more values above the threshold. The remaining overestimation across all methods reflects that SCF net worth includes assets excluded from SSI countable resources (such as the primary residence and one vehicle).
+
+\subsubsection{Policy reform: SSI Savings Penalty Elimination Act}
+
+To demonstrate why wealth imputation matters for policy analysis and not just model calibration, we simulate the SSI Savings Penalty Elimination Act \citep{ssi_spea_2025}, which would raise resource limits from \$2,000/\$3,000 to \$10,000/\$20,000. Table~\ref{tab:ssi_reform} reports SSI outcomes under both current law and the reformed thresholds for each imputation method.
+
+\begin{table}[H]
+    \centering
+    \caption{SSI Savings Penalty Elimination Act: simulated reform impact by imputation method. ``Current'' columns reproduce the current-law results from Table~\ref{tab:ssi_results}; ``Reform'' columns show outcomes under \$10,000/\$20,000 resource limits; ``Additional'' columns show the difference. The baseline (no wealth) scenario produces zero reform impact because all resources default to zero under current law.}
+    \label{tab:ssi_reform}
+    \begin{tabular}{lrrrrrr}
+        \toprule
+        & \multicolumn{2}{c}{Recipients (M)} & \multicolumn{2}{c}{Expenditure (\$B)} & \multicolumn{2}{c}{Change} \\
+        \cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+        Model & Current & Reform & Current & Reform & +Recip (M) & +Exp (\$B) \\
+        \midrule
+        QuantReg & 8.3 & 8.4 & 74.6 & 75.6 & 0.1 & 1.0 \\
+        MDN & 9.1 & 9.8 & 79.6 & 84.5 & 0.7 & 4.8 \\
+        Matching & 11.1 & 13.0 & 90.2 & 100.6 & 1.9 & 10.4 \\
+        OLS & 11.3 & 15.6 & 100.5 & 124.6 & 4.2 & 24.1 \\
+        QRF & 12.1 & 12.7 & 102.8 & 106.2 & 0.6 & 3.4 \\
+        \midrule
+        Baseline & 19.8 & 19.8 & 152.6 & 152.6 & 0.0 & 0.0 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The reform raises the resource threshold from \$2,000 to \$10,000 (individual), so the relevant question is how dense each method's imputed wealth distribution is in the \$2,000--\$10,000 range. Households with imputed net worth in this interval fail the current-law resource test but would pass under the reform, gaining SSI eligibility. The estimated number of additional recipients ranges from 0.1 million (QuantReg) to 4.2 million (OLS), with corresponding additional expenditure from \$1.0 billion to \$24.1 billion. This range reflects how differently each imputation approach populates this critical region of the wealth distribution.
+
+QRF estimates a modest reform impact (0.6 million additional recipients, \$3.4 billion additional expenditure), consistent with its faithful reproduction of the SCF wealth distribution. Most households with near-zero wealth are already below the \$2,000 threshold, so raising it to \$10,000 captures relatively few additional households. OLS, by contrast, produces the largest reform impact (4.2 million additional recipients), because its compressed, normally distributed imputations place a substantial mass of households in the \$2,000--\$10,000 range. QuantReg's near-zero reform impact (0.1 million) reflects its tendency to push imputed values away from this intermediate range. These differences underscore that the choice of imputation method is not merely a technical detail but a modeling decision that directly shapes policy impact estimates.
+
+The baseline (no wealth data) scenario starkly illustrates why imputation is essential: because all resources default to zero, every categorically eligible individual already passes the current-law resource test, so raising the thresholds has zero effect. Without wealth data, this reform is literally un-simulable. The microsimulation would not be able to distinguish between the status quo and a fivefold increase in resource limits.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/models_ssi_reform_comparison.png}
+    \caption{SSI recipients (left) and total expenditure (right) under current law (lighter bars) versus the SSI Savings Penalty Elimination Act reform (darker bars), by imputation method. The dashed line indicates the SSA administrative total under current law.}
+    \label{fig:ssi_reform}
+\end{figure}

@@ -7,6 +7,7 @@
 \usepackage{booktabs}
 \usepackage{geometry}
 \usepackage{xcolor}
+\usepackage{float}
 
 % Draft notice in title
 \newcommand{\draftnote}{\textbf{[DRAFT]}}
@@ -27,15 +28,13 @@
 }
 
 
-\title{Methodological Advances in Microdata Imputation: \\ Quantile Regression Forests for Wealth Imputation \\ \vspace{0.5em} \normalsize \draftnote}
+\title{$\texttt{microimpute}$: Benchmarking Cross-Survey Imputation Methods for U.S. Household Wealth}
 % Define the \samethanks command
 \newcommand*\samethanks[1][\value{footnote}]{\footnotemark[#1]}
 
 % Define authors with the same affiliation
 \author{
-    María Juaristi\thanks{PolicyEngine} \and
-    Nikhil Woodruff\samethanks \and
-    Max Ghenis\samethanks
+    María Juaristi\thanks{Minerva University, PolicyEngine}
 }
 \date{\today}
 
@@ -54,5 +53,10 @@
 
 \bibliographystyle{plainnat}
 \bibliography{./bibliography/references}
+
+\clearpage
+\appendix
+\input{sections/appendix_benchmarking}
+\input{sections/appendix_robustness}
 
 \end{document}

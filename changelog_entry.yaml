@@ -1,0 +1,5 @@
+- bump: patch
+  changes:
+    changed:
+    - imputing-from-scf-to-cps.ipynb to test SSI policy reforms with different wealth imputations.
+    - updated paper/ and main.pdf to capture the new results and discussion from the notebook as well as general improvements in content and presentation.

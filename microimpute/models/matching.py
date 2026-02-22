@@ -511,7 +511,11 @@ class Matching(Imputer):
                         imputed_variables=imputed_variables,
                         imputed_vars_dummy_info=self.imputed_vars_dummy_info,
                         original_predictors=self.original_predictors,
+                        categorical_targets=categorical_targets,
+                        boolean_targets=boolean_targets,
+                        dummy_processor=getattr(self, "dummy_processor", None),
                         seed=self.seed,
+                        log_level=self.log_level,
                         hyperparameters=best_params,
                     ),
                     best_params,
@@ -595,12 +599,6 @@ class Matching(Imputer):
                         "Gower",
                         "minimax",
                     ],
-                ),
-                "constrained": trial.suggest_categorical(
-                    "constrained", [False, True]
-                ),
-                "constr_alg": trial.suggest_categorical(
-                    "constr_alg", ["hungarian", "lpSolve"]
                 ),
                 "k": trial.suggest_int("k", 1, 10),
             }

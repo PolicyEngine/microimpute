@@ -59,6 +59,11 @@ try:
         message=".*training batches.*smaller than the logging interval.*",
         module="pytorch_lightning.loops.fit_loop",
     )
+    warnings.filterwarnings(
+        "ignore",
+        message=".*have no logger configured.*",
+        module="pytorch_lightning.core.module",
+    )
 
     # After import, also update the rank_zero_module logger
     from lightning_fabric.utilities.rank_zero import rank_zero_module
@@ -182,7 +187,7 @@ class _MDNModel:
         n_samples: int = 100,
         learning_rate: float = 1e-3,
         max_epochs: int = 100,
-        early_stopping_patience: int = 10,
+        early_stopping_patience: int = 50,
         batch_size: int = 256,
     ):
         self.seed = seed
@@ -360,7 +365,7 @@ class _NeuralClassifierModel:
         use_batch_norm: bool = False,
         learning_rate: float = 1e-3,
         max_epochs: int = 100,
-        early_stopping_patience: int = 10,
+        early_stopping_patience: int = 50,
         batch_size: int = 256,
     ):
         self.seed = seed
@@ -777,7 +782,7 @@ class MDN(Imputer):
         # Training config
         learning_rate: float = 1e-3,
         max_epochs: int = 100,
-        early_stopping_patience: int = 10,
+        early_stopping_patience: int = 100,
         batch_size: int = 256,
         # Caching config
         model_dir: str = "./microimpute_models",
@@ -1191,6 +1196,7 @@ class MDN(Imputer):
                         n_samples=self.n_samples,
                         learning_rate=learning_rate,
                         max_epochs=40,  # Reduced for tuning
+                        early_stopping_patience=(self.early_stopping_patience),
                         batch_size=self.batch_size,
                     )
                     model.fit(X_train_fold[predictors], y_train)
@@ -1327,6 +1333,7 @@ class MDN(Imputer):
                         use_batch_norm=self.use_batch_norm,
                         learning_rate=learning_rate,
                         max_epochs=40,  # Reduced for tuning
+                        early_stopping_patience=(self.early_stopping_patience),
                         batch_size=self.batch_size,
                     )
                     model.fit(

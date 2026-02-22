@@ -1,0 +1,76 @@
+\section{Cross-Dataset Benchmarking}\label{app:benchmarking}
+
+To validate \texttt{microimpute} across diverse domains beyond the SCF-CPS wealth imputation use case, we conduct a cross-dataset benchmarking exercise using six publicly available regression datasets from the OpenML AutoML Benchmark regression suite \citep{vanschoren2014openml}, spanning different domains, sample sizes, and dimensionalities.
+
+\subsection{Datasets}
+
+Table~\ref{tab:benchmark_datasets} summarizes the datasets used in this analysis.
+
+\begin{table}[h]
+    \centering
+    \caption{Datasets used for cross-dataset benchmarking.}
+    \label{tab:benchmark_datasets}
+    \begin{tabular}{llrl}
+        \toprule
+        Dataset & Domain & Rows & Target Variable \\
+        \midrule
+        space\_ga & Voting/demographics & 3,107 & ln(VOTES/POP) \\
+        elevators & Aircraft control & 16,599 & Goal \\
+        brazilian\_houses & Real estate & 10,692 & total\_(BRL) \\
+        onlinenewspopularity & News/media & 39,644 & shares \\
+        abalone & Marine biology & 4,177 & Class\_number\_of\_rings \\
+        house\_sales & Real estate & 21,613 & price \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\subsection{Methodology}
+
+For each dataset, we split the data 60/40 into donor and receiver subsets. The \texttt{autoimpute} pipeline runs internally on the 60\% donor portion (cross-validation for method selection), and the selected method then imputes onto the 40\% receiver subset. We evaluate imputation quality using the Wasserstein distance between the imputed and true distributions on the receiver subset. We use Wasserstein distance rather than quantile loss for this benchmarking because it provides a single summary measure of marginal distributional accuracy, which is more directly comparable across datasets with different scales and distributional shapes.
+
+\subsection{Results}
+
+Table~\ref{tab:benchmark_wasserstein} reports the Wasserstein distance for each method on each dataset, with lower values indicating better distributional recovery.
+
+\begin{table}[h]
+    \centering
+    \caption{Wasserstein distance by method and dataset. Bold values indicate the best-performing method for each dataset.}
+    \label{tab:benchmark_wasserstein}
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{lrrrrr}
+        \toprule
+        Dataset & Matching & QRF & OLS & QuantReg & MDN \\
+        \midrule
+        space\_ga & 0.011 & \textbf{0.010} & 0.027 & 0.098 & 0.050 \\
+        elevators & \textbf{0.0002} & 0.0003 & 0.001 & 0.002 & 0.020 \\
+        brazilian\_houses & 120.5 & \textbf{27.2} & 99.4 & 112.4 & 3,378.6 \\
+        onlinenewspopularity & \textbf{239.9} & 783.7 & 2,777.1 & 2,376.8 & 2,038.0 \\
+        abalone & \textbf{0.003} & 0.003 & 0.004 & 0.003 & 0.040 \\
+        house\_sales & \textbf{8,797.8} & 12,576.6 & 41,862.3 & 64,725.3 & 544,730.4 \\
+        \bottomrule
+    \end{tabular}%
+    }
+\end{table}
+
+Table~\ref{tab:benchmark_ranks} summarizes the mean rank of each method across all six datasets.
+
+\begin{table}[h]
+    \centering
+    \caption{Mean rank across all six benchmarking datasets (lower is better).}
+    \label{tab:benchmark_ranks}
+    \begin{tabular}{lr}
+        \toprule
+        Method & Mean Rank \\
+        \midrule
+        Matching & 1.67 \\
+        QRF & 1.83 \\
+        OLS & 3.33 \\
+        QuantReg & 3.67 \\
+        MDN & 4.50 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+Matching achieves the best Wasserstein distance on four of six datasets and the lowest mean rank overall (1.67), followed closely by QRF (1.83). QRF performs best on space\_ga and brazilian\_houses, the latter of which exhibits complex nonlinear relationships between predictors and house prices. OLS and Quantile Regression occupy middle ranks, while MDN consistently ranks last, likely reflecting a combination of the relatively small sample sizes in these datasets and the hyperparameter sensitivity of neural network-based approaches.
+
+With only six datasets, the rank differences between methods---particularly the narrow gap between Matching (1.67) and QRF (1.83)---should be interpreted cautiously, as they are not statistically robust to the inclusion or exclusion of individual datasets. Notably, the relative rankings here differ from the main SCF-CPS analysis, where QRF achieves the lowest quantile loss. This is consistent with the expectation that method performance depends on dataset characteristics, and reinforces the value of \texttt{microimpute}'s method comparison framework, which allows researchers to empirically determine the best approach for their specific data rather than relying on a single method.

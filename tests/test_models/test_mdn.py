@@ -528,6 +528,7 @@ def test_mdn_hyperparameter_tuning_numeric(
         layers="16-8",
         max_epochs=5,  # Short for testing
         batch_size=32,
+        early_stopping_patience=5,
     )
 
     # Fit with tuning enabled
@@ -568,6 +569,7 @@ def test_mdn_hyperparameter_tuning_categorical(
         layers="16-8",
         max_epochs=5,  # Short for testing
         batch_size=32,
+        early_stopping_patience=5,
     )
 
     # Fit with tuning enabled
@@ -606,6 +608,7 @@ def test_mdn_hyperparameter_tuning_mixed(
         layers="16-8",
         max_epochs=5,  # Short for testing
         batch_size=32,
+        early_stopping_patience=5,
     )
 
     # Fit with tuning enabled

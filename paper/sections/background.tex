@@ -21,7 +21,7 @@ Formally, statistical matching seeks to estimate the conditional distribution $P
 
 The first approach (deterministic imputation) may be appropriate when only point predictions are needed, though it systematically underestimates variance \citep{rubin1987multiple}. The second approach (stochastic imputation) preserves the variability of $Y$ and is preferred when distributional properties must be maintained. This is often the case in microsimulation modeling, where full distributional policy analysis is required.
 
-\subsection{The Conditional Independence Assumption}
+\subsection{The Conditional Independence Assumption}\label{sec:cia}
 
 All statistical matching procedures rely, either explicitly or implicitly, on the Conditional Independence Assumption (CIA):
 \begin{equation}
@@ -56,7 +56,7 @@ We now describe the five imputation methods implemented in \texttt{microimpute}.
 
 \subsubsection{Hot Deck Matching}
 
-Hot deck imputation replaces missing values in a receiver record with observed values from ``similar'' donor records \citep{andridge2010review}. The \texttt{microimpute} implementation uses the constrained distance hot deck approach from the StatMatch R package \citep{dorazio2021statistical}. To identify the best match, the method computes distances between each receiver observation and all donor observations based on the common variables $X$, selects donor records within a specified distance threshold, and randomly samples from the eligible donors, with optional weighting by survey weights. For continuous and mixed covariates, Mahalanobis or Gower distance metrics can capture similarity across different variable types. The donated value will thus be an actual observed value from the donor file, ensuring plausibility.
+Hot deck imputation replaces missing values in a receiver record with observed values from ``similar'' donor records \citep{andridge2010review}. The \texttt{microimpute} implementation uses the unconstrained distance hot deck approach from the StatMatch R package \citep{dorazio2021statistical}. To identify the best match, the method computes distances between each receiver observation and all donor observations based on the common variables $X$, selects donor records within a specified distance threshold, and randomly samples from the eligible donors, with optional weighting by survey weights. For continuous and mixed covariates, Mahalanobis or Gower distance metrics can capture similarity across different variable types. The donated value will thus be an actual observed value from the donor file, ensuring plausibility.
 
 Hot deck methods are nonparametric and avoid distributional assumptions, making them robust when the true conditional distribution is unknown or complex \citep{dorazio2006statistical}. However, they face limitations:
 \begin{itemize}
@@ -146,7 +146,7 @@ Nonetheless, its limitations include:
     \item \textbf{Computational cost}: Training is more expensive than parametric methods
 \end{itemize}
 
-\subsubsection{Quantile Random Forests (QRF)}
+\subsubsection{Quantile Random Forests (QRF)}\label{sec:qrf_background}
 
 Quantile Random Forests extend Random Forests to estimate conditional quantiles \citep{meinshausen2006quantile}. A standard Random Forest builds an ensemble of decision trees, each trained on a bootstrap sample, with predictions averaged across trees. QRF modifies this by retaining all training observations in each terminal node rather than just their mean.
 
@@ -180,7 +180,6 @@ Nevertheless, QRF also has limitations:
 \begin{itemize}
     \item \textbf{Extrapolation}: Trees cannot extrapolate beyond the range of training data, potentially underestimating extreme quantiles when donor and receiver distributions differ
     \item \textbf{Discrete approximation}: The estimated distribution is discrete, with support limited to observed $Y$ values in the training data
-    \item \textbf{Computational cost}: Training and prediction are slower than parametric methods, though generally faster than neural networks
 \end{itemize}
 
 \subsection{Current Practice in Microsimulation}
@@ -193,4 +192,12 @@ In U.S. tax policy microsimulation, regression-based approaches are more common.
 
 More recent microsimulation efforts have begun incorporating administrative data through record linkage rather than statistical matching \citep{abowd2019census}, but this approach requires access to restricted data and raises privacy concerns. For researchers working with publicly available survey data, statistical matching remains essential, creating a need for methods that can better capture complex distributional features.
 
-The limitations of traditional approaches can be particularly acute for heavily-tailed variables where relationships with predictors vary across the distribution. Machine learning methods such as Quantile Regression Forests offer a promising alternative, as they can capture nonlinear relationships, model the entire conditional distribution, and handle heavy-tailed data without restrictive parametric assumptions. Despite these advantages, QRF and similar methods have seen limited adoption in mainstream microsimulation practice. The \texttt{microimpute} package aims to lower barriers to adopting these more flexible methods by providing a unified framework for comparing traditional and machine learning approaches, enabling researchers to empirically evaluate which method best suits their specific data characteristics.
+The limitations of traditional approaches can be particularly acute for heavily-tailed variables where relationships with predictors vary across the distribution. Machine learning methods such as Quantile Random Forests offer a promising alternative, as they can capture nonlinear relationships, model the entire conditional distribution, and handle heavy-tailed data without restrictive parametric assumptions. Despite these advantages, QRF and similar methods have seen limited adoption in mainstream microsimulation practice. The \texttt{microimpute} package aims to lower barriers to adopting these more flexible methods by providing a unified framework for comparing traditional and machine learning approaches, enabling researchers to empirically evaluate which method best suits their specific data characteristics.
+
+\subsection{Supplemental Security Income as a Validation Case}
+
+The limitations of traditional imputation approaches in microsimulation have concrete consequences on downstream policy analysis. The impact of wealth imputation quality for U.S. households can be illustrated through the Supplemental Security Income (SSI) program. SSI is a federal means-tested program for aged, blind, and disabled individuals with strict resource limits (\$2,000 for individuals, \$3,000 for couples) that have remained unchanged since 1989 \citep{ssa2023ssi}. The resource test requires household wealth and asset data that the CPS does not collect, making SSI eligibility determination dependent on imputed or heuristic wealth values.
+
+In 2024, SSI served approximately 7.4 million recipients with \$59.6 billion in federal payments \citep{ssa2024ssi}. Because different wealth imputation methods produce different wealth distributions, they directly affect which simulated households pass the resource test and therefore the resulting estimates of SSI recipient counts and expenditure. This makes SSI a particularly informative case for comparing imputation approaches, as described in Section~\ref{sec:policy_validation}.
+
+The frozen resource limits also make SSI a compelling case for policy reform analysis. In 2024 dollars, the original 1989 thresholds of \$2,000/\$3,000 are worth approximately \$4,800/\$7,200, meaning the resource test has become substantially more restrictive over time without any legislative change. The SSI Savings Penalty Elimination Act (S.~1234 / H.R.~2540), a bipartisan bill introduced in April 2025, proposes raising these limits to \$10,000 for individuals and \$20,000 for couples, with future CPI indexing \citep{ssi_spea_2025}. Simulating the impact of this reform, and determining which additional households would gain eligibility under the higher thresholds requires household-level wealth data, making it a natural application for cross-survey imputation. As we demonstrate in Section~\ref{sec:policy_validation}, the choice of imputation method produces meaningfully different estimates of this reform's impact, underscoring that imputation is not merely a data preprocessing step but a consequential modeling choice for policy analysis.
