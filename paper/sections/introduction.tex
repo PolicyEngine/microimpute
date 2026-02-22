@@ -13,6 +13,7 @@ This work provides the following contributions:
     \item An open-source implementation of a unified framework for five imputation methods, facilitating systematic comparison across methods and support statistical matching through accessible, user-friendly software
     \item An automated benchmarking pipeline that evaluates distributional accuracy using quantile loss, enabling researchers to select the most appropriate method for their specific data characteristics
     \item Empirical evidence on the relative performance of these methods for wealth imputation, suggesting that Quantile Random Forests are well-suited to heavy-tailed distributions while highlighting the context-dependence of method choice
+    \item A policy reform simulation of the SSI Savings Penalty Elimination Act demonstrating that imputation method choice produces meaningfully different estimates of reform impact, and that without imputed wealth data, such reforms are entirely un-simulable
 \end{itemize}
 
 The remainder of this paper is organized as follows. Section 2 reviews the statistical matching problem, including its formal definition, the conditional independence assumption that underlies all matching methods, and the five imputation approaches implemented in \texttt{microimpute}. Section 3 describes our data sources. Section 4 presents the package architecture and benchmarking methodology. Section 5 reports empirical results from the wealth imputation application. Section 6 discusses implications and limitations, and Section 7 concludes.

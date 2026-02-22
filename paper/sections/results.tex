@@ -10,7 +10,7 @@ $\texttt{microimpute}$'s automated hyperparameter tuning via the Optuna framewor
 
 Comparing all five models to each other, we can evaluate performance through quantile loss, as well as comparing the overlap of the imputed wealth distribution with the original SCF data.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{figures/models_loss_benchmark.png}
     \caption{Cross-validation method performance at 20 equally spaced quantiles for all five imputation methods. Test quantile loss at each quantile is averaged across 5 cross-validation folds, and the dashed lines represent average quantile loss across all quantiles.}
@@ -21,7 +21,7 @@ We observe how QRF proves to be the best-performing model out of the five. It si
 
 Table~\ref{tab:avg_quantile_loss} summarizes average quantile loss across all quantiles and cross-validation folds, with relative improvement computed against the worst-performing method (MDN) as a reference.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{Average quantile loss (asinh scale) across all quantiles and 5-fold cross-validation on the SCF test set. Relative improvement is computed as $(L_{\text{MDN}} - L_{\text{method}}) / L_{\text{MDN}} \times 100\%$.}
     \label{tab:avg_quantile_loss}
@@ -44,7 +44,7 @@ QRF and Matching achieve substantially lower quantile loss than the remaining me
 
 By visually comparing the wealth distributions resulting from imputing with each method, and comparing them to the weighted donor distribution, we gain a more comprehensive understanding of imputation performance, moving past the test quantile loss average measured on the SCF. The distribution of wealth values imputed by QRF closely resembles the original SCF distribution, suggesting that QRF is not only the best method in terms of quantile loss but also strong when achieving distributional estimates close to the true wealth distribution in the United States. Because Matching directly takes values from the donor distribution and imputes them onto the receiver, it is unsurprising that its distribution closely resembles the donor distribution. However, Matching may struggle to uncover the non-linear relationship between the different predictors and wealth values, resulting in a seemingly correct marginal distribution but inaccurate imputation given certain household characteristics. Meanwhile, OLS, QuantReg, and MDN fail to capture the variability across the distribution and impute most values at the lower or higher ends of the distribution.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{figures/models_dist_comparison.png}
     \caption{Log-transformed net worth distributions for all five imputation methods, compared to the weighted SCF donor distribution. Dashed lines represent median values.}
@@ -55,7 +55,7 @@ By visually comparing the wealth distributions resulting from imputing with each
 
 Table~\ref{tab:wasserstein} reports the Wasserstein distance between each model's imputed wealth distribution and the weighted SCF donor distribution, providing a single scalar summary of marginal distributional accuracy.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{Wasserstein distance (earth mover's distance) between each model's imputed net worth distribution on the CPS and the weighted SCF donor distribution. Lower values indicate closer distributional agreement.}
     \label{tab:wasserstein}
@@ -78,7 +78,7 @@ QRF achieves the lowest Wasserstein distance (\$910,299), confirming that its im
 
 Beyond the statistical metrics reported above, we perform a plausibility check by examining whether imputed wealth exhibits economically expected relationships with observable variables. Household wealth should increase monotonically with disposable income, reflecting the well-documented positive correlation between income and wealth accumulation. This check is particularly important for wealth imputation: a method that achieves competitive quantile loss but produces wealth-income patterns that violate basic economic relationships would be unreliable for downstream policy analysis, where the joint distribution of income and wealth drives eligibility and benefit calculations.
 
-\begin{figure}[htbp]
+\begin{figure}[H]
     \centering
     \includegraphics[width=\textwidth]{figures/models_median_decile_comparison.png}
     \caption{Average household net worth by disposable income decile model comparison. Households are divided into 10 equally sized groups based on their disposable income.}
@@ -87,11 +87,11 @@ Beyond the statistical metrics reported above, we perform a plausibility check b
 
 These results support the observations above, with QRF presenting the most consistent and plausible relationship to disposable income, with a monotonically increasing average wealth as deciles increase---a pattern consistent with economic expectations and serving as a plausibility check on the imputation. This plot also demonstrates the caveats of the other models, for example showing the lower variability in OLS's predictions, and Matching's consistent underprediction across deciles.
 
-\subsection{Policy validation: SSI simulation}
+\subsection{Policy analysis: SSI simulation}
 
-Following the downstream validation framework described in Section~\ref{sec:policy_validation}, we feed each model's imputed net worth into PolicyEngine as \texttt{ssi\_countable\_resources} and simulate SSI eligibility and benefits. Table~\ref{tab:ssi_results} compares simulated recipient counts and total expenditure against SSA administrative totals for 2024.
+Following the downstream policy analysis framework described in Section~\ref{sec:policy_validation}, we feed each model's imputed net worth into PolicyEngine as \texttt{ssi\_countable\_resources} and simulate SSI eligibility and benefits. Table~\ref{tab:ssi_results} compares simulated recipient counts and total expenditure against SSA administrative totals for 2024.
 
-\begin{table}[htbp]
+\begin{table}[H]
     \centering
     \caption{SSI simulation outcomes by imputation method compared to SSA administrative totals (2024). The baseline scenario uses PolicyEngine's default behavior, where \texttt{ssi\_countable\_resources} defaults to zero for all CPS households.}
     \label{tab:ssi_results}
@@ -103,23 +103,50 @@ Following the downstream validation framework described in Section~\ref{sec:poli
         Baseline (no wealth) & 19.8 & 152.6 & 267.2\% \\
         \midrule
         QuantReg & 8.3 & 74.6 & 111.7\% \\
-        MDN & 10.4 & 85.4 & 140.0\% \\
-        Matching & 11.0 & 88.8 & 148.3\% \\
+        MDN & 9.1 & 79.6 & 122.6\% \\
+        Matching & 11.1 & 90.2 & 150.2\% \\
         OLS & 11.3 & 100.5 & 153.3\% \\
         QRF & 12.1 & 102.8 & 163.3\% \\
         \bottomrule
     \end{tabular}
 \end{table}
 
-Without imputed wealth data, the baseline scenario, where \texttt{ssi\_countable\_resources} defaults to zero for all CPS households, produces 19.8 million recipients and \$152.6 billion in expenditure (267.2\% of administrative totals), substantially overestimating SSI program size. All five imputation methods substantially reduce this overestimation by screening out households whose imputed wealth exceeds the resource limits. Quantile Regression yields the closest estimates to administrative totals among the imputation methods (111.7\% of admin recipients), followed by MDN (140.0\%). QRF, despite achieving the lowest quantile loss in the cross-validation evaluation, produces higher SSI estimates (163.3\%) than QuantReg or MDN in this policy validation, though still far closer to administrative totals than the baseline.
+Without imputed wealth data, the baseline produces 19.8 million recipients and \$152.6 billion in expenditure (267.2\% of administrative totals). All five imputation methods substantially reduce this overestimation by screening out households whose imputed wealth exceeds the resource limits. Quantile Regression yields the closest match to administrative totals (111.7\%), while QRF, despite achieving the best quantile loss, produces higher SSI estimates (163.3\%). This divergence reflects the interaction between imputation accuracy and the policy function: QRF faithfully reproduces the conditional distribution of wealth, including the substantial mass of near-zero values in the SCF, which places more households just below the eligibility threshold. QuantReg's linear compression of the wealth distribution, while statistically less accurate, coincidentally pushes more values above the threshold. The remaining overestimation across all methods reflects that SCF net worth includes assets excluded from SSI countable resources (such as the primary residence and one vehicle).
 
-The divergence between statistical and policy performance merits further explanation. QRF, despite achieving the best quantile loss, produces higher SSI estimates than QuantReg (163.3\% vs.\ 111.7\%). This apparent paradox reflects the interaction between imputation accuracy and the policy function. QRF faithfully reproduces the conditional distribution of wealth, including the substantial mass of near-zero wealth values in the SCF; when mapped through the SSI resource test, these near-zero imputations place more households just below the eligibility threshold. QuantReg's linear compression of the wealth distribution, while statistically less accurate, may push more values above the threshold, coincidentally producing estimates closer to administrative totals. This underscores that proximity to administrative totals depends on both imputation quality and the specific policy function, and should not be treated as a standalone measure of imputation accuracy.
+\subsubsection{Policy reform: SSI Savings Penalty Elimination Act}
 
-The remaining overestimation across all imputation methods also requires additional contex. The imputed variable is SCF net worth, which includes assets such as primary residence and vehicles that are excluded from SSI countable resources under program rules. Using total net worth as a proxy for countable resources therefore does not precisely replicate the SSI resource test, and will tend to disqualify fewer households than a measure limited to countable resources would.
+To demonstrate why wealth imputation matters for policy analysis and not just model calibration, we simulate the SSI Savings Penalty Elimination Act \citep{ssi_spea_2025}, which would raise resource limits from \$2,000/\$3,000 to \$10,000/\$20,000. Table~\ref{tab:ssi_reform} reports SSI outcomes under both current law and the reformed thresholds for each imputation method.
 
-\begin{figure}[htbp]
+\begin{table}[H]
     \centering
-    \includegraphics[width=\textwidth]{figures/models_ssi_comparison.png}
-    \caption{SSI recipients (left) and total expenditure (right) by imputation method, compared to the SSA administrative totals (dashed line) and the baseline scenario without imputed wealth.}
-    \label{fig:ssi_outcomes}
+    \caption{SSI Savings Penalty Elimination Act: simulated reform impact by imputation method. ``Current'' columns reproduce the current-law results from Table~\ref{tab:ssi_results}; ``Reform'' columns show outcomes under \$10,000/\$20,000 resource limits; ``Additional'' columns show the difference. The baseline (no wealth) scenario produces zero reform impact because all resources default to zero under current law.}
+    \label{tab:ssi_reform}
+    \begin{tabular}{lrrrrrr}
+        \toprule
+        & \multicolumn{2}{c}{Recipients (M)} & \multicolumn{2}{c}{Expenditure (\$B)} & \multicolumn{2}{c}{Change} \\
+        \cmidrule(lr){2-3} \cmidrule(lr){4-5} \cmidrule(lr){6-7}
+        Model & Current & Reform & Current & Reform & +Recip (M) & +Exp (\$B) \\
+        \midrule
+        QuantReg & 8.3 & 8.4 & 74.6 & 75.6 & 0.1 & 1.0 \\
+        MDN & 9.1 & 9.8 & 79.6 & 84.5 & 0.7 & 4.8 \\
+        Matching & 11.1 & 13.0 & 90.2 & 100.6 & 1.9 & 10.4 \\
+        OLS & 11.3 & 15.6 & 100.5 & 124.6 & 4.2 & 24.1 \\
+        QRF & 12.1 & 12.7 & 102.8 & 106.2 & 0.6 & 3.4 \\
+        \midrule
+        Baseline & 19.8 & 19.8 & 152.6 & 152.6 & 0.0 & 0.0 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+The reform raises the resource threshold from \$2,000 to \$10,000 (individual), so the relevant question is how dense each method's imputed wealth distribution is in the \$2,000--\$10,000 range. Households with imputed net worth in this interval fail the current-law resource test but would pass under the reform, gaining SSI eligibility. The estimated number of additional recipients ranges from 0.1 million (QuantReg) to 4.2 million (OLS), with corresponding additional expenditure from \$1.0 billion to \$24.1 billion. This range reflects how differently each imputation approach populates this critical region of the wealth distribution.
+
+QRF estimates a modest reform impact (0.6 million additional recipients, \$3.4 billion additional expenditure), consistent with its faithful reproduction of the SCF wealth distribution. Most households with near-zero wealth are already below the \$2,000 threshold, so raising it to \$10,000 captures relatively few additional households. OLS, by contrast, produces the largest reform impact (4.2 million additional recipients), because its compressed, normally distributed imputations place a substantial mass of households in the \$2,000--\$10,000 range. QuantReg's near-zero reform impact (0.1 million) reflects its tendency to push imputed values away from this intermediate range. These differences underscore that the choice of imputation method is not merely a technical detail but a modeling decision that directly shapes policy impact estimates.
+
+The baseline (no wealth data) scenario starkly illustrates why imputation is essential: because all resources default to zero, every categorically eligible individual already passes the current-law resource test, so raising the thresholds has zero effect. Without wealth data, this reform is literally un-simulable. The microsimulation would not be able to distinguish between the status quo and a fivefold increase in resource limits.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=\textwidth]{figures/models_ssi_reform_comparison.png}
+    \caption{SSI recipients (left) and total expenditure (right) under current law (lighter bars) versus the SSI Savings Penalty Elimination Act reform (darker bars), by imputation method. The dashed line indicates the SSA administrative total under current law.}
+    \label{fig:ssi_reform}
 \end{figure}
