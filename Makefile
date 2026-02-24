@@ -28,12 +28,8 @@ clean:
 	rm -rf docs/_build/
 
 changelog:
-	build-changelog changelog.yaml --output changelog.yaml --update-last-date --start-from 0.1.5 --append-file changelog_entry.yaml
-	build-changelog changelog.yaml --org PolicyEngine --repo microimpute --output CHANGELOG.md --template .github/changelog_template.md
-	bump-version changelog.yaml pyproject.toml
-	rm changelog_entry.yaml || true
-	touch changelog_entry.yaml
-
+	python .github/bump_version.py
+	towncrier build --yes --version $$(python -c "import re; print(re.search(r'version = \"(.+?)\"', open('pyproject.toml').read()).group(1))")
 # Dashboard commands
 dashboard-install:
 	cd microimputation-dashboard && npm install
