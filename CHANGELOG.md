@@ -1,3 +1,10 @@
+## [1.14.3] - 2026-02-27
+
+### Fixed
+
+- Updated paper and package documentation with latest changes. Fix pandas 2.x compatibility for Arrow string types and dtype checks.
+
+
 ## [1.14.2] - 2026-02-24
 
 ### Changed
