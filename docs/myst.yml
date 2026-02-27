@@ -48,8 +48,6 @@ project:
     - title: Use cases
       children:
         - file: use_cases/index
-          children:
-            - file: use_cases/scf_to_cps/imputing-from-scf-to-cps
 site:
   options:
     logo: logo.png

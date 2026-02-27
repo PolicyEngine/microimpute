@@ -1,12 +1,12 @@
 # Data preprocessing
 
-Preprocessing transformations can improve model performance by normalizing scale differences or handling skewed distributions. These are supported by `preprocess_data` and transformation-specific functions.
+Preprocessing transformations can improve model performance by normalizing scale differences or handling skewed distributions. The main entry point is `preprocess_data`, with transformation-specific functions also available.
 
 ## Transformation options
 
 Microimpute supports three transformation types that can be applied to numeric columns before training. Each transformation automatically excludes categorical and boolean columns to prevent encoding issues.
 
-**Normalization (z-score)** standardizes data to have mean 0 and standard deviation 1. This transformation is useful when predictors have different scales, ensuring that all features contribute equally to distance-based or gradient-based models.
+**Normalization (z-score)** standardizes data to have mean 0 and standard deviation 1. This is useful when predictors have different scales, so that all features contribute equally to distance-based or gradient-based models.
 
 **Log transformation** applies the natural logarithm to values. This is effective for right-skewed distributions common in financial data like income or wealth. The transformation requires all values to be strictly positive.
 

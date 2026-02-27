@@ -1,14 +1,14 @@
 # Metrics and evaluation
 
-This page documents the evaluation metrics and predictor analysis tools available for assessing imputation quality. These utilities help understand model performance, compare methods, and analyze the contribution of individual predictors.
+This page documents the evaluation metrics and predictor analysis tools for assessing imputation quality.
 
 ## Loss metrics
 
-Microimpute employs evaluation metrics tailored to the type of variable being imputed. The framework automatically selects the appropriate metric based on whether the imputed variable is numerical or categorical, ensuring meaningful performance assessment across different data types.
+Microimpute selects the evaluation metric based on whether the imputed variable is numerical or categorical.
 
 ### Quantile loss
 
-Quantile loss assesses imputation quality for numerical variables. This approach provides a more nuanced evaluation than traditional metrics like mean squared error, particularly for capturing performance across different parts of the distribution.
+Quantile loss assesses imputation quality for numerical variables. It captures performance across different parts of the distribution, unlike mean squared error which only measures average accuracy.
 
 The quantile loss implements the standard pinball loss formulation:
 
@@ -62,7 +62,7 @@ When predictions are class labels rather than probabilities, the function conver
 
 ### compute_loss
 
-A unified function that selects the appropriate loss metric based on the specified type, providing a consistent interface for both numerical and categorical evaluation.
+A unified function that selects the loss metric based on the specified type.
 
 ```python
 def compute_loss(
@@ -86,7 +86,7 @@ Returns a tuple of `(element_wise_losses, mean_loss)`.
 
 ### compare_metrics
 
-Compares metrics across multiple imputation methods, automatically detecting variable types and applying the appropriate metric. For models that handle both numerical and categorical variables, the evaluation produces separate results for each metric type.
+Compares metrics across multiple imputation methods, detecting variable types and applying the appropriate metric. For models that handle both numerical and categorical variables, results are produced separately for each metric type.
 
 ```python
 def compare_metrics(
@@ -106,7 +106,7 @@ Returns a DataFrame with columns `Method`, `Imputed Variable`, `Percentile`, `Lo
 
 ## Distribution comparison
 
-Beyond point-wise loss metrics, evaluating how well imputed values preserve distributional characteristics provides insight into whether the imputation maintains the statistical properties of the original data.
+Evaluating how well imputed values preserve distributional characteristics tells you whether the imputation maintains the statistical properties of the original data.
 
 ### Wasserstein distance
 
@@ -126,7 +126,7 @@ $$D_{KL}(P||Q) = \sum_{x \in \mathcal{X}} P(x) \log\left(\frac{P(x)}{Q(x)}\right
 
 where $P$ is the reference distribution (original data), $Q$ is the approximation (imputed data), and $\mathcal{X}$ is the set of all possible categorical values. KL divergence measures how much information is lost when using the imputed distribution to approximate the true distribution. Lower values indicate better preservation of the original categorical distribution.
 
-When sample weights are provided, the probability distributions are computed as weighted proportions rather than simple counts, ensuring proper comparison of weighted survey data.
+When sample weights are provided, the probability distributions are computed as weighted proportions rather than simple counts, so that weighted survey data can be compared correctly.
 
 ### kl_divergence
 
@@ -178,11 +178,11 @@ Note that data must not contain null or infinite values. If your data contains s
 
 ## Predictor analysis
 
-Understanding which predictors contribute most to imputation quality helps with feature selection and model interpretation. These tools analyze predictor-target relationships and evaluate sensitivity to predictor selection.
+These tools analyze which predictors contribute most to imputation quality, helping with feature selection and model interpretation.
 
 ### Mutual information
 
-Mutual information measures the reduction in uncertainty about one variable given knowledge of another. Unlike correlation coefficients that capture only linear relationships, mutual information detects any statistical dependency, making it valuable for mixed data types.
+Mutual information measures the reduction in uncertainty about one variable given knowledge of another. Unlike correlation coefficients, which capture only linear relationships, mutual information detects any statistical dependency.
 
 For discrete random variables $X$ and $Y$:
 
@@ -200,21 +200,23 @@ where $H(X)$ and $H(Y)$ are the entropies of $X$ and $Y$ respectively. Normalize
 def compute_predictor_correlations(
     data: pd.DataFrame,
     predictors: List[str],
-    imputed_variables: List[str],
+    imputed_variables: Optional[List[str]] = None,
+    method: str = "all",
 ) -> Dict[str, pd.DataFrame]
 ```
 
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| data | pd.DataFrame | Dataset containing predictors and target variables |
-| predictors | List[str] | Column names of predictor variables |
-| imputed_variables | List[str] | Column names of target variables |
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| data | pd.DataFrame | - | Dataset containing predictors and target variables |
+| predictors | List[str] | - | Column names of predictor variables |
+| imputed_variables | List[str] | None | Column names of target variables |
+| method | str | "all" | Which correlation method to use: "all", "mi" (mutual information), "pearson", or "spearman" |
 
-Returns a dictionary containing `predictor_target_mi` DataFrame with mutual information scores.
+Returns a dictionary containing DataFrames with correlation scores (e.g. `predictor_target_mi` for mutual information).
 
 ### Leave-one-out analysis
 
-Leave-one-out predictor analysis evaluates model performance when each predictor is excluded. By comparing loss with and without each predictor, you can assess its contribution to imputation quality. Predictors whose removal causes large increases in loss are most important, while those with minimal impact might be candidates for removal to simplify the model.
+Leave-one-out predictor analysis evaluates model performance when each predictor is excluded. Predictors whose removal causes large increases in loss are the most important, while those with minimal impact might be candidates for removal.
 
 ### leave_one_out_analysis
 
@@ -223,9 +225,13 @@ def leave_one_out_analysis(
     data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    model_class: Type,
-    quantiles: Optional[List[float]] = QUANTILES,
-) -> Dict[str, Any]
+    model_class: Type[Imputer],
+    weight_col: Optional[Union[str, np.ndarray, pd.Series]] = None,
+    quantiles: List[float] = QUANTILES,
+    train_size: float = TRAIN_SIZE,
+    n_jobs: int = 1,
+    random_state: int = RANDOM_STATE,
+) -> pd.DataFrame
 ```
 
 | Parameter | Type | Default | Description |
@@ -233,14 +239,18 @@ def leave_one_out_analysis(
 | data | pd.DataFrame | - | Complete dataset |
 | predictors | List[str] | - | Column names of predictor variables |
 | imputed_variables | List[str] | - | Column names of variables to impute |
-| model_class | Type | - | Imputer class to evaluate |
+| model_class | Type[Imputer] | - | Imputer class to evaluate |
+| weight_col | str, np.ndarray, or pd.Series | None | Sample weights column name or array |
 | quantiles | List[float] | [0.05 to 0.95 in steps of 0.05] | Quantiles to evaluate |
+| train_size | float | 0.8 | Proportion of data for training |
+| n_jobs | int | 1 | Number of parallel jobs |
+| random_state | int | 42 | Random seed for reproducibility |
 
-Returns a dictionary containing loss increase and relative impact for each predictor.
+Returns a DataFrame containing loss increase and relative impact for each predictor.
 
 ### Progressive predictor inclusion
 
-Progressive inclusion analysis adds predictors one at a time in order of their mutual information with the target. This greedy forward selection reveals the optimal inclusion order, marginal contribution of each predictor, and the minimal set of predictors achieving near-optimal performance. Diminishing returns in loss reduction indicate when additional predictors provide negligible improvement.
+Progressive inclusion adds predictors one at a time, ordered by their mutual information with the target. This greedy forward selection reveals the optimal inclusion order and the marginal contribution of each predictor. Diminishing returns in loss reduction indicate when additional predictors add little.
 
 ### progressive_predictor_inclusion
 
@@ -249,8 +259,12 @@ def progressive_predictor_inclusion(
     data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    model_class: Type,
+    model_class: Type[Imputer],
+    weight_col: Optional[Union[str, np.ndarray, pd.Series]] = None,
     quantiles: Optional[List[float]] = QUANTILES,
+    train_size: Optional[float] = TRAIN_SIZE,
+    max_predictors: Optional[int] = None,
+    random_state: Optional[int] = RANDOM_STATE,
 ) -> Dict[str, Any]
 ```
 
@@ -259,8 +273,12 @@ def progressive_predictor_inclusion(
 | data | pd.DataFrame | - | Complete dataset |
 | predictors | List[str] | - | Column names of predictor variables |
 | imputed_variables | List[str] | - | Column names of variables to impute |
-| model_class | Type | - | Imputer class to evaluate |
+| model_class | Type[Imputer] | - | Imputer class to evaluate |
+| weight_col | str, np.ndarray, or pd.Series | None | Sample weights column name or array |
 | quantiles | List[float] | [0.05 to 0.95 in steps of 0.05] | Quantiles to evaluate |
+| train_size | float | 0.8 | Proportion of data for training |
+| max_predictors | int | None | Maximum number of predictors to include (None for all) |
+| random_state | int | 42 | Random seed for reproducibility |
 
 Returns a dictionary containing `inclusion_order` (list of predictors in optimal order) and `predictor_impacts` (list of dicts with predictor name and loss reduction).
 
@@ -282,7 +300,7 @@ metrics_df = compare_metrics(
         "QRF": qrf_imputations,
         "OLS": ols_imputations,
     },
-    imputed_variables=imputed_variables
+    imputed_variables=imputed_variables,
 )
 
 # Evaluate distributional match with survey weights
@@ -295,7 +313,13 @@ dist_df_weighted = compare_distributions(
 )
 
 # Analyze predictor importance
-mi_scores = compute_predictor_correlations(data, predictors, imputed_variables)
-loo_results = leave_one_out_analysis(data, predictors, imputed_variables, QRF)
-inclusion_results = progressive_predictor_inclusion(data, predictors, imputed_variables, QRF)
+mi_scores = compute_predictor_correlations(
+    data, predictors, imputed_variables, method="mi"
+)
+loo_results = leave_one_out_analysis(
+    data, predictors, imputed_variables, QRF, weight_col="wgt"
+)
+inclusion_results = progressive_predictor_inclusion(
+    data, predictors, imputed_variables, QRF, weight_col="wgt"
+)
 ```

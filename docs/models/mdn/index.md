@@ -1,6 +1,6 @@
 # Mixture Density Network
 
-The `MDN` model uses deep neural networks with mixture density outputs to predict missing values by learning complex, potentially multi-modal conditional distributions. Built on PyTorch Tabular, this approach combines the flexibility of neural networks with the probabilistic richness of Gaussian mixture models.
+The `MDN` model uses neural networks with mixture density outputs to predict missing values. Built on PyTorch Tabular, it learns conditional distributions as mixtures of Gaussians, which lets it capture multi-modal relationships.
 
 ## Variable type support
 
@@ -16,7 +16,7 @@ The model supports automatic caching based on data hashes, avoiding redundant re
 
 ## Key features
 
-MDN offers several advantages for complex imputation tasks. The mixture density approach can model multi-modal distributions that simpler methods cannot capture, making it suitable for variables with complex conditional distributions. The neural network backbone can learn non-linear relationships without requiring explicit feature engineering.
+MDN can model multi-modal distributions that simpler methods cannot capture, making it suited for variables with complex conditional distributions. The neural network backbone learns non-linear relationships without explicit feature engineering.
 
 Training leverages GPU acceleration when available and includes early stopping to prevent overfitting. The automatic model caching system speeds up repeated analyses on the same dataset.
 

@@ -1,23 +1,21 @@
 # Quantile Regression
 
-The `QuantReg` model takes a direct approach to modeling specific quantiles of the target variable distribution. Unlike methods that model the mean and then derive quantiles from distributional assumptions, quantile regression addresses each conditional quantile explicitly, providing greater flexibility and robustness in heterogeneous data settings.
+The `QuantReg` model directly models specific quantiles of the target variable distribution. Unlike methods that model the conditional mean and derive quantiles from distributional assumptions, quantile regression addresses each conditional quantile separately.
 
 ## Variable type support
 
-QuantReg is designed specifically for numerical variables and does not support categorical variable imputation. If your imputation targets include categorical variables (string, or numerically-encoded categorical variables), consider using OLS or QRF models instead, which automatically handle both numerical and categorical targets through internal classification methods.
+QuantReg is designed for numerical variables and does not support categorical imputation. If your targets include categorical variables, use OLS or QRF instead, which handle both numerical and categorical targets through internal classification methods.
 
 ## How it works
 
-Quantile regression in Microimpute leverages the statsmodels' QuantReg implementation to create precise models of conditional quantiles. During the training phase, the approach fits separate regression models for each requested quantile level, creating a focused model for each part of the conditional distribution you wish to estimate.
+The implementation uses statsmodels' `QuantReg`. During training, a separate regression model is fitted for each requested quantile level.
 
-The mathematical foundation of the method lies in its objective function, which minimizes asymmetrically weighted absolute residuals rather than squared residuals as in ordinary least squares. This asymmetric weighting system penalizes under-predictions more heavily when estimating higher quantiles and over-predictions more heavily when estimating lower quantiles. This clever formulation allows the model to converge toward solutions that represent true conditional quantiles.
+The objective function minimizes asymmetrically weighted absolute residuals rather than squared residuals (as in OLS). For higher quantiles, under-predictions are penalized more heavily; for lower quantiles, over-predictions are penalized more heavily. This asymmetry causes each model to converge toward the true conditional quantile.
 
-When making predictions, the system applies the appropriate quantile-specific model for each requested quantile level. This direct approach means predictions at different quantiles come from distinct models optimized for those specific portions of the distribution, rather than from a single model with assumptions about the error distribution.
+When predicting, the system applies the quantile-specific model for each requested level. Predictions at different quantiles come from distinct models, each optimized for that part of the distribution.
 
 ## Key features
 
-Quantile regression offers several compelling advantages for imputation tasks. It allows direct modeling of conditional quantiles without making restrictive assumptions about the underlying distribution of the data. This distribution-free approach makes the method robust to outliers and applicable in a wide range of scenarios where normal distribution assumptions might be violated.
+Quantile regression models conditional quantiles without assuming a particular error distribution, making it robust to outliers. It naturally captures heteroscedasticity, adapting to changing variance patterns across the feature space (unlike OLS, which assumes constant variance).
 
-The method excels at capturing heteroscedasticity—situations where the variability of the target depends on the predictor values. While methods like OLS assume constant variance throughout the feature space, quantile regression naturally adapts to changing variance patterns, providing more accurate predictions in regions with different error characteristics.
-
-By fitting multiple quantile levels, the approach provides a comprehensive picture of the conditional distribution of the target variable. This detailed view enables more nuanced imputation where understanding the full range of possible values is important. For instance, it can reveal asymmetries in the conditional distribution that other methods might miss, offering valuable insights into the uncertainty structure of the imputed values.
+By fitting multiple quantile levels, the method gives a picture of the full conditional distribution. This can reveal asymmetries that other methods would miss. However, QuantReg is limited to linear relationships between predictors and the target.
