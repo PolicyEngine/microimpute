@@ -1,31 +1,31 @@
 # Microimpute
 
-Microimpute enables variable imputation through a variety of statistical methods. By providing a consistent interface across different imputation techniques, it allows researchers and data scientists to easily compare and benchmark different approaches using quantile loss and log loss calculations to determine the method providing most accurate results.
+Microimpute is a Python package for imputing variables from one survey dataset onto another. It wraps five imputation methods behind a common interface so you can benchmark them on your data and pick the one that works best, rather than defaulting to a single approach.
 
-## Features
+## Methods
 
-### Multiple imputation methods
-- **Statistical Matching**: Distance-based matching for finding similar observations
-- **Ordinary Least Squares (OLS)**: Linear regression-based imputation
-- **Quantile Regression**: Distribution-aware regression imputation
-- **Quantile Random Forests (QRF)**: Non-parametric forest-based approach
-- **Mixture Density Networks (MDN)**: Neural network with Gaussian mixture approximation head
+- **Statistical Matching**: distance-based matching to find similar donor observations
+- **Ordinary Least Squares (OLS)**: linear regression imputation
+- **Quantile Regression**: models conditional quantiles instead of the conditional mean
+- **Quantile Random Forests (QRF)**: non-parametric, tree-based quantile estimation
+- **Mixture Density Networks (MDN)**: neural network with a Gaussian mixture output
 
-### Automated method selection
-- **AutoImpute**: Automatically compares and selects the best imputation method for your data
-- **Cross-validation**: Built-in evaluation using quantile loss (numerical) and log loss (categorical)
-- **Variable type support**: Handles numerical, categorical, and boolean variables
+## Autoimpute
 
-### Developer-friendly design
-- **Consistent API**: Standardized `fit()` and `predict()` interface across all models
-- **Extensible architecture**: Easy to implement custom imputation methods
-- **Weighted data handling**: Preserve data distributions with sample weights
-- **Input validation**: Automatic parameter and data validation
+The `autoimpute` function tunes hyperparameters, runs cross-validation across all five methods, and selects the best performer based on quantile loss (for numerical targets) or log loss (for categorical targets). It handles numerical, categorical, and boolean variables.
 
-### Interactive dashboard
-- **Visual exploration**: Analyze imputation results through interactive charts at https://microimpute-dashboard.vercel.app/
-- **GitHub integration**: Load artifacts directly from CI/CD workflows
-- **Multiple data sources**: File upload, URL loading and sample data
+## API
+
+All models follow a `fit()` / `predict()` interface. The package supports sample weights to account for survey design, and validates inputs automatically. Adding a custom imputation method is straightforward since new models just need to implement the same interface.
+
+## Documentation and paper
+
+- [Documentation](https://policyengine.github.io/microimpute/) with examples and interactive notebooks
+- [Paper](https://github.com/PolicyEngine/microimpute/blob/main/paper/main.pdf) presenting microimpute and demonstrating it for SCF-to-CPS net worth imputation
+
+## Dashboard
+
+An interactive dashboard for exploring imputation results is available at https://microimpute-dashboard.vercel.app/. It supports file upload, URL loading, direct GitHub artifact integration, and sample data.
 
 ## Installation
 
@@ -33,16 +33,12 @@ Microimpute enables variable imputation through a variety of statistical methods
 pip install microimpute
 ```
 
-For image export functionality (PNG/JPG), install with:
+For image export (PNG/JPG):
 
 ```bash
 pip install microimpute[images]
 ```
 
-## Examples and documentation
-
-For detailed examples and interactive notebooks, see the [documentation](https://policyengine.github.io/microimpute/).
-
 ## Contributing
 
-Contributions are welcome to the project. Please feel free to submit a Pull Request with your improvements.
+Pull requests are welcome. If you find a bug or have a feature idea, open an issue or submit a PR.

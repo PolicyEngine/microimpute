@@ -1,13 +1,10 @@
 # Cross-validation and model imputation comparison
 
-This page documents the cross-validation utilities for evaluating imputation model performance. Cross-validation provides robust 
-estimates of how well a model will generalize to unseen data by training and testing on multiple data splits. Functions like `get_imputations`, will then build upon it, to standardize evaluation for all models, ensuring possible through a consistent experimental setup.
+This page documents the cross-validation utilities for evaluating imputation model performance. Cross-validation estimates how well a model generalizes to unseen data by training and testing on multiple splits. The `get_imputations` function builds on this to standardize evaluation across all models.
 
-Microimpute's cross-validation automatically selects the appropriate metric based on variable type. Numerical variables are evaluated using quantile loss, which measures prediction accuracy across the conditional distribution. Categorical variables are evaluated using log loss (cross-entropy), which penalizes confident but incorrect predictions, see the [Metrics page](./metrics.md) for more details.
+Microimpute's cross-validation selects the metric based on variable type: quantile loss for numerical variables, log loss for categorical variables. See the [Metrics page](./metrics.md) for details.
 
 ## Cross-validation
-
-Cross-validation provides robust estimates of how well a model will generalize to unseen data by training and testing on multiple data splits. Microimpute's cross-validation automatically selects the appropriate metric based on variable type: quantile loss for numerical variables and log loss for categorical variables.
 
 ### cross_validate_model
 
@@ -98,7 +95,7 @@ For model selection, focus on the test loss (`mean_test`). When comparing multip
 
 ## Imputation generation for model comparison
 
-The `get_imputations` function generates imputations using cross-validation for multiple model classes in a single call, organizing results in a consistent format for downstream comparison and evaluation.
+The `get_imputations` function generates imputations for multiple model classes in a single call, organizing results in a consistent format for comparison.
 
 ### get_imputations
 

@@ -175,19 +175,25 @@ def order_probabilities_alphabetically(
     return reordered_probabilities, alphabetical_classes
 
 
+# Accept numpy arrays, pandas Series, and pandas ExtensionArrays
+# (e.g. ArrowExtensionArray) which newer pandas versions produce for
+# string columns.
+ArrayLike = Union[np.ndarray, pd.Series, pd.api.extensions.ExtensionArray]
+
+
 @validate_call(config=VALIDATE_CONFIG)
 def compute_loss(
-    test_y: np.ndarray,
-    imputations: np.ndarray,
+    test_y: ArrayLike,
+    imputations: ArrayLike,
     metric: MetricType,
     q: float = 0.5,
-    labels: Optional[np.ndarray] = None,
+    labels: Optional[ArrayLike] = None,
 ) -> Tuple[np.ndarray, float]:
     """Compute loss for given true values and imputations using specified metric.
 
     Args:
-        test_y: Array of true values.
-        imputations: Array of predicted/imputed values.
+        test_y: Array-like of true values.
+        imputations: Array-like of predicted/imputed values.
         metric: Type of metric to use ('quantile_loss' or 'log_loss').
         q: Quantile value (only used for quantile_loss).
         labels: Possible label values (only used for log_loss).
@@ -198,6 +204,13 @@ def compute_loss(
     Raises:
         ValueError: If inputs have different shapes or invalid metric type.
     """
+    # Convert array-like inputs (e.g. ArrowStringArray, pd.Series)
+    # to numpy before use.
+    test_y = np.asarray(test_y)
+    imputations = np.asarray(imputations)
+    if labels is not None:
+        labels = np.asarray(labels)
+
     try:
         # Validate input dimensions
         if len(test_y) != len(imputations):
@@ -291,9 +304,9 @@ def _compute_method_losses(
                 log.error(error_msg)
                 raise ValueError(error_msg)
 
-            # Get values
-            test_values = test_y[variable].values
-            pred_values = imputation[quantile][variable].values
+            # Get values as numpy arrays (handles Arrow-backed dtypes)
+            test_values = np.asarray(test_y[variable])
+            pred_values = np.asarray(imputation[quantile][variable])
 
             # Compute loss
             _, mean_loss = compute_loss(
@@ -327,9 +340,9 @@ def _compute_method_losses(
                 log.error(error_msg)
                 raise ValueError(error_msg)
 
-            # Get values
-            test_values = test_y[variable].values
-            pred_values = imputation[quantile][variable].values
+            # Get values as numpy arrays (handles Arrow-backed dtypes)
+            test_values = np.asarray(test_y[variable])
+            pred_values = np.asarray(imputation[quantile][variable])
 
             # Get unique labels from test data
             labels = np.unique(test_values)

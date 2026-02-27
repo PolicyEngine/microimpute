@@ -38,5 +38,3 @@ parts:
   - caption: Use cases
     chapters:
       - file: use_cases/index
-        sections:
-          - file: use_cases/scf_to_cps/imputing-from-scf-to-cps

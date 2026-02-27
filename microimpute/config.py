@@ -55,7 +55,7 @@ DEFAULT_MODEL_PARAMS: Dict[str, Dict[str, Any]] = {
     "ols": {
         # statsmodels OLS uses default parameters
         # LogisticRegression params for categorical targets:
-        "penalty": "l2",
+        "l1_ratio": 0,
         "C": 1.0,
         "max_iter": 1000,
     },

@@ -1,17 +1,17 @@
 # Ordinary Least Squares
 
-The `OLS` model employs linear regression techniques to predict missing values by leveraging the relationships between predictor and target variables. This classic statistical approach provides a computationally efficient method for imputation while offering theoretical guarantees under certain assumptions.
+The `OLS` model uses linear regression to predict missing values from the relationships between predictor and target variables. It is computationally fast and provides a useful baseline for comparison with more complex methods.
 
 ## Variable type support
 
-OLS automatically adapts to your target variable types. For numerical variables, it uses standard linear regression. For categorical variables (including strings, booleans, or numerically-encoded categorical variables), it automatically switches to logistic regression classification. This automatic detection means you don't need to specify variable types—simply pass your predictors and targets, and the model handles the rest internally.
+OLS adapts to target variable types automatically. For numerical variables, it uses standard linear regression. For categorical variables (including strings, booleans, or numerically-encoded categorical variables), it switches to logistic regression. You don't need to specify variable types manually.
 
 ## How it works
 
-The OLS imputer works by fitting a linear regression model using the statsmodels implementation of Ordinary Least Squares. During the training phase, it identifies the coefficients that minimize the sum of squared residuals between the predicted and actual values in the training data. This creates a model that captures the linear relationship between the predictors and target variables.
+The OLS imputer fits a linear regression model using the statsmodels implementation. During training, it finds the coefficients that minimize the sum of squared residuals between predicted and actual values.
 
-For prediction at different quantiles, the model makes an important assumption that the residuals (the differences between predicted and actual values) follow a normal distribution. This assumption allows the model to generate predictions at various quantiles by starting with the mean prediction and adding a quantile-specific offset derived from the normal distribution. Specifically, it computes the standard error of the predictions and applies the inverse normal cumulative distribution function to generate predictions at the requested quantiles.
+For prediction at different quantiles, the model assumes normally distributed residuals. It starts with the mean prediction and adds a quantile-specific offset computed from the normal distribution's inverse CDF and the standard error of the predictions.
 
 ## Key features
 
-The OLS imputer offers a simple yet powerful parametric approach with fast training and prediction times compared to more complex models. It relies on the assumption of linear relationships between variables, making it particularly suitable for datasets where such relationships hold or as a baseline comparison for more complex approaches.
+OLS is fast to train and predict. It works well when the relationship between predictors and targets is approximately linear. Because it assumes constant variance and normally distributed errors, it tends to compress imputed values toward the mean, producing a narrower distribution than the true one. This makes it a good baseline but a poor choice when the data has heavy tails or heteroscedastic errors.

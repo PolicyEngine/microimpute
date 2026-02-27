@@ -59,8 +59,9 @@ class _LogisticRegressionModel:
                 y_encoded = y_encoded.fillna(0)  # Default to first category
 
         # Extract relevant LR parameters from kwargs
+        # Use l1_ratio instead of penalty (deprecated in sklearn 1.8)
         classifier_params = {
-            "penalty": lr_kwargs.get("penalty", "l2"),
+            "l1_ratio": lr_kwargs.get("l1_ratio", 0),
             "C": lr_kwargs.get("C", 1.0),
             "max_iter": lr_kwargs.get("max_iter", 1000),
             "solver": lr_kwargs.get(

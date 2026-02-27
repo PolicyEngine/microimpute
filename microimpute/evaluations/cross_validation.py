@@ -265,11 +265,13 @@ def _compute_fold_loss_by_metric(
     for var in imputed_variables:
         metric_type = variable_metrics[var]
 
-        # Get data for this variable
-        test_y_var = test_y_values[var][fold_idx]
-        train_y_var = train_y_values[var][fold_idx]
-        test_pred_var = test_results[quantile][fold_idx][var].values
-        train_pred_var = train_results[quantile][fold_idx][var].values
+        # Get data for this variable, converting to numpy to handle
+        # Arrow-backed dtypes (e.g. ArrowStringArray) that pydantic
+        # won't accept as np.ndarray.
+        test_y_var = np.asarray(test_y_values[var][fold_idx])
+        train_y_var = np.asarray(train_y_values[var][fold_idx])
+        test_pred_var = np.asarray(test_results[quantile][fold_idx][var])
+        train_pred_var = np.asarray(train_results[quantile][fold_idx][var])
 
         # Compute loss based on metric type
         if metric_type == "quantile_loss":

@@ -208,7 +208,7 @@ def test_matching_mixed_types() -> None:
     predictions = fitted_model.predict(X_test, quantiles=[0.5])
 
     assert predictions[0.5]["target_numeric"].dtype == np.float64
-    assert predictions[0.5]["target_category"].dtype == object
+    assert pd.api.types.is_string_dtype(predictions[0.5]["target_category"])
 
 
 # === Edge Cases ===

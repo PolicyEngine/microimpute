@@ -159,8 +159,10 @@ For quantile loss, the plot shows train and test loss across quantiles as groupe
 from microimpute.visualizations import model_performance_results
 
 # Visualize cross-validation results for a single model
+# Pass the full cv_results dict (not just the inner DataFrame)
+# to preserve error bar data from cross-validation folds
 perf_viz = model_performance_results(
-    results=cv_results["quantile_loss"]["results"],
+    results=cv_results,
     model_name="QRF",
     method_name="Cross-validation",
     metric="quantile_loss"
