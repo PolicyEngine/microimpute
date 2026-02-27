@@ -200,11 +200,19 @@ class MethodComparisonResults:
                         ):
                             std_results = ql_data["results_std"].loc["test"]
 
+                        # Loss values in results are already averaged
+                        # across variables, so create ONE row per
+                        # (method, quantile) to avoid duplicate bars.
+                        variables = ql_data.get("variables", ["y"])
+                        var_label = (
+                            variables[0] if len(variables) == 1 else "average"
+                        )
+
                         for quantile in test_results.index:
-                            for var in ql_data.get("variables", ["y"]):
-                                row = {
+                            long_format_data.append(
+                                {
                                     "Method": method_name,
-                                    "Imputed Variable": var,
+                                    "Imputed Variable": var_label,
                                     "Percentile": quantile,
                                     "Loss": test_results[quantile],
                                     "Metric": "quantile_loss",
@@ -214,21 +222,20 @@ class MethodComparisonResults:
                                         else np.nan
                                     ),
                                 }
-                                long_format_data.append(row)
+                            )
 
                     # Add mean loss
                     if "mean_test" in ql_data:
-                        for var in ql_data.get("variables", ["y"]):
-                            long_format_data.append(
-                                {
-                                    "Method": method_name,
-                                    "Imputed Variable": var,
-                                    "Percentile": "mean_quantile_loss",
-                                    "Loss": ql_data["mean_test"],
-                                    "Metric": "quantile_loss",
-                                    "Std": ql_data.get("std_test", np.nan),
-                                }
-                            )
+                        long_format_data.append(
+                            {
+                                "Method": method_name,
+                                "Imputed Variable": var_label,
+                                "Percentile": "mean_quantile_loss",
+                                "Loss": ql_data["mean_test"],
+                                "Metric": "quantile_loss",
+                                "Std": ql_data.get("std_test", np.nan),
+                            }
+                        )
 
             # Process log loss if available
             if (
@@ -240,35 +247,41 @@ class MethodComparisonResults:
                     ll_data.get("results") is not None
                     and not ll_data["results"].empty
                 ):
-                    # Log loss is constant across quantiles
+                    # Log loss is constant across quantiles.
+                    # Same as quantile_loss: one row per method,
+                    # not per variable, since values are aggregated.
                     if "test" in ll_data["results"].index:
                         test_loss = ll_data["results"].loc["test"].mean()
                         test_std = ll_data.get("std_test", np.nan)
-                        for var in ll_data.get("variables", []):
-                            long_format_data.append(
-                                {
-                                    "Method": method_name,
-                                    "Imputed Variable": var,
-                                    "Percentile": "log_loss",
-                                    "Loss": test_loss,
-                                    "Metric": "log_loss",
-                                    "Std": test_std,
-                                }
-                            )
+                        ll_variables = ll_data.get("variables", [])
+                        ll_var_label = (
+                            ll_variables[0]
+                            if len(ll_variables) == 1
+                            else "average"
+                        )
+                        long_format_data.append(
+                            {
+                                "Method": method_name,
+                                "Imputed Variable": ll_var_label,
+                                "Percentile": "log_loss",
+                                "Loss": test_loss,
+                                "Metric": "log_loss",
+                                "Std": test_std,
+                            }
+                        )
 
                     # Add mean loss
                     if "mean_test" in ll_data:
-                        for var in ll_data.get("variables", []):
-                            long_format_data.append(
-                                {
-                                    "Method": method_name,
-                                    "Imputed Variable": var,
-                                    "Percentile": "mean_log_loss",
-                                    "Loss": ll_data["mean_test"],
-                                    "Metric": "log_loss",
-                                    "Std": ll_data.get("std_test", np.nan),
-                                }
-                            )
+                        long_format_data.append(
+                            {
+                                "Method": method_name,
+                                "Imputed Variable": ll_var_label,
+                                "Percentile": "mean_log_loss",
+                                "Loss": ll_data["mean_test"],
+                                "Metric": "log_loss",
+                                "Std": ll_data.get("std_test", np.nan),
+                            }
+                        )
 
         self.comparison_data = pd.DataFrame(long_format_data)
 
@@ -805,7 +818,7 @@ class MethodComparisonResults:
                     )
 
             if title is None:
-                title = "Rank-based mmodel performance by variable (lower is better)"
+                title = "Rank-based model performance by variable (lower is better)"
 
             fig.update_layout(
                 title=title,

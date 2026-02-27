@@ -64,6 +64,19 @@ try:
         message=".*have no logger configured.*",
         module="pytorch_lightning.core.module",
     )
+    warnings.filterwarnings(
+        "ignore",
+        message=".*isinstance.*LeafSpec.*is deprecated.*",
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=".*given NumPy array is not writable.*",
+    )
+    warnings.filterwarnings(
+        "ignore",
+        message=".*Trying to unpickle estimator.*",
+        module="sklearn.*",
+    )
 
     # After import, also update the rank_zero_module logger
     from lightning_fabric.utilities.rank_zero import rank_zero_module
@@ -148,6 +161,25 @@ def _generate_data_hash(X: pd.DataFrame, y: pd.Series) -> str:
     return hashlib.md5(combined.encode()).hexdigest()[:12]
 
 
+def _get_package_versions_hash() -> str:
+    """Get a short hash of sklearn and pytorch_tabular versions.
+
+    Including package versions in the cache key ensures that caches
+    saved with older versions are automatically invalidated when
+    packages are upgraded, avoiding deserialization warnings.
+    """
+    import sklearn
+
+    versions = [sklearn.__version__]
+    try:
+        import pytorch_tabular
+
+        versions.append(pytorch_tabular.__version__)
+    except (ImportError, AttributeError):
+        versions.append("unknown")
+    return hashlib.md5("_".join(versions).encode()).hexdigest()[:6]
+
+
 def _generate_cache_key(
     predictors: List[str], target: str, data_hash: str
 ) -> str:
@@ -168,7 +200,9 @@ def _generate_cache_key(
     predictors_hash = hashlib.md5(predictors_str.encode()).hexdigest()[:8]
     # Sanitize target name for filesystem
     safe_target = target.replace("/", "_").replace("\\", "_")
-    return f"{predictors_hash}_{safe_target}_{data_hash}"
+    # Include package versions to invalidate cache on upgrades
+    ver_hash = _get_package_versions_hash()
+    return f"{predictors_hash}_{safe_target}_{data_hash}_{ver_hash}"
 
 
 class _MDNModel:

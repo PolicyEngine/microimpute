@@ -700,10 +700,8 @@ def format_csv(
         # Generate histogram data for each imputed variable
         for var in imputed_variables:
             # Check if variable is categorical or numerical
-            if donor_data[
-                var
-            ].dtype == "object" or pd.api.types.is_categorical_dtype(
-                donor_data[var]
+            if pd.api.types.is_string_dtype(donor_data[var]) or isinstance(
+                donor_data[var].dtype, pd.CategoricalDtype
             ):
                 # Categorical variable
                 hist_data = _compute_categorical_distribution(

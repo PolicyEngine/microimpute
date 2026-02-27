@@ -264,7 +264,7 @@ def test_imputation_categorical_targets(
 
     # Default behavior returns DataFrame directly
     assert isinstance(predictions, pd.DataFrame)
-    assert predictions["categorical"].dtype == "object"
+    assert pd.api.types.is_string_dtype(predictions["categorical"])
 
     # Test probability predictions for models that support it
     if model_class.__name__ in ["OLS", "QRF", "Matching"]:
@@ -279,7 +279,9 @@ def test_imputation_categorical_targets(
 
         # Check that we still get the categorical predictions
         assert isinstance(predictions_with_probs[0.5], pd.DataFrame)
-        assert predictions_with_probs[0.5]["categorical"].dtype == "object"
+        assert pd.api.types.is_string_dtype(
+            predictions_with_probs[0.5]["categorical"]
+        )
 
         # Check probability format
         prob_info = predictions_with_probs["probabilities"]["categorical"]
@@ -333,7 +335,7 @@ def test_categorical_return_probs_false(
     predictions = fitted_model.predict(X_test)
     assert isinstance(predictions, pd.DataFrame)
     assert "categorical" in predictions.columns
-    assert predictions["categorical"].dtype == "object"
+    assert pd.api.types.is_string_dtype(predictions["categorical"])
     assert set(predictions["categorical"].unique()).issubset({"A", "B", "C"})
 
     # Test 2: Explicit return_probs=False with quantiles should return dict of DataFrames

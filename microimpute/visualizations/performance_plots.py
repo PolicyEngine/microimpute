@@ -67,6 +67,14 @@ class PerformanceResults:
         # Handle different input formats
         if isinstance(results, pd.DataFrame):
             # Backward compatibility: single metric DataFrame
+            # Note: passing a bare DataFrame loses results_std, so error
+            # bars will not be shown. Pass the full cross_validate_model
+            # output dict to preserve error bar data.
+            logger.warning(
+                "Received a bare DataFrame instead of the full results dict. "
+                "Error bars will not be available. Pass the full output of "
+                "cross_validate_model() to enable error bars."
+            )
             self.results = {"quantile_loss": {"results": results.copy()}}
             self.has_quantile_loss = True
             self.has_log_loss = False

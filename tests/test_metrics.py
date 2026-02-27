@@ -1289,8 +1289,8 @@ def test_compare_distributions_return_format() -> None:
     assert len(results) == 2
 
     # Check data types
-    assert results["Variable"].dtype == "object"
-    assert results["Metric"].dtype == "object"
+    assert pd.api.types.is_string_dtype(results["Variable"])
+    assert pd.api.types.is_string_dtype(results["Metric"])
     assert results["Distance"].dtype in ["float64", "float32"]
 
 
