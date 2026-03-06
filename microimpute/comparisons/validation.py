@@ -27,9 +27,7 @@ def validate_quantiles(quantiles: List[float]) -> None:
     """
     invalid_quantiles = [q for q in quantiles if not 0 <= q <= 1]
     if invalid_quantiles:
-        error_msg = (
-            f"Invalid quantiles (must be between 0 and 1): {invalid_quantiles}"
-        )
+        error_msg = f"Invalid quantiles (must be between 0 and 1): {invalid_quantiles}"
         log.error(error_msg)
         raise ValueError(error_msg)
 

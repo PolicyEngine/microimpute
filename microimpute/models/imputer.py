@@ -32,9 +32,7 @@ class _ConstantValueModel:
 
     def predict(self, X: pd.DataFrame, **kwargs) -> pd.Series:
         """Return the constant value for all rows."""
-        return pd.Series(
-            self.constant_value, index=X.index, name=self.variable_name
-        )
+        return pd.Series(self.constant_value, index=X.index, name=self.variable_name)
 
 
 class Imputer(ABC):
@@ -55,16 +53,16 @@ class Imputer(ABC):
         self.imputed_variables: Optional[List[str]] = None
         self.imputed_vars_dummy_info: Optional[Dict[str, Any]] = None
         self.original_predictors: Optional[List[str]] = None
-        self.categorical_targets: Dict[str, Dict] = (
-            {}
-        )  # {var_name: {"type": "categorical", "categories": [...]}}
-        self.boolean_targets: Dict[str, Dict] = (
-            {}
-        )  # {var_name: {"type": "boolean", "dtype": ...}}
+        self.categorical_targets: Dict[
+            str, Dict
+        ] = {}  # {var_name: {"type": "categorical", "categories": [...]}}
+        self.boolean_targets: Dict[
+            str, Dict
+        ] = {}  # {var_name: {"type": "boolean", "dtype": ...}}
         self.numeric_targets: List[str] = []  # [var_name, ...]
-        self.constant_targets: Dict[str, Dict] = (
-            {}
-        )  # {var_name: {"value": constant, "dtype": ...}}
+        self.constant_targets: Dict[
+            str, Dict
+        ] = {}  # {var_name: {"value": constant, "dtype": ...}}
         self.seed = seed
         self.logger = logging.getLogger(__name__)
 
@@ -99,9 +97,7 @@ class Imputer(ABC):
 
         missing_count = data.isna().sum().sum()
         if missing_count > 0:
-            self.logger.warning(
-                f"Data contains {missing_count} missing values"
-            )
+            self.logger.warning(f"Data contains {missing_count} missing values")
 
     def identify_target_types(
         self,
@@ -194,13 +190,11 @@ class Imputer(ABC):
         """
         try:
             processor = DummyVariableProcessor(self.logger)
-            processed_data, updated_predictors = (
-                processor.preprocess_predictors(
-                    data,
-                    predictors,
-                    imputed_variables,
-                    not_numeric_categorical,
-                )
+            processed_data, updated_predictors = processor.preprocess_predictors(
+                data,
+                predictors,
+                imputed_variables,
+                not_numeric_categorical,
             )
 
             # Store the processor for later use in test data
@@ -282,9 +276,7 @@ class Imputer(ABC):
             raise ValueError("Weights must be positive")
 
         # Identify target types BEFORE preprocessing
-        self.identify_target_types(
-            X_train, imputed_variables, not_numeric_categorical
-        )
+        self.identify_target_types(X_train, imputed_variables, not_numeric_categorical)
 
         X_train, predictors, imputed_variables, imputed_vars_dummy_info = (
             self.preprocess_data_types(
@@ -361,9 +353,7 @@ class Imputer(ABC):
         """
         # Identify available and missing variables
         available_vars = [v for v in imputed_variables if v in X_train.columns]
-        missing_vars = [
-            v for v in imputed_variables if v not in X_train.columns
-        ]
+        missing_vars = [v for v in imputed_variables if v not in X_train.columns]
 
         if missing_vars:
             self.logger.warning(
@@ -429,12 +419,8 @@ class ImputerResults(ABC):
         """
         if quantiles is not None:
             if not isinstance(quantiles, list):
-                self.logger.error(
-                    f"quantiles must be a list, got {type(quantiles)}"
-                )
-                raise ValueError(
-                    f"quantiles must be a list, got {type(quantiles)}"
-                )
+                self.logger.error(f"quantiles must be a list, got {type(quantiles)}")
+                raise ValueError(f"quantiles must be a list, got {type(quantiles)}")
 
             invalid_quantiles = [q for q in quantiles if not 0 <= q <= 1]
             if invalid_quantiles:
@@ -468,18 +454,14 @@ class ImputerResults(ABC):
         try:
             if dummy_processor and hasattr(dummy_processor, "dummy_mapping"):
                 # Use existing processor with training mappings
-                return dummy_processor.apply_dummy_encoding_to_test(
-                    data, predictors
-                )
+                return dummy_processor.apply_dummy_encoding_to_test(data, predictors)
             else:
                 # Fallback: create new processor (shouldn't happen normally)
                 processor = DummyVariableProcessor(self.logger)
                 # This will only encode predictors in test data
                 return processor.preprocess_predictors(data, predictors, [])
         except Exception as e:
-            self.logger.error(
-                f"Error during test data preprocessing: {str(e)}"
-            )
+            self.logger.error(f"Error during test data preprocessing: {str(e)}")
             raise RuntimeError("Failed to preprocess data types") from e
 
     # Note: postprocess_imputations removed - categorical targets now handled directly by classification
@@ -554,6 +536,4 @@ class ImputerResults(ABC):
             RuntimeError: If imputation fails.
             NotImplementedError: If method is not implemented by subclass.
         """
-        raise NotImplementedError(
-            "Subclasses must implement the predict method"
-        )
+        raise NotImplementedError("Subclasses must implement the predict method")

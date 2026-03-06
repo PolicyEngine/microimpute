@@ -125,17 +125,11 @@ class PerformanceResults:
         logger.debug(f"Creating performance plot for metric: {self.metric}")
 
         if self.metric == "quantile_loss":
-            return self._plot_quantile_loss(
-                title, save_path, figsize, show_error_bars
-            )
+            return self._plot_quantile_loss(title, save_path, figsize, show_error_bars)
         elif self.metric == "log_loss":
-            return self._plot_log_loss(
-                title, save_path, figsize, show_error_bars
-            )
+            return self._plot_log_loss(title, save_path, figsize, show_error_bars)
         elif self.metric == "combined":
-            return self._plot_combined(
-                title, save_path, figsize, show_error_bars
-            )
+            return self._plot_combined(title, save_path, figsize, show_error_bars)
         else:
             raise ValueError(f"Invalid metric: {self.metric}")
 
@@ -167,14 +161,8 @@ class PerformanceResults:
             # Add bars for training data
             if "train" in ql_data.index:
                 error_y_dict = None
-                if (
-                    show_error_bars
-                    and ql_std is not None
-                    and "train" in ql_std.index
-                ):
-                    error_y_dict = dict(
-                        type="data", array=ql_std.loc["train"].values
-                    )
+                if show_error_bars and ql_std is not None and "train" in ql_std.index:
+                    error_y_dict = dict(type="data", array=ql_std.loc["train"].values)
                 fig.add_trace(
                     go.Bar(
                         x=[str(x) for x in ql_data.columns],
@@ -188,14 +176,8 @@ class PerformanceResults:
             # Add bars for test data
             if "test" in ql_data.index:
                 error_y_dict = None
-                if (
-                    show_error_bars
-                    and ql_std is not None
-                    and "test" in ql_std.index
-                ):
-                    error_y_dict = dict(
-                        type="data", array=ql_std.loc["test"].values
-                    )
+                if show_error_bars and ql_std is not None and "test" in ql_std.index:
+                    error_y_dict = dict(type="data", array=ql_std.loc["test"].values)
                 fig.add_trace(
                     go.Bar(
                         x=[str(x) for x in ql_data.columns],
@@ -392,9 +374,7 @@ class PerformanceResults:
                 )
 
             fig.update_xaxes(title_text="Class", row=current_row, col=1)
-            fig.update_yaxes(
-                title_text="Predicted Probability", row=current_row, col=1
-            )
+            fig.update_yaxes(title_text="Predicted Probability", row=current_row, col=1)
 
         if title is None:
             title = f"Log loss performance - {self.model_name}"
@@ -470,14 +450,8 @@ class PerformanceResults:
 
             if "train" in ql_data.index:
                 error_y_dict = None
-                if (
-                    show_error_bars
-                    and ql_std is not None
-                    and "train" in ql_std.index
-                ):
-                    error_y_dict = dict(
-                        type="data", array=ql_std.loc["train"].values
-                    )
+                if show_error_bars and ql_std is not None and "train" in ql_std.index:
+                    error_y_dict = dict(type="data", array=ql_std.loc["train"].values)
                 fig.add_trace(
                     go.Bar(
                         x=[str(x) for x in ql_data.columns],
@@ -493,14 +467,8 @@ class PerformanceResults:
 
             if "test" in ql_data.index:
                 error_y_dict = None
-                if (
-                    show_error_bars
-                    and ql_std is not None
-                    and "test" in ql_std.index
-                ):
-                    error_y_dict = dict(
-                        type="data", array=ql_std.loc["test"].values
-                    )
+                if show_error_bars and ql_std is not None and "test" in ql_std.index:
+                    error_y_dict = dict(type="data", array=ql_std.loc["test"].values)
                 fig.add_trace(
                     go.Bar(
                         x=[str(x) for x in ql_data.columns],
@@ -659,10 +627,7 @@ class PerformanceResults:
             else:
                 summary_data["Log loss test mean"] = [np.nan]
 
-            if (
-                "train" in ll_results_df.index
-                and "test" in ll_results_df.index
-            ):
+            if "train" in ll_results_df.index and "test" in ll_results_df.index:
                 train_loss = ll_results_df.loc["train"].mean()
                 test_loss = ll_results_df.loc["test"].mean()
                 summary_data["Log loss train/test ratio"] = [
@@ -673,9 +638,7 @@ class PerformanceResults:
 
             # Add variable info
             if "variables" in ll_data:
-                summary_data["Log loss variables"] = [
-                    ", ".join(ll_data["variables"])
-                ]
+                summary_data["Log loss variables"] = [", ".join(ll_data["variables"])]
 
         summary_df = pd.DataFrame(summary_data)
         logger.debug(f"Summary generated with shape {summary_df.shape}")
@@ -723,8 +686,7 @@ def _save_figure(fig: go.Figure, save_path: str) -> None:
             html_path = save_path.rsplit(".", 1)[0] + ".html"
             fig.write_html(html_path)
             logger.warning(
-                f"kaleido not available for image export. "
-                f"Saved as HTML to {html_path}"
+                f"kaleido not available for image export. Saved as HTML to {html_path}"
             )
     except OSError as e:
         error_msg = f"Failed to save plot to {save_path}: {str(e)}"

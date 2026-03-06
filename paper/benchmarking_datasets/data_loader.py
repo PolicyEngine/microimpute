@@ -137,9 +137,7 @@ def get_benchmark_suite_metadata(suite_id: int = 269) -> pd.DataFrame:
                 for feat in features.values():
                     feature_names.append(feat.name)
                     feat_type = feat.data_type
-                    feature_types[feat_type] = (
-                        feature_types.get(feat_type, 0) + 1
-                    )
+                    feature_types[feat_type] = feature_types.get(feat_type, 0) + 1
 
             # Calculate interpretability score
             interpretability = calculate_interpretability_score(feature_names)
@@ -151,9 +149,7 @@ def get_benchmark_suite_metadata(suite_id: int = 269) -> pd.DataFrame:
                 "n_instances": qualities.get("NumberOfInstances"),
                 "n_features": qualities.get("NumberOfFeatures"),
                 "n_numeric_features": qualities.get("NumberOfNumericFeatures"),
-                "n_categorical_features": qualities.get(
-                    "NumberOfSymbolicFeatures"
-                ),
+                "n_categorical_features": qualities.get("NumberOfSymbolicFeatures"),
                 "n_missing_values": qualities.get("NumberOfMissingValues"),
                 "pct_missing": qualities.get("PercentageOfMissingValues"),
                 "n_instances_with_missing": qualities.get(
@@ -285,16 +281,12 @@ def filter_datasets(
 
     # Filter by interpretability score
     if min_interpretability_score is not None:
-        mask = mask & (
-            df["interpretability_score"] >= min_interpretability_score
-        )
+        mask = mask & (df["interpretability_score"] >= min_interpretability_score)
 
     # Exclude datasets by name pattern
     if exclude_name_patterns:
         for pattern in exclude_name_patterns:
-            mask = mask & (
-                ~df["name"].str.lower().str.contains(pattern.lower())
-            )
+            mask = mask & (~df["name"].str.lower().str.contains(pattern.lower()))
 
     filtered_df = df[mask].copy()
 
@@ -371,9 +363,7 @@ def download_filtered_datasets(
         )
 
         try:
-            dataset = openml.datasets.get_dataset(
-                dataset_id, download_data=True
-            )
+            dataset = openml.datasets.get_dataset(dataset_id, download_data=True)
             X, y, categorical_indicator, attribute_names = dataset.get_data(
                 target=dataset.default_target_attribute
             )
@@ -385,9 +375,7 @@ def download_filtered_datasets(
                 df[target_name] = y
 
             # Clean filename
-            clean_name = (
-                dataset_name.lower().replace(" ", "_").replace("-", "_")
-            )
+            clean_name = dataset_name.lower().replace(" ", "_").replace("-", "_")
 
             # Save to file
             if file_format == "parquet":
@@ -406,9 +394,7 @@ def download_filtered_datasets(
                 "categorical_features": (
                     [
                         name
-                        for name, is_cat in zip(
-                            attribute_names, categorical_indicator
-                        )
+                        for name, is_cat in zip(attribute_names, categorical_indicator)
                         if is_cat
                     ]
                     if categorical_indicator
@@ -416,10 +402,7 @@ def download_filtered_datasets(
                 ),
             }
 
-            print(
-                f"    Saved: {output_path} ({df.shape[0]} rows, "
-                f"{df.shape[1]} cols)"
-            )
+            print(f"    Saved: {output_path} ({df.shape[0]} rows, {df.shape[1]} cols)")
 
         except Exception as e:
             print(f"    ERROR: {e}")
@@ -554,9 +537,7 @@ if __name__ == "__main__":
 
     filtered_df = filter_datasets(metadata_df, **FILTER_PARAMS)
 
-    print(
-        f"\nDatasets meeting criteria: {len(filtered_df)} / {len(metadata_df)}"
-    )
+    print(f"\nDatasets meeting criteria: {len(filtered_df)} / {len(metadata_df)}")
     print("\n" + "-" * 80)
 
     filter_cols = [

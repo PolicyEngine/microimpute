@@ -100,9 +100,7 @@ def compute_predictor_correlations(
     if imputed_variables:
         missing_targets = set(imputed_variables) - set(data.columns)
         if missing_targets:
-            raise ValueError(
-                f"Target variables not found in data: {missing_targets}"
-            )
+            raise ValueError(f"Target variables not found in data: {missing_targets}")
 
     valid_methods = ["all", "pearson", "spearman", "mutual_info"]
     if method not in valid_methods:
@@ -193,9 +191,7 @@ def compute_predictor_correlations(
         target_is_categorical = {}
 
         for target in imputed_variables:
-            var_type, _ = detector.categorize_variable(
-                data[target], target, log
-            )
+            var_type, _ = detector.categorize_variable(data[target], target, log)
             target_is_categorical[target] = var_type in [
                 "categorical",
                 "numeric_categorical",
@@ -205,9 +201,7 @@ def compute_predictor_correlations(
             if target_is_categorical[target]:
                 # Encode categorical targets
                 le = LabelEncoder()
-                targets_encoded[target] = le.fit_transform(
-                    data[target].astype(str)
-                )
+                targets_encoded[target] = le.fit_transform(data[target].astype(str))
             else:
                 targets_encoded[target] = data[target].values
 
@@ -340,16 +334,12 @@ def leave_one_out_analysis(
                 "avg_log_loss": losses.get("log_loss", 0),
                 "loss_increase": loss_increase,
                 "relative_impact": (
-                    (loss_increase / baseline_total * 100)
-                    if baseline_total > 0
-                    else 0
+                    (loss_increase / baseline_total * 100) if baseline_total > 0 else 0
                 ),
             }
 
         except Exception as e:
-            log.warning(
-                f"Failed to evaluate model without predictor {pred}: {e}"
-            )
+            log.warning(f"Failed to evaluate model without predictor {pred}: {e}")
             return {
                 "predictor_removed": pred,
                 "avg_quantile_loss": np.nan,
@@ -447,7 +437,6 @@ def progressive_predictor_inclusion(
         range(min(max_predictors, len(predictors))),
         desc="Progressive inclusion",
     ):
-
         best_predictor = None
         best_step_loss = float("inf")
         best_losses_detail = {}
@@ -468,9 +457,7 @@ def progressive_predictor_inclusion(
                     random_state=random_state,
                 )
 
-                total_loss = losses["quantile_loss"] + losses.get(
-                    "log_loss", 0
-                )
+                total_loss = losses["quantile_loss"] + losses.get("log_loss", 0)
 
                 if total_loss < best_step_loss:
                     best_step_loss = total_loss
@@ -494,9 +481,7 @@ def progressive_predictor_inclusion(
 
             # Calculate improvements
             marginal_improvement = (
-                previous_loss - best_step_loss
-                if previous_loss != float("inf")
-                else 0.0
+                previous_loss - best_step_loss if previous_loss != float("inf") else 0.0
             )
             cumulative_improvement = first_loss - best_step_loss
 
@@ -558,13 +543,9 @@ def _compute_mutual_information(
 
     # Use appropriate MI function based on target type
     if y_is_categorical:
-        mi = mutual_info_classif(x_clean, y_clean, random_state=RANDOM_STATE)[
-            0
-        ]
+        mi = mutual_info_classif(x_clean, y_clean, random_state=RANDOM_STATE)[0]
     else:
-        mi = mutual_info_regression(
-            x_clean, y_clean, random_state=RANDOM_STATE
-        )[0]
+        mi = mutual_info_regression(x_clean, y_clean, random_state=RANDOM_STATE)[0]
 
     return mi
 

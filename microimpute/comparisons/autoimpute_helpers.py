@@ -108,9 +108,7 @@ def prepare_data_for_imputation(
         imputed variables.
     """
     # Remove imputed variables from receiver if present
-    receiver_data = receiver_data.drop(
-        columns=imputed_variables, errors="ignore"
-    )
+    receiver_data = receiver_data.drop(columns=imputed_variables, errors="ignore")
 
     training_data = donor_data.copy()
     imputing_data = receiver_data.copy()
@@ -141,9 +139,7 @@ def prepare_data_for_imputation(
                 raise ValueError(error_msg)
 
         # Group columns by transformation type
-        normalize_cols = [
-            col for col, t in preprocessing.items() if t == "normalize"
-        ]
+        normalize_cols = [col for col, t in preprocessing.items() if t == "normalize"]
         log_cols = [col for col, t in preprocessing.items() if t == "log"]
         asinh_cols = [col for col, t in preprocessing.items() if t == "asinh"]
 
@@ -169,9 +165,7 @@ def prepare_data_for_imputation(
                 full_data=True,
                 train_size=train_size,
                 test_size=test_size,
-                normalize=(
-                    predictor_normalize if predictor_normalize else False
-                ),
+                normalize=(predictor_normalize if predictor_normalize else False),
                 log_transform=predictor_log if predictor_log else False,
                 asinh_transform=predictor_asinh if predictor_asinh else False,
             )
@@ -288,11 +282,7 @@ def evaluate_model(
         model_hyperparams=hyperparameters,
     )
 
-    if (
-        tune_hyperparams
-        and isinstance(cv_result, tuple)
-        and len(cv_result) == 2
-    ):
+    if tune_hyperparams and isinstance(cv_result, tuple) and len(cv_result) == 2:
         final_results, best_params = cv_result
         return model_name, final_results, best_params
     else:
@@ -342,8 +332,7 @@ def fit_and_predict_model(
         categorical_vars = [
             var
             for var in imputed_variables
-            if get_metric_for_variable_type(training_data[var], var)
-            == "log_loss"
+            if get_metric_for_variable_type(training_data[var], var) == "log_loss"
         ]
         error_msg = (
             f"QuantReg does not support categorical variables: {categorical_vars}. "
@@ -412,16 +401,12 @@ def select_best_model_dual_metrics(
     model_metrics = {}
     for model_name, results in method_results.items():
         model_metrics[model_name] = {
-            "quantile_loss": results.get("quantile_loss", {}).get(
-                "mean_test", np.inf
-            ),
+            "quantile_loss": results.get("quantile_loss", {}).get("mean_test", np.inf),
             "log_loss": results.get("log_loss", {}).get("mean_test", np.inf),
             "n_quantile_vars": len(
                 results.get("quantile_loss", {}).get("variables", [])
             ),
-            "n_log_vars": len(
-                results.get("log_loss", {}).get("variables", [])
-            ),
+            "n_log_vars": len(results.get("log_loss", {}).get("variables", [])),
         }
 
     # Select based on priority
@@ -453,9 +438,7 @@ def select_best_model_dual_metrics(
 
     elif metric_priority == "categorical":
         # Check if any model has categorical variables
-        has_categorical = any(
-            model_metrics[m]["n_log_vars"] > 0 for m in model_metrics
-        )
+        has_categorical = any(model_metrics[m]["n_log_vars"] > 0 for m in model_metrics)
         if not has_categorical:
             error_msg = (
                 "No categorical variables found for evaluation with 'categorical' metric priority. "
@@ -483,8 +466,7 @@ def select_best_model_dual_metrics(
 
         # Check if there are any variables to evaluate
         total_vars_across_models = sum(
-            model_metrics[m]["n_quantile_vars"]
-            + model_metrics[m]["n_log_vars"]
+            model_metrics[m]["n_quantile_vars"] + model_metrics[m]["n_log_vars"]
             for m in models
         )
         if total_vars_across_models == 0:
@@ -527,8 +509,7 @@ def select_best_model_dual_metrics(
     else:  # combined or other
         # Check if there are any variables to evaluate
         total_vars = sum(
-            model_metrics[m]["n_quantile_vars"]
-            + model_metrics[m]["n_log_vars"]
+            model_metrics[m]["n_quantile_vars"] + model_metrics[m]["n_log_vars"]
             for m in model_metrics
         )
         if total_vars == 0:
@@ -549,9 +530,7 @@ def select_best_model_dual_metrics(
                 if not np.isnan(metrics["quantile_loss"])
                 else 0
             )
-            l_loss = (
-                metrics["log_loss"] if not np.isnan(metrics["log_loss"]) else 0
-            )
+            l_loss = metrics["log_loss"] if not np.isnan(metrics["log_loss"]) else 0
             n_q = metrics["n_quantile_vars"]
             n_l = metrics["n_log_vars"]
 
@@ -562,12 +541,12 @@ def select_best_model_dual_metrics(
                     best_method = model_name
 
         if best_method is None:
-            error_msg = "Failed to select a model - all models have infinite combined scores."
+            error_msg = (
+                "Failed to select a model - all models have infinite combined scores."
+            )
             log.error(error_msg)
             raise RuntimeError(error_msg)
 
-        log.info(
-            f"Selected {best_method} based on combined metric: {best_score:.6f}"
-        )
+        log.info(f"Selected {best_method} based on combined metric: {best_score:.6f}")
 
     return best_method, model_metrics[best_method]

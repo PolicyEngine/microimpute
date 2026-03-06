@@ -30,9 +30,7 @@ log = logging.getLogger(__name__)
 MetricType = Literal["quantile_loss", "log_loss"]
 
 
-def get_metric_for_variable_type(
-    series: pd.Series, col_name: str = "variable"
-) -> str:
+def get_metric_for_variable_type(series: pd.Series, col_name: str = "variable") -> str:
     """Detect the metric to use depending on whether a variable is categorical or numerical.
 
     Uses the VariableTypeDetector from the imputer module for consistency.
@@ -97,9 +95,7 @@ def log_loss(
     """
     try:
         # Handle case where predictions are class labels instead of probabilities
-        if len(y_pred.shape) == 1 or (
-            len(y_pred.shape) == 2 and y_pred.shape[1] == 1
-        ):
+        if len(y_pred.shape) == 1 or (len(y_pred.shape) == 2 and y_pred.shape[1] == 1):
             # Binary case or class predictions
             if labels is None:
                 labels = np.unique(y_true)
@@ -139,9 +135,7 @@ def log_loss(
                     f"for {n_classes}-class classification."
                 )
 
-        return sklearn_log_loss(
-            y_true, y_pred, normalize=normalize, labels=labels
-        )
+        return sklearn_log_loss(y_true, y_pred, normalize=normalize, labels=labels)
     except Exception as e:
         log.error(f"Error computing log loss: {str(e)}")
         raise RuntimeError(f"Failed to compute log loss: {str(e)}") from e
@@ -225,9 +219,7 @@ def compute_loss(
             # Validate quantile value
             validate_quantiles([q])
 
-            log.debug(
-                f"Computing quantile loss for q={q} with {len(test_y)} samples"
-            )
+            log.debug(f"Computing quantile loss for q={q} with {len(test_y)} samples")
             losses = quantile_loss(q, test_y, imputations)
             mean_loss = np.mean(losses)
             log.debug(f"Quantile loss at q={q}: mean={mean_loss:.6f}")
@@ -236,9 +228,7 @@ def compute_loss(
         elif metric == "log_loss":
             log.debug(f"Computing log loss with {len(test_y)} samples")
             # Log loss returns a single value by default
-            loss_value = log_loss(
-                test_y, imputations, normalize=True, labels=labels
-            )
+            loss_value = log_loss(test_y, imputations, normalize=True, labels=labels)
             log.debug(f"Log loss: {loss_value:.6f}")
             # Return array of same value for consistency
             losses = np.full(len(test_y), loss_value)
@@ -291,7 +281,9 @@ def _compute_method_losses(
 
         # Validate that the quantile exists in the imputation results
         if quantile not in imputation:
-            error_msg = f"Quantile {quantile} not found in imputations for method {method}"
+            error_msg = (
+                f"Quantile {quantile} not found in imputations for method {method}"
+            )
             log.error(error_msg)
             raise ValueError(error_msg)
 
@@ -419,8 +411,7 @@ def _compute_method_losses(
     all_categorical_losses = [
         r["Loss"]
         for r in results
-        if r["Imputed Variable"] == "mean_log_loss"
-        and r["Percentile"] != "mean_loss"
+        if r["Imputed Variable"] == "mean_log_loss" and r["Percentile"] != "mean_loss"
     ]
     if all_categorical_losses:
         avg_cat_loss = np.mean(all_categorical_losses)
@@ -547,21 +538,15 @@ def kl_divergence(
         - Uses scipy.special.rel_entr for numerical stability
     """
     if len(donor_values) == 0 or len(receiver_values) == 0:
-        raise ValueError(
-            "Both donor and receiver values must be non-empty arrays"
-        )
+        raise ValueError("Both donor and receiver values must be non-empty arrays")
 
     # Get all unique categories from both distributions
-    all_categories = np.union1d(
-        np.unique(donor_values), np.unique(receiver_values)
-    )
+    all_categories = np.union1d(np.unique(donor_values), np.unique(receiver_values))
 
     # Calculate probability distributions (weighted if weights provided)
     if donor_weights is not None:
         # Compute weighted probabilities
-        donor_df = pd.DataFrame(
-            {"value": donor_values, "weight": donor_weights}
-        )
+        donor_df = pd.DataFrame({"value": donor_values, "weight": donor_weights})
         donor_grouped = donor_df.groupby("value")["weight"].sum()
         donor_total = donor_grouped.sum()
         donor_counts = donor_grouped / donor_total
@@ -577,15 +562,11 @@ def kl_divergence(
         receiver_total = receiver_grouped.sum()
         receiver_counts = receiver_grouped / receiver_total
     else:
-        receiver_counts = pd.Series(receiver_values).value_counts(
-            normalize=True
-        )
+        receiver_counts = pd.Series(receiver_values).value_counts(normalize=True)
 
     # Create probability arrays for all categories
     p_donor = np.array([donor_counts.get(cat, 0.0) for cat in all_categories])
-    q_receiver = np.array(
-        [receiver_counts.get(cat, 0.0) for cat in all_categories]
-    )
+    q_receiver = np.array([receiver_counts.get(cat, 0.0) for cat in all_categories])
 
     # Add small epsilon to avoid log(0) and division by zero
     epsilon = 1e-10
@@ -643,17 +624,13 @@ def compare_distributions(
         1    region          kl_divergence    0.166667
     """
     try:
-        log.info(
-            f"Comparing distributions for {len(imputed_variables)} variables"
-        )
+        log.info(f"Comparing distributions for {len(imputed_variables)} variables")
         log.info(f"Donor data shape: {donor_data.shape}")
         log.info(f"Receiver data shape: {receiver_data.shape}")
 
         # Validate inputs
         validate_columns_exist(donor_data, imputed_variables, "donor_data")
-        validate_columns_exist(
-            receiver_data, imputed_variables, "receiver_data"
-        )
+        validate_columns_exist(receiver_data, imputed_variables, "receiver_data")
 
         # Convert weights to numpy arrays if provided
         donor_weights_arr = None
@@ -703,9 +680,7 @@ def compare_distributions(
                 continue
 
             # Detect variable type using donor data
-            var_type, _ = detector.categorize_variable(
-                donor_data[var], var, log
-            )
+            var_type, _ = detector.categorize_variable(donor_data[var], var, log)
 
             # Choose appropriate metric
             if var_type in ["bool", "categorical", "numeric_categorical"]:

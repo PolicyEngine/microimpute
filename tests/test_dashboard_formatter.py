@@ -208,9 +208,7 @@ class TestFormatCSVBasic:
 
     def test_output_has_correct_columns(self, sample_autoimpute_result):
         """Test that output has all expected columns."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -232,9 +230,7 @@ class TestFormatCSVBasic:
         sample_progressive_inclusion,
     ):
         """Test that all type values are from the valid set."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -249,9 +245,9 @@ class TestFormatCSVBasic:
             )
 
             unique_types = set(result["type"].unique())
-            assert unique_types.issubset(
-                VALID_TYPES
-            ), f"Invalid types found: {unique_types - VALID_TYPES}"
+            assert unique_types.issubset(VALID_TYPES), (
+                f"Invalid types found: {unique_types - VALID_TYPES}"
+            )
             assert len(unique_types) > 0
         finally:
             Path(output_path).unlink()
@@ -260,9 +256,7 @@ class TestFormatCSVBasic:
         self, sample_autoimpute_result, sample_distribution_comparison
     ):
         """Test that metric_value column contains numeric values."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -281,9 +275,7 @@ class TestFormatCSVBasic:
         self, sample_autoimpute_result, sample_progressive_inclusion
     ):
         """Test that additional_info contains valid JSON."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -309,9 +301,7 @@ class TestFormatCSVBenchmarkLoss:
 
     def test_benchmark_loss_from_autoimpute(self, sample_autoimpute_result):
         """Test benchmark loss formatting from autoimpute results."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -335,20 +325,14 @@ class TestFormatCSVBenchmarkLoss:
             # Check quantile values
             quantiles = benchmark_rows["quantile"].unique()
             assert "mean" in quantiles  # Mean should be present
-            numeric_quantiles = [
-                q for q in quantiles if isinstance(q, (int, float))
-            ]
-            assert all(
-                0 <= q <= 1 for q in numeric_quantiles
-            )  # Valid quantile range
+            numeric_quantiles = [q for q in quantiles if isinstance(q, (int, float))]
+            assert all(0 <= q <= 1 for q in numeric_quantiles)  # Valid quantile range
         finally:
             Path(output_path).unlink()
 
     def test_best_method_marked_correctly(self, sample_autoimpute_result):
         """Test that best method has correct suffix."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -361,28 +345,18 @@ class TestFormatCSVBenchmarkLoss:
             benchmark_rows = result[result["type"] == "benchmark_loss"]
 
             # Check that OLS has _best_method suffix
-            ols_rows = benchmark_rows[
-                benchmark_rows["method"].str.contains("OLS")
-            ]
-            assert all(
-                "_best_method" in method for method in ols_rows["method"]
-            )
+            ols_rows = benchmark_rows[benchmark_rows["method"].str.contains("OLS")]
+            assert all("_best_method" in method for method in ols_rows["method"])
 
             # Check that QRF does not have the suffix
-            qrf_rows = benchmark_rows[
-                benchmark_rows["method"].str.contains("QRF")
-            ]
-            assert all(
-                "_best_method" not in method for method in qrf_rows["method"]
-            )
+            qrf_rows = benchmark_rows[benchmark_rows["method"].str.contains("QRF")]
+            assert all("_best_method" not in method for method in qrf_rows["method"])
         finally:
             Path(output_path).unlink()
 
     def test_metric_std_column_populated(self, sample_autoimpute_result):
         """Test that metric_std column is populated from CV results."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -425,9 +399,7 @@ class TestFormatCSVBenchmarkLoss:
                 & (benchmark_rows["split"] == "test")
             ]
             assert len(test_mean_row) == 1
-            assert np.isclose(
-                test_mean_row.iloc[0]["metric_std"], 0.0025, rtol=1e-10
-            )
+            assert np.isclose(test_mean_row.iloc[0]["metric_std"], 0.0025, rtol=1e-10)
 
         finally:
             Path(output_path).unlink()
@@ -436,13 +408,9 @@ class TestFormatCSVBenchmarkLoss:
 class TestFormatCSVDistributionDistance:
     """Tests for distribution_distance type formatting."""
 
-    def test_distribution_distance_formatting(
-        self, sample_distribution_comparison
-    ):
+    def test_distribution_distance_formatting(self, sample_distribution_comparison):
         """Test distribution distance formatting."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -460,8 +428,7 @@ class TestFormatCSVDistributionDistance:
 
             # Check metric name is formatted correctly
             assert all(
-                metric == "wasserstein_distance"
-                for metric in dist_rows["metric_name"]
+                metric == "wasserstein_distance" for metric in dist_rows["metric_name"]
             )
 
             # Check split is 'full'
@@ -476,13 +443,9 @@ class TestFormatCSVDistributionDistance:
 class TestFormatCSVPredictorCorrelations:
     """Tests for predictor_correlation and predictor_target_mi types."""
 
-    def test_predictor_correlation_formatting(
-        self, sample_predictor_correlations
-    ):
+    def test_predictor_correlation_formatting(self, sample_predictor_correlations):
         """Test predictor correlation formatting."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -511,13 +474,9 @@ class TestFormatCSVPredictorCorrelations:
         finally:
             Path(output_path).unlink()
 
-    def test_predictor_target_mi_formatting(
-        self, sample_predictor_correlations
-    ):
+    def test_predictor_target_mi_formatting(self, sample_predictor_correlations):
         """Test predictor-target MI formatting."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -532,9 +491,7 @@ class TestFormatCSVPredictorCorrelations:
             assert len(mi_rows) == 6
 
             # Check metric name
-            assert all(
-                metric == "mutual_info" for metric in mi_rows["metric_name"]
-            )
+            assert all(metric == "mutual_info" for metric in mi_rows["metric_name"])
 
             # Check additional_info contains target
             for info in mi_rows["additional_info"]:
@@ -548,13 +505,9 @@ class TestFormatCSVPredictorCorrelations:
 class TestFormatCSVPredictorImportance:
     """Tests for predictor_importance type formatting."""
 
-    def test_predictor_importance_formatting(
-        self, sample_predictor_importance
-    ):
+    def test_predictor_importance_formatting(self, sample_predictor_importance):
         """Test predictor importance formatting."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -586,13 +539,9 @@ class TestFormatCSVPredictorImportance:
 class TestFormatCSVProgressiveInclusion:
     """Tests for progressive_inclusion type formatting."""
 
-    def test_progressive_inclusion_formatting(
-        self, sample_progressive_inclusion
-    ):
+    def test_progressive_inclusion_formatting(self, sample_progressive_inclusion):
         """Test progressive inclusion formatting."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -627,20 +576,15 @@ class TestFormatCSVProgressiveInclusion:
                 prog_rows["metric_name"] == "cumulative_improvement"
             ]
             steps = [
-                json.loads(info)["step"]
-                for info in cumulative_rows["additional_info"]
+                json.loads(info)["step"] for info in cumulative_rows["additional_info"]
             ]
             assert steps == sorted(steps)  # Should be in ascending order
         finally:
             Path(output_path).unlink()
 
-    def test_progressive_inclusion_step_ordering(
-        self, sample_progressive_inclusion
-    ):
+    def test_progressive_inclusion_step_ordering(self, sample_progressive_inclusion):
         """Test that steps are correctly numbered and ordered."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -734,12 +678,8 @@ class TestDistributionBins:
         # Create receiver data (slightly different distributions)
         receiver_data = pd.DataFrame(
             {
-                "numerical_var1": np.random.normal(
-                    102, 14, 150
-                ),  # Shifted mean
-                "numerical_var2": np.random.exponential(
-                    2.1, 150
-                ),  # Different rate
+                "numerical_var1": np.random.normal(102, 14, 150),  # Shifted mean
+                "numerical_var2": np.random.exponential(2.1, 150),  # Different rate
                 "categorical_var": np.random.choice(
                     ["A", "B", "C"], 150, p=[0.4, 0.4, 0.2]
                 ),
@@ -759,9 +699,7 @@ class TestDistributionBins:
             "categorical_var",
         ]
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -798,17 +736,13 @@ class TestDistributionBins:
         finally:
             Path(output_path).unlink()
 
-    def test_numerical_histogram_heights_match_numpy(
-        self, sample_donor_receiver_data
-    ):
+    def test_numerical_histogram_heights_match_numpy(self, sample_donor_receiver_data):
         """Test that histogram heights match numpy's histogram output."""
         donor_data, receiver_data = sample_donor_receiver_data
         var_name = "numerical_var1"
         n_bins = 15
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -870,9 +804,7 @@ class TestDistributionBins:
                 assert data["bin_index"] == i
                 # Check bin edges
                 assert np.isclose(data["bin_start"], bin_edges[i], rtol=1e-10)
-                assert np.isclose(
-                    data["bin_end"], bin_edges[i + 1], rtol=1e-10
-                )
+                assert np.isclose(data["bin_end"], bin_edges[i + 1], rtol=1e-10)
                 # Check heights match numpy's output
                 assert np.isclose(
                     data["donor_height"], donor_heights_expected[i], rtol=1e-10
@@ -890,16 +822,12 @@ class TestDistributionBins:
         finally:
             Path(output_path).unlink()
 
-    def test_categorical_distribution_proportions(
-        self, sample_donor_receiver_data
-    ):
+    def test_categorical_distribution_proportions(self, sample_donor_receiver_data):
         """Test that categorical distribution proportions are computed correctly."""
         donor_data, receiver_data = sample_donor_receiver_data
         var_name = "categorical_var"
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -995,9 +923,7 @@ class TestDistributionBins:
         receiver_data = pd.DataFrame({"var1": [7, 8, 9], "var2": [10, 11, 12]})
         imputed_variables = ["var1", "var3"]  # var3 doesn't exist
 
-        with pytest.raises(
-            ValueError, match="missing from donor_data: \\['var3'\\]"
-        ):
+        with pytest.raises(ValueError, match="missing from donor_data: \\['var3'\\]"):
             format_csv(
                 donor_data=donor_data,
                 receiver_data=receiver_data,
@@ -1023,9 +949,7 @@ class TestEdgeCases:
 
     def test_none_values_handled_correctly(self):
         """Test that None values for optional parameters work."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -1047,9 +971,7 @@ class TestEdgeCases:
 
     def test_empty_dataframes_handled_correctly(self):
         """Test that empty DataFrames are handled gracefully."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -1068,9 +990,7 @@ class TestEdgeCases:
 
     def test_mixed_quantile_types(self, sample_autoimpute_result):
         """Test that mixed quantile types (numeric and string) are handled."""
-        with tempfile.NamedTemporaryFile(
-            mode="w", delete=False, suffix=".csv"
-        ) as f:
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
             output_path = f.name
 
         try:
@@ -1082,8 +1002,7 @@ class TestEdgeCases:
             # Check that we have both numeric quantiles and 'mean'
             quantiles = result["quantile"].unique()
             has_numeric = any(
-                isinstance(q, (int, float)) and not pd.isna(q)
-                for q in quantiles
+                isinstance(q, (int, float)) and not pd.isna(q) for q in quantiles
             )
             has_mean = "mean" in quantiles
 

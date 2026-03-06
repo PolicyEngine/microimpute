@@ -61,9 +61,7 @@ def sample_log_loss_results():
 
 
 @pytest.fixture
-def sample_combined_results(
-    sample_quantile_loss_results, sample_log_loss_results
-):
+def sample_combined_results(sample_quantile_loss_results, sample_log_loss_results):
     """Create sample combined metric results."""
     return {
         "quantile_loss": sample_quantile_loss_results,
@@ -91,9 +89,7 @@ def sample_probability_distribution():
     # Generate random probabilities that sum to 1
     probs = np.random.dirichlet(np.ones(n_classes), n_samples)
 
-    return pd.DataFrame(
-        probs, columns=[f"Class {i}" for i in range(n_classes)]
-    )
+    return pd.DataFrame(probs, columns=[f"Class {i}" for i in range(n_classes)])
 
 
 @pytest.fixture
@@ -225,9 +221,7 @@ class TestPerformanceResults:
             assert hasattr(fig, "data")
             assert len(fig.data) > 0  # Should have at least one trace
 
-    def test_probability_distribution_plot(
-        self, sample_probability_distribution
-    ):
+    def test_probability_distribution_plot(self, sample_probability_distribution):
         """Test probability distribution visualization."""
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
@@ -260,9 +254,7 @@ class TestPerformanceResults:
 
             # Verify the figure contains data
             assert hasattr(fig, "data")
-            assert (
-                len(fig.data) > 0
-            )  # Should have histogram or distribution data
+            assert len(fig.data) > 0  # Should have histogram or distribution data
 
     def test_df_compatibility(self, sample_quantile_loss_results):
         """Test compatibility with DataFrame input."""
@@ -460,9 +452,7 @@ class TestIntegrationWithModels:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
 
-            results = cross_validate_model(
-                OLS, data, predictors, imputed_variables
-            )
+            results = cross_validate_model(OLS, data, predictors, imputed_variables)
 
             # Test visualization
             viz = PerformanceResults(
@@ -517,9 +507,7 @@ class TestIntegrationWithModels:
             comparison_results = {}
 
             # OLS
-            ols_results = cross_validate_model(
-                OLS, data, predictors, imputed_variables
-            )
+            ols_results = cross_validate_model(OLS, data, predictors, imputed_variables)
             comparison_results["OLS"] = ols_results
 
             # QuantReg
@@ -529,9 +517,7 @@ class TestIntegrationWithModels:
             comparison_results["QuantReg"] = qr_results
 
             # Test comparison visualization
-            viz = MethodComparisonResults(
-                comparison_results, metric="quantile_loss"
-            )
+            viz = MethodComparisonResults(comparison_results, metric="quantile_loss")
 
             fig = viz.plot()
             assert fig is not None
@@ -592,9 +578,7 @@ class TestVisualizationFromAutoimpute:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
 
-            viz = MethodComparisonResults(
-                model_results, metric="quantile_loss"
-            )
+            viz = MethodComparisonResults(model_results, metric="quantile_loss")
 
             fig = viz.plot()
             assert fig is not None
@@ -638,9 +622,7 @@ class TestErrorHandling:
                 assert fig is not None
             except (ValueError, KeyError) as e:
                 # Should have informative error message
-                assert (
-                    "results" in str(e).lower() or "missing" in str(e).lower()
-                )
+                assert "results" in str(e).lower() or "missing" in str(e).lower()
 
     def test_nan_handling(self):
         """Test handling of NaN values in results."""
@@ -749,9 +731,7 @@ class TestErrorBars:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
 
-            viz = MethodComparisonResults(
-                comparison_results, metric="quantile_loss"
-            )
+            viz = MethodComparisonResults(comparison_results, metric="quantile_loss")
 
             fig = viz.plot(show_error_bars=True)
             assert fig is not None

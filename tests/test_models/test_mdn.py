@@ -496,9 +496,7 @@ def test_mdn_return_probs(mixed_type_data: pd.DataFrame) -> None:
     fitted_model = model.fit(X_train, predictors, imputed_variables)
 
     # Predict with return_probs=True
-    predictions = fitted_model.predict(
-        X_test, quantiles=[0.5], return_probs=True
-    )
+    predictions = fitted_model.predict(X_test, quantiles=[0.5], return_probs=True)
 
     assert "probabilities" in predictions
     assert "y_categorical" in predictions["probabilities"]

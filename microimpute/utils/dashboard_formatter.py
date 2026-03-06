@@ -43,9 +43,7 @@ def _compute_histogram_data(
 
     # Compute histogram heights (normalized as densities)
     donor_heights, _ = np.histogram(donor_clean, bins=bin_edges, density=True)
-    receiver_heights, _ = np.histogram(
-        receiver_clean, bins=bin_edges, density=True
-    )
+    receiver_heights, _ = np.histogram(receiver_clean, bins=bin_edges, density=True)
 
     # Convert to percentages for easier interpretation
     # Multiply by bin width to get probability mass per bin
@@ -99,14 +97,10 @@ def _compute_categorical_distribution(
     if len(all_categories) > max_categories:
         # Get top categories by combined frequency
         combined_counts = donor_counts.add(receiver_counts, fill_value=0)
-        top_categories = combined_counts.nlargest(
-            max_categories - 1
-        ).index.tolist()
+        top_categories = combined_counts.nlargest(max_categories - 1).index.tolist()
 
         # Calculate "Other" category
-        donor_other = donor_counts[
-            ~donor_counts.index.isin(top_categories)
-        ].sum()
+        donor_other = donor_counts[~donor_counts.index.isin(top_categories)].sum()
         receiver_other = receiver_counts[
             ~receiver_counts.index.isin(top_categories)
         ].sum()
@@ -116,13 +110,9 @@ def _compute_categorical_distribution(
         # Get proportions
         donor_props = [donor_counts.get(cat, 0) for cat in top_categories]
         donor_props.append(donor_other)
-        donor_props = (
-            pd.Series(donor_props) / donor_values.count() * 100
-        ).tolist()
+        donor_props = (pd.Series(donor_props) / donor_values.count() * 100).tolist()
 
-        receiver_props = [
-            receiver_counts.get(cat, 0) for cat in top_categories
-        ]
+        receiver_props = [receiver_counts.get(cat, 0) for cat in top_categories]
         receiver_props.append(receiver_other)
         receiver_props = (
             pd.Series(receiver_props) / receiver_values.count() * 100
@@ -190,9 +180,7 @@ def _format_histogram_rows(
                             "receiver_proportion": float(
                                 histogram_data["receiver_proportions"][i]
                             ),
-                            "n_samples_donor": int(
-                                histogram_data["n_samples_donor"]
-                            ),
+                            "n_samples_donor": int(histogram_data["n_samples_donor"]),
                             "n_samples_receiver": int(
                                 histogram_data["n_samples_receiver"]
                             ),
@@ -218,18 +206,12 @@ def _format_histogram_rows(
                         {
                             "bin_index": int(i),
                             "bin_start": float(histogram_data["bin_edges"][i]),
-                            "bin_end": float(
-                                histogram_data["bin_edges"][i + 1]
-                            ),
-                            "donor_height": float(
-                                histogram_data["donor_heights"][i]
-                            ),
+                            "bin_end": float(histogram_data["bin_edges"][i + 1]),
+                            "donor_height": float(histogram_data["donor_heights"][i]),
                             "receiver_height": float(
                                 histogram_data["receiver_heights"][i]
                             ),
-                            "n_samples_donor": int(
-                                histogram_data["n_samples_donor"]
-                            ),
+                            "n_samples_donor": int(histogram_data["n_samples_donor"]),
                             "n_samples_receiver": int(
                                 histogram_data["n_samples_receiver"]
                             ),
@@ -368,9 +350,7 @@ def format_csv(
             for method, cv_result in autoimpute_result.items():
                 # Append "_best_method" if this is the best method
                 method_label = (
-                    f"{method}_best_method"
-                    if method == best_method_name
-                    else method
+                    f"{method}_best_method" if method == best_method_name else method
                 )
 
                 for metric_type in ["quantile_loss", "log_loss"]:
@@ -392,9 +372,7 @@ def format_csv(
                                             and split in results_std_df.index
                                         ):
                                             std_value = float(
-                                                results_std_df.loc[
-                                                    split, quantile
-                                                ]
+                                                results_std_df.loc[split, quantile]
                                             )
 
                                         rows.append(
@@ -410,11 +388,7 @@ def format_csv(
                                                 "metric_std": std_value,
                                                 "split": split,
                                                 "additional_info": json.dumps(
-                                                    {
-                                                        "n_variables": len(
-                                                            variables
-                                                        )
-                                                    }
+                                                    {"n_variables": len(variables)}
                                                 ),
                                             }
                                         )
@@ -444,9 +418,7 @@ def format_csv(
 
                         if "mean_test" in data:
                             std_test = (
-                                float(data["std_test"])
-                                if "std_test" in data
-                                else None
+                                float(data["std_test"]) if "std_test" in data else None
                             )
                             rows.append(
                                 {
@@ -469,9 +441,7 @@ def format_csv(
         for _, row in comparison_metrics_df.iterrows():
             method = row["Method"]
             method_label = (
-                f"{method}_best_method"
-                if method == best_method_name
-                else method
+                f"{method}_best_method" if method == best_method_name else method
             )
 
             # Handle variable naming - check if it's an aggregate
@@ -510,10 +480,7 @@ def format_csv(
             )
 
     # 3. Process distribution comparison metrics
-    if (
-        distribution_comparison_df is not None
-        and not distribution_comparison_df.empty
-    ):
+    if distribution_comparison_df is not None and not distribution_comparison_df.empty:
         for _, row in distribution_comparison_df.iterrows():
             rows.append(
                 {
@@ -552,9 +519,7 @@ def format_csv(
                                 "metric_value": corr_matrix.iloc[i, j],
                                 "metric_std": None,
                                 "split": "full",
-                                "additional_info": json.dumps(
-                                    {"predictor2": pred2}
-                                ),
+                                "additional_info": json.dumps({"predictor2": pred2}),
                             }
                         )
 
@@ -578,10 +543,7 @@ def format_csv(
                     )
 
     # 5. Process predictor importance (leave-one-out)
-    if (
-        predictor_importance_df is not None
-        and not predictor_importance_df.empty
-    ):
+    if predictor_importance_df is not None and not predictor_importance_df.empty:
         for _, row in predictor_importance_df.iterrows():
             predictor = row["predictor_removed"]
 
@@ -596,9 +558,7 @@ def format_csv(
                     "metric_value": row["relative_impact"],
                     "metric_std": None,
                     "split": "test",
-                    "additional_info": json.dumps(
-                        {"removed_predictor": predictor}
-                    ),
+                    "additional_info": json.dumps({"removed_predictor": predictor}),
                 }
             )
 
@@ -613,17 +573,12 @@ def format_csv(
                     "metric_value": row["loss_increase"],
                     "metric_std": None,
                     "split": "test",
-                    "additional_info": json.dumps(
-                        {"removed_predictor": predictor}
-                    ),
+                    "additional_info": json.dumps({"removed_predictor": predictor}),
                 }
             )
 
     # 6. Process progressive predictor inclusion
-    if (
-        progressive_inclusion_df is not None
-        and not progressive_inclusion_df.empty
-    ):
+    if progressive_inclusion_df is not None and not progressive_inclusion_df.empty:
         for _, row in progressive_inclusion_df.iterrows():
             step = row["step"]
             predictor_added = row["predictor_added"]
@@ -636,9 +591,7 @@ def format_csv(
                 rows.append(
                     {
                         "type": "progressive_inclusion",
-                        "method": (
-                            best_method_name if best_method_name else "N/A"
-                        ),
+                        "method": (best_method_name if best_method_name else "N/A"),
                         "variable": "N/A",
                         "quantile": "N/A",
                         "metric_name": "cumulative_improvement",
@@ -660,15 +613,11 @@ def format_csv(
                 )
 
             # Add marginal improvement
-            if "marginal_improvement" in row and pd.notna(
-                row["marginal_improvement"]
-            ):
+            if "marginal_improvement" in row and pd.notna(row["marginal_improvement"]):
                 rows.append(
                     {
                         "type": "progressive_inclusion",
-                        "method": (
-                            best_method_name if best_method_name else "N/A"
-                        ),
+                        "method": (best_method_name if best_method_name else "N/A"),
                         "variable": "N/A",
                         "quantile": "N/A",
                         "metric_name": "marginal_improvement",
@@ -693,9 +642,7 @@ def format_csv(
             )
 
         # Validate that all imputed variables exist in both datasets
-        _validate_imputed_variables(
-            donor_data, receiver_data, imputed_variables
-        )
+        _validate_imputed_variables(donor_data, receiver_data, imputed_variables)
 
         # Generate histogram data for each imputed variable
         for var in imputed_variables:

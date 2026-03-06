@@ -63,9 +63,7 @@ def simple_data() -> tuple:
         }
     )
 
-    receiver = pd.DataFrame(
-        {"x1": np.random.randn(50), "x2": np.random.randn(50)}
-    )
+    receiver = pd.DataFrame({"x1": np.random.randn(50), "x2": np.random.randn(50)})
 
     return donor, receiver
 
@@ -111,9 +109,7 @@ def test_autoimpute_basic_structure(
     # Check receiver_data structure
     assert isinstance(results.receiver_data, pd.DataFrame)
     assert len(results.receiver_data) == len(diabetes_receiver)
-    assert all(
-        var in results.receiver_data.columns for var in imputed_variables
-    )
+    assert all(var in results.receiver_data.columns for var in imputed_variables)
 
     # Check cv_results structure - now a dict with dual metrics
     assert isinstance(results.cv_results, dict)
@@ -150,9 +146,7 @@ def test_autoimpute_all_models(
     assert len(results.imputations) > 2  # At least 2 models + best_method
 
     # Check that different models might produce different results
-    model_names = [
-        name for name in results.imputations.keys() if name != "best_method"
-    ]
+    model_names = [name for name in results.imputations.keys() if name != "best_method"]
     if len(model_names) >= 2:
         model1_imputations = results.imputations[model_names[0]]
         model2_imputations = results.imputations[model_names[1]]
@@ -182,9 +176,7 @@ def test_autoimpute_specific_models(
     # Should have best_method and at least one of the specified models
     assert "best_method" in results.imputations
     # At least one of the specified models should be present
-    model_names = [
-        name for name in results.imputations.keys() if name != "best_method"
-    ]
+    model_names = [name for name in results.imputations.keys() if name != "best_method"]
     assert len(model_names) >= 1
 
     # CV results should have both models as dict keys
@@ -295,9 +287,9 @@ def test_autoimpute_best_method_selection(simple_data: tuple) -> None:
     assert best_method_name is not None
 
     # Check that best_method key exists in fitted_models
-    assert (
-        "best_method" in results.fitted_models
-    ), "best_method key not found in fitted_models"
+    assert "best_method" in results.fitted_models, (
+        "best_method key not found in fitted_models"
+    )
 
     # Get the actual class name of the selected best method
     best_method_instance = results.fitted_models["best_method"]
@@ -307,9 +299,9 @@ def test_autoimpute_best_method_selection(simple_data: tuple) -> None:
     )
 
     # Verify that autoimpute selected the model with the lowest loss
-    assert (
-        actual_best_model_name == best_method_name
-    ), f"Expected {best_method_name} to be selected as best, but got {actual_best_model_name}"
+    assert actual_best_model_name == best_method_name, (
+        f"Expected {best_method_name} to be selected as best, but got {actual_best_model_name}"
+    )
 
     # Additionally verify the loss values are consistent
     all_losses = []
@@ -320,9 +312,9 @@ def test_autoimpute_best_method_selection(simple_data: tuple) -> None:
 
     # The best method we found should have the minimum loss
     if all_losses:
-        assert (
-            abs(best_loss - min(all_losses)) < 1e-6
-        ), f"Best loss {best_loss} doesn't match minimum loss {min(all_losses)}"
+        assert abs(best_loss - min(all_losses)) < 1e-6, (
+            f"Best loss {best_loss} doesn't match minimum loss {min(all_losses)}"
+        )
 
 
 def test_autoimpute_cv_results_structure(simple_data: tuple) -> None:
@@ -441,11 +433,7 @@ def test_autoimpute_consistency(simple_data: tuple) -> None:
     # Compare quantile_loss mean_test values for each model
     for model_name in results1.cv_results:
         if model_name in results2.cv_results:
-            loss1 = results1.cv_results[model_name]["quantile_loss"][
-                "mean_test"
-            ]
-            loss2 = results2.cv_results[model_name]["quantile_loss"][
-                "mean_test"
-            ]
+            loss1 = results1.cv_results[model_name]["quantile_loss"]["mean_test"]
+            loss2 = results2.cv_results[model_name]["quantile_loss"]["mean_test"]
             if not np.isnan(loss1) and not np.isnan(loss2):
                 np.testing.assert_allclose(loss1, loss2, rtol=0.10)

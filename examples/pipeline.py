@@ -93,9 +93,7 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
     imputed_variables = ["s1", "s4", "risk_factor"]
 
     # Remove imputed variables from receiver data
-    receiver_data_without_targets = receiver_data.drop(
-        columns=imputed_variables
-    )
+    receiver_data_without_targets = receiver_data.drop(columns=imputed_variables)
 
     print(f"Donor data shape: {donor_data.shape}")
     print(f"Receiver data shape: {receiver_data_without_targets.shape}")
@@ -160,9 +158,7 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
     )
 
     print("Correlation analysis completed:")
-    print(
-        f"  - Pearson correlation matrix: {predictor_correlations['pearson'].shape}"
-    )
+    print(f"  - Pearson correlation matrix: {predictor_correlations['pearson'].shape}")
     print(
         f"  - Spearman correlation matrix: {predictor_correlations['spearman'].shape}"
     )
@@ -271,9 +267,7 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
         count = len(formatted_df[formatted_df["type"] == result_type])
         print(f"  - {result_type}: {count} rows")
     print()
-    print(
-        f"The output file '{output_path}' is ready for dashboard visualization."
-    )
+    print(f"The output file '{output_path}' is ready for dashboard visualization.")
     print()
 
     return formatted_df

@@ -90,9 +90,7 @@ def test_quantreg_specific_quantiles(simple_data: pd.DataFrame) -> None:
     specific_quantiles = [0.1, 0.5, 0.9]
 
     model = QuantReg()
-    fitted_model = model.fit(
-        X_train, ["x1", "x2"], ["y"], quantiles=specific_quantiles
-    )
+    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"], quantiles=specific_quantiles)
 
     # Predict at the same quantiles
     predictions = fitted_model.predict(X_test, quantiles=specific_quantiles)
@@ -152,9 +150,7 @@ def test_quantreg_skewed_distribution(skewed_data: pd.DataFrame) -> None:
 
     # For skewed distributions, quantiles should be different from symmetric
     # Just check they're not exactly equal (some asymmetry is captured)
-    assert (
-        abs(upper_diff - lower_diff) > 0.01
-    ), "QuantReg should capture some asymmetry"
+    assert abs(upper_diff - lower_diff) > 0.01, "QuantReg should capture some asymmetry"
 
 
 # === Cross-Validation Test ===
@@ -244,18 +240,16 @@ def test_quantreg_heteroscedasticity() -> None:
     high_x_idx = X_test_sorted.index[-10:]
 
     low_x_spread = (
-        predictions[0.9].loc[low_x_idx, "y"]
-        - predictions[0.1].loc[low_x_idx, "y"]
+        predictions[0.9].loc[low_x_idx, "y"] - predictions[0.1].loc[low_x_idx, "y"]
     ).mean()
     high_x_spread = (
-        predictions[0.9].loc[high_x_idx, "y"]
-        - predictions[0.1].loc[high_x_idx, "y"]
+        predictions[0.9].loc[high_x_idx, "y"] - predictions[0.1].loc[high_x_idx, "y"]
     ).mean()
 
     # Check that there's some difference in spread (heteroscedasticity is partially captured)
-    assert (
-        abs(high_x_spread - low_x_spread) > 0.01
-    ), "QuantReg should show some heteroscedasticity effect"
+    assert abs(high_x_spread - low_x_spread) > 0.01, (
+        "QuantReg should show some heteroscedasticity effect"
+    )
 
 
 # === Comparison with OLS ===
@@ -269,17 +263,13 @@ def test_quantreg_vs_ols_median(simple_data: pd.DataFrame) -> None:
 
     # Fit QuantReg for median
     quantreg = QuantReg()
-    quantreg_fitted = quantreg.fit(
-        X_train, ["x1", "x2"], ["y"], quantiles=[0.5]
-    )
+    quantreg_fitted = quantreg.fit(X_train, ["x1", "x2"], ["y"], quantiles=[0.5])
     quantreg_pred = quantreg_fitted.predict(X_test, quantiles=[0.5])
 
     # Fit OLS
     ols = OLS()
     ols_fitted = ols.fit(X_train, ["x1", "x2"], ["y"])
-    ols_pred = ols_fitted.predict(
-        X_test, quantiles=[0.5], random_quantile_sample=False
-    )
+    ols_pred = ols_fitted.predict(X_test, quantiles=[0.5], random_quantile_sample=False)
 
     # For normally distributed errors, median and mean should be similar
     # QuantReg returns DataFrame for single quantile, OLS returns dict
@@ -287,9 +277,9 @@ def test_quantreg_vs_ols_median(simple_data: pd.DataFrame) -> None:
     ols_mean = ols_pred[0.5]["y"].values
 
     correlation = np.corrcoef(quantreg_median, ols_mean)[0, 1]
-    assert (
-        correlation > 0.85
-    ), "QuantReg median and OLS mean should be reasonably similar for normal data"
+    assert correlation > 0.85, (
+        "QuantReg median and OLS mean should be reasonably similar for normal data"
+    )
 
 
 # === Performance Tests ===
@@ -304,26 +294,18 @@ def test_quantreg_prediction_quality(diabetes_data: pd.DataFrame) -> None:
 
     # Split data
     np.random.seed(42)
-    train_idx = np.random.choice(
-        len(data), int(0.8 * len(data)), replace=False
-    )
+    train_idx = np.random.choice(len(data), int(0.8 * len(data)), replace=False)
     test_idx = np.array([i for i in range(len(data)) if i not in train_idx])
 
     train_data = data.iloc[train_idx].reset_index(drop=True)
     test_data = data.iloc[test_idx].reset_index(drop=True)
 
-    X_train = preprocess_data(
-        train_data, full_data=True, train_size=1.0, test_size=0.0
-    )
-    X_test = preprocess_data(
-        test_data, full_data=True, train_size=1.0, test_size=0.0
-    )
+    X_train = preprocess_data(train_data, full_data=True, train_size=1.0, test_size=0.0)
+    X_test = preprocess_data(test_data, full_data=True, train_size=1.0, test_size=0.0)
 
     # Fit model
     model = QuantReg()
-    fitted_model = model.fit(
-        X_train, predictors, imputed_variables, quantiles=[0.5]
-    )
+    fitted_model = model.fit(X_train, predictors, imputed_variables, quantiles=[0.5])
 
     # Get predictions
     predictions = fitted_model.predict(X_test, quantiles=[0.5])
