@@ -124,9 +124,7 @@ def progressive_predictor_exclusion(
     for step, pred_to_remove in enumerate(
         tqdm(predictor_order, desc="Progressive exclusion"), start=1
     ):
-        current_predictors = [
-            p for p in current_predictors if p != pred_to_remove
-        ]
+        current_predictors = [p for p in current_predictors if p != pred_to_remove]
 
         if len(current_predictors) == 0:
             # No predictors left - record as maximum degradation
@@ -153,9 +151,7 @@ def progressive_predictor_exclusion(
                 quantiles=quantiles,
             )
 
-            normalized_loss = (
-                loss / baseline_loss if baseline_loss > 0 else np.nan
-            )
+            normalized_loss = loss / baseline_loss if baseline_loss > 0 else np.nan
 
             results.append(
                 {
@@ -169,9 +165,7 @@ def progressive_predictor_exclusion(
             )
 
         except Exception as e:
-            log.warning(
-                f"Failed to evaluate after removing {pred_to_remove}: {e}"
-            )
+            log.warning(f"Failed to evaluate after removing {pred_to_remove}: {e}")
             results.append(
                 {
                     "step": step,
@@ -469,9 +463,7 @@ def create_benchmark_summary_table(
         # Compute ranks
         valid_losses = {k: v for k, v in losses.items() if not np.isnan(v)}
         if valid_losses:
-            sorted_methods = sorted(
-                valid_losses.keys(), key=lambda x: valid_losses[x]
-            )
+            sorted_methods = sorted(valid_losses.keys(), key=lambda x: valid_losses[x])
             ranks = {m: i + 1 for i, m in enumerate(sorted_methods)}
 
             # Fill in ranks for methods with NaN losses
@@ -494,9 +486,9 @@ def create_benchmark_summary_table(
         if cia_results and dataset_name in cia_results:
             for method in methods:
                 if method in cia_results[dataset_name]:
-                    row[f"{method} CIA"] = cia_results[dataset_name][
-                        method
-                    ].get("sensitivity_score", np.nan)
+                    row[f"{method} CIA"] = cia_results[dataset_name][method].get(
+                        "sensitivity_score", np.nan
+                    )
                 else:
                     row[f"{method} CIA"] = np.nan
 
@@ -565,9 +557,7 @@ def create_benchmark_heatmap(
                 # Handle both nested format and simple float format
                 if isinstance(val, dict) and "quantile_loss" in val:
                     # Nested format: cv_results[dataset][method]["quantile_loss"]["mean_test"]
-                    ql_row.append(
-                        val["quantile_loss"].get("mean_test", np.nan)
-                    )
+                    ql_row.append(val["quantile_loss"].get("mean_test", np.nan))
                 elif isinstance(val, (int, float)):
                     # Simple format: cv_results[dataset][method] = float
                     ql_row.append(val)
@@ -681,9 +671,7 @@ def create_benchmark_heatmap(
                 x=[None],
                 y=[None],
                 mode="markers",
-                marker=dict(
-                    size=12, color=METHOD_COLORS.get(method, "#999999")
-                ),
+                marker=dict(size=12, color=METHOD_COLORS.get(method, "#999999")),
                 name=method,
             )
         )

@@ -5,14 +5,10 @@ test:
 	pytest tests/ --cov=microimpute --cov-report=xml --maxfail=0
 
 check-format:
-	linecheck .
-	isort --check-only --profile black microimpute/
-	black . -l 79 --check
+	ruff format --check .
 
 format:
-	linecheck . --fix
-	isort --profile black microimpute/
-	black . -l 79
+	ruff format .
 
 documentation:
 	cd docs && jupyter book clean . --all

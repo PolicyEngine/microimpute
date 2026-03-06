@@ -97,9 +97,7 @@ class _RandomForestClassifierModel:
         self.classifier = RandomForestClassifier(**classifier_params)
         self.classifier.fit(X, y_encoded)
 
-    def predict(
-        self, X: pd.DataFrame, return_probs: bool = False
-    ) -> pd.Series:
+    def predict(self, X: pd.DataFrame, return_probs: bool = False) -> pd.Series:
         """Predict classes or probabilities."""
         if return_probs:
             probs = self.classifier.predict_proba(X)
@@ -188,12 +186,8 @@ class _QRFModel:
         # Sample from beta distribution
         random_generator = np.random.default_rng(self.seed)
         a = mean_quantile / (1 - mean_quantile)
-        input_quantiles = (
-            random_generator.beta(a, 1, size=len(X)) * count_samples
-        )
-        input_quantiles = np.clip(
-            input_quantiles.astype(int), 0, count_samples - 1
-        )
+        input_quantiles = random_generator.beta(a, 1, size=len(X)) * count_samples
+        input_quantiles = np.clip(input_quantiles.astype(int), 0, count_samples - 1)
 
         # Extract predictions
         if len(pred.shape) == 2:
@@ -254,9 +248,7 @@ class QRFResults(ImputerResults):
         self.constant_targets = constant_targets or {}
         self.dummy_processor = dummy_processor
 
-    def _get_encoded_predictors(
-        self, current_predictors: List[str]
-    ) -> List[str]:
+    def _get_encoded_predictors(self, current_predictors: List[str]) -> List[str]:
         """Get properly encoded predictor columns for sequential imputation.
 
         Args:
@@ -355,7 +347,7 @@ class QRFResults(ImputerResults):
 
                     if not quantiles:
                         self.logger.info(
-                            f"[{i+1}/{len(self.imputed_variables)}] Predicting for '{variable}'"
+                            f"[{i + 1}/{len(self.imputed_variables)}] Predicting for '{variable}'"
                         )
 
                     model = self.models[variable]
@@ -366,9 +358,7 @@ class QRFResults(ImputerResults):
                     )
 
                     # Get properly encoded predictor columns
-                    encoded_predictors = self._get_encoded_predictors(
-                        var_predictors
-                    )
+                    encoded_predictors = self._get_encoded_predictors(var_predictors)
 
                     self.logger.debug(
                         f"var_predictors for {variable}: {var_predictors}"
@@ -442,14 +432,11 @@ class QRFResults(ImputerResults):
                     # Track the dummy columns that were added
                     if (
                         self.dummy_processor
-                        and variable
-                        in self.dummy_processor.imputed_var_dummy_mapping
+                        and variable in self.dummy_processor.imputed_var_dummy_mapping
                     ):
-                        var_info = (
-                            self.dummy_processor.imputed_var_dummy_mapping[
-                                variable
-                            ]
-                        )
+                        var_info = self.dummy_processor.imputed_var_dummy_mapping[
+                            variable
+                        ]
                         if var_info["dummy_cols"]:
                             imputed_dummy_cols.update(var_info["dummy_cols"])
 
@@ -488,9 +475,7 @@ class QRFResults(ImputerResults):
 
         except Exception as e:
             self.logger.error(f"Error during QRF prediction: {str(e)}")
-            raise RuntimeError(
-                f"Failed to predict with QRF model: {str(e)}"
-            ) from e
+            raise RuntimeError(f"Failed to predict with QRF model: {str(e)}") from e
 
 
 class QRF(Imputer):
@@ -555,9 +540,7 @@ class QRF(Imputer):
             dummy_processor = getattr(self, "dummy_processor", None)
 
         if dummy_processor:
-            return dummy_processor.get_sequential_predictor_columns(
-                current_predictors
-            )
+            return dummy_processor.get_sequential_predictor_columns(current_predictors)
         else:
             return current_predictors
 
@@ -583,13 +566,8 @@ class QRF(Imputer):
         if dummy_processor is None:
             dummy_processor = getattr(self, "dummy_processor", None)
 
-        if (
-            dummy_processor
-            and variable in dummy_processor.imputed_var_dummy_mapping
-        ):
-            data = dummy_processor.sequential_imputed_predictor_encoding(
-                data, variable
-            )
+        if dummy_processor and variable in dummy_processor.imputed_var_dummy_mapping:
+            data = dummy_processor.sequential_imputed_predictor_encoding(data, variable)
             self.logger.debug(
                 f"  Encoded '{variable}' for use in sequential imputation"
             )
@@ -603,14 +581,10 @@ class QRF(Imputer):
 
         if variable in categorical_targets:
             # Use classifier for categorical targets
-            return _RandomForestClassifierModel(
-                seed=self.seed, logger=self.logger
-            )
+            return _RandomForestClassifierModel(seed=self.seed, logger=self.logger)
         elif variable in boolean_targets:
             # Use classifier for boolean targets
-            return _RandomForestClassifierModel(
-                seed=self.seed, logger=self.logger
-            )
+            return _RandomForestClassifierModel(seed=self.seed, logger=self.logger)
         else:
             # Use QRF for numeric targets
             return _QRFModel(seed=self.seed, logger=self.logger)
@@ -722,22 +696,15 @@ class QRF(Imputer):
                     )
 
                     # Handle batch processing if enabled
-                    if (
-                        self.batch_size
-                        and len(imputed_variables) > self.batch_size
-                    ):
+                    if self.batch_size and len(imputed_variables) > self.batch_size:
                         self.logger.info(
                             f"Processing {len(imputed_variables)} variables in batches of {self.batch_size}"
                         )
                         variable_batches = [
                             imputed_variables[i : i + self.batch_size]
-                            for i in range(
-                                0, len(imputed_variables), self.batch_size
-                            )
+                            for i in range(0, len(imputed_variables), self.batch_size)
                         ]
-                        for batch_idx, batch_variables in enumerate(
-                            variable_batches
-                        ):
+                        for batch_idx, batch_variables in enumerate(variable_batches):
                             self.logger.info(
                                 f"Processing batch {batch_idx + 1}/{len(variable_batches)} "
                                 f"({len(batch_variables)} variables)"
@@ -769,9 +736,7 @@ class QRF(Imputer):
 
                             # Handle constant targets
                             if variable in (constant_targets or {}):
-                                constant_val = constant_targets[variable][
-                                    "value"
-                                ]
+                                constant_val = constant_targets[variable]["value"]
                                 self.models[variable] = _ConstantValueModel(
                                     constant_val, variable
                                 )
@@ -786,16 +751,14 @@ class QRF(Imputer):
                             )
 
                             # Get properly encoded predictor columns
-                            dummy_processor = getattr(
-                                self, "dummy_processor", None
-                            )
+                            dummy_processor = getattr(self, "dummy_processor", None)
                             encoded_predictors = self._get_encoded_predictors(
                                 current_predictors, dummy_processor
                             )
 
                             # Log detailed pre-imputation information
                             self.logger.info(
-                                f"[{i+1}/{len(imputed_variables)}] Starting imputation for '{variable}'"
+                                f"[{i + 1}/{len(imputed_variables)}] Starting imputation for '{variable}'"
                             )
                             self.logger.info(
                                 f"  Features: {len(encoded_predictors)} predictors"
@@ -815,7 +778,6 @@ class QRF(Imputer):
                             )
 
                             try:
-
                                 # Log post-imputation information
                                 var_time = time.time() - var_start_time
                                 self.logger.info(
@@ -844,9 +806,7 @@ class QRF(Imputer):
                                 )
 
                             except Exception as e:
-                                self.logger.error(
-                                    f"  ✗ Failed: {variable} - {str(e)}"
-                                )
+                                self.logger.error(f"  ✗ Failed: {variable} - {str(e)}")
                                 raise
 
                             # Memory cleanup if enabled
@@ -869,18 +829,14 @@ class QRF(Imputer):
                             categorical_targets=categorical_targets,
                             boolean_targets=boolean_targets,
                             constant_targets=constant_targets,
-                            dummy_processor=getattr(
-                                self, "dummy_processor", None
-                            ),
+                            dummy_processor=getattr(self, "dummy_processor", None),
                             seed=self.seed,
                         ),
                         qrf_kwargs,
                     )
 
                 except Exception as e:
-                    self.logger.error(
-                        f"Error tuning hyperparameters: {str(e)}"
-                    )
+                    self.logger.error(f"Error tuning hyperparameters: {str(e)}")
                     raise RuntimeError(
                         f"Failed to tune hyperparameters: {str(e)}"
                     ) from e
@@ -895,22 +851,15 @@ class QRF(Imputer):
                 )
 
                 # Handle batch processing if enabled
-                if (
-                    self.batch_size
-                    and len(imputed_variables) > self.batch_size
-                ):
+                if self.batch_size and len(imputed_variables) > self.batch_size:
                     self.logger.info(
                         f"Processing {len(imputed_variables)} variables in batches of {self.batch_size}"
                     )
                     variable_batches = [
                         imputed_variables[i : i + self.batch_size]
-                        for i in range(
-                            0, len(imputed_variables), self.batch_size
-                        )
+                        for i in range(0, len(imputed_variables), self.batch_size)
                     ]
-                    for batch_idx, batch_variables in enumerate(
-                        variable_batches
-                    ):
+                    for batch_idx, batch_variables in enumerate(variable_batches):
                         self.logger.info(
                             f"Processing batch {batch_idx + 1}/{len(variable_batches)} "
                             f"({len(batch_variables)} variables)"
@@ -956,16 +905,14 @@ class QRF(Imputer):
                         )
 
                         # Get properly encoded predictor columns
-                        dummy_processor = getattr(
-                            self, "dummy_processor", None
-                        )
+                        dummy_processor = getattr(self, "dummy_processor", None)
                         encoded_predictors = self._get_encoded_predictors(
                             current_predictors, dummy_processor
                         )
 
                         # Log detailed pre-imputation information
                         self.logger.info(
-                            f"[{i+1}/{len(imputed_variables)}] Starting imputation for '{variable}'"
+                            f"[{i + 1}/{len(imputed_variables)}] Starting imputation for '{variable}'"
                         )
                         self.logger.info(
                             f"  Features: {len(encoded_predictors)} predictors"
@@ -1014,9 +961,7 @@ class QRF(Imputer):
                             )
 
                         except Exception as e:
-                            self.logger.error(
-                                f"  ✗ Failed: {variable} - {str(e)}"
-                            )
+                            self.logger.error(f"  ✗ Failed: {variable} - {str(e)}")
                             raise
 
                         # Memory cleanup if enabled
@@ -1082,9 +1027,7 @@ class QRF(Imputer):
             # Handle constant targets
             if variable in (constant_targets or {}):
                 constant_val = constant_targets[variable]["value"]
-                self.models[variable] = _ConstantValueModel(
-                    constant_val, variable
-                )
+                self.models[variable] = _ConstantValueModel(constant_val, variable)
                 self.logger.info(
                     f"Using constant value {constant_val} for variable {variable}"
                 )
@@ -1097,14 +1040,10 @@ class QRF(Imputer):
 
             # Log detailed pre-imputation information
             self.logger.info(
-                f"[{i+1}/{len(imputed_variables)}] Starting imputation for '{variable}'"
+                f"[{i + 1}/{len(imputed_variables)}] Starting imputation for '{variable}'"
             )
-            self.logger.info(
-                f"  Features: {len(current_predictors)} predictors"
-            )
-            self.logger.info(
-                f"  Memory usage: {self._get_memory_usage_info()}"
-            )
+            self.logger.info(f"  Features: {len(current_predictors)} predictors")
+            self.logger.info(f"  Memory usage: {self._get_memory_usage_info()}")
 
             # Create and fit model
             # Note: X_train is already preprocessed by base class
@@ -1121,9 +1060,7 @@ class QRF(Imputer):
 
                 # Log post-imputation information
                 var_time = time.time() - var_start_time
-                self.logger.info(
-                    f"  ✓ Success: {variable} fitted in {var_time:.2f}s"
-                )
+                self.logger.info(f"  ✓ Success: {variable} fitted in {var_time:.2f}s")
 
                 # Get model complexity metrics if available
                 if hasattr(model.qrf, "n_estimators"):
@@ -1181,16 +1118,10 @@ class QRF(Imputer):
         def objective(trial: optuna.Trial) -> float:
             params = {
                 "n_estimators": trial.suggest_int("n_estimators", 50, 300),
-                "min_samples_split": trial.suggest_int(
-                    "min_samples_split", 2, 20
-                ),
-                "min_samples_leaf": trial.suggest_int(
-                    "min_samples_leaf", 1, 10
-                ),
+                "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
+                "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
                 "max_features": trial.suggest_float("max_features", 0.1, 1.0),
-                "bootstrap": trial.suggest_categorical(
-                    "bootstrap", [True, False]
-                ),
+                "bootstrap": trial.suggest_categorical("bootstrap", [True, False]),
             }
 
             # Track errors across CV folds
@@ -1235,9 +1166,7 @@ class QRF(Imputer):
                         )
 
                         # Predict
-                        y_pred = model.predict(
-                            X_val_augmented[encoded_predictors]
-                        )
+                        y_pred = model.predict(X_val_augmented[encoded_predictors])
 
                         # Add predictions to augmented datasets for next variable
                         X_train_augmented[var] = model.predict(
@@ -1344,18 +1273,12 @@ class QRF(Imputer):
         def objective(trial: optuna.Trial) -> float:
             params = {
                 "n_estimators": trial.suggest_int("n_estimators", 50, 300),
-                "min_samples_split": trial.suggest_int(
-                    "min_samples_split", 2, 20
-                ),
-                "min_samples_leaf": trial.suggest_int(
-                    "min_samples_leaf", 1, 10
-                ),
+                "min_samples_split": trial.suggest_int("min_samples_split", 2, 20),
+                "min_samples_leaf": trial.suggest_int("min_samples_leaf", 1, 10),
                 "max_features": trial.suggest_categorical(
                     "max_features", ["sqrt", "log2", 0.5, 0.8, 1.0]
                 ),
-                "bootstrap": trial.suggest_categorical(
-                    "bootstrap", [True, False]
-                ),
+                "bootstrap": trial.suggest_categorical("bootstrap", [True, False]),
             }
 
             # Track errors across CV folds
@@ -1402,9 +1325,7 @@ class QRF(Imputer):
                                 X_train_augmented[encoded_predictors],
                                 X_train_fold[var],
                                 var_type=categorical_targets[var]["type"],
-                                categories=categorical_targets[var].get(
-                                    "categories"
-                                ),
+                                categories=categorical_targets[var].get("categories"),
                                 **params,
                             )
                         elif var in boolean_targets:
@@ -1528,9 +1449,7 @@ class QRF(Imputer):
             for var in imputed_variables
             if var in categorical_targets or var in boolean_targets
         ]
-        numeric_vars = [
-            var for var in imputed_variables if var not in categorical_vars
-        ]
+        numeric_vars = [var for var in imputed_variables if var not in categorical_vars]
 
         # Default: 3-fold CV with 10 trials (same computational cost as old 30 trials)
         n_cv_folds = 3
@@ -1545,9 +1464,7 @@ class QRF(Imputer):
         # Tune appropriate models based on variable types
         if not categorical_vars:
             # Backward compatible: only numeric variables
-            self.logger.info(
-                "Tuning QRF hyperparameters (numeric variables only)"
-            )
+            self.logger.info("Tuning QRF hyperparameters (numeric variables only)")
             return self._tune_qrf_hyperparameters(
                 data, predictors, numeric_vars, n_cv_folds, n_trials
             )

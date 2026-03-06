@@ -53,7 +53,7 @@ def _process_single_fold(
 ]:
     """Process a single CV fold and return results organized by variable."""
     fold_idx, (train_idx, test_idx) = fold_idx_pair
-    log.info(f"Processing fold {fold_idx+1}")
+    log.info(f"Processing fold {fold_idx + 1}")
 
     # Split data for this fold
     train_data = data.iloc[train_idx]
@@ -142,10 +142,7 @@ def _fit_model_for_fold(
         )
 
         for var in imputed_variables:
-            if (
-                get_metric_for_variable_type(train_data[var], var)
-                == "log_loss"
-            ):
+            if get_metric_for_variable_type(train_data[var], var) == "log_loss":
                 log.warning(
                     f"QuantReg does not support categorical variable '{var}'. "
                     f"Skipping QuantReg for this fold."
@@ -155,9 +152,7 @@ def _fit_model_for_fold(
     # Handle model-specific hyperparameters
     if model_hyperparams:
         try:
-            log.info(
-                f"Fitting {model_name} with hyperparameters: {model_hyperparams}"
-            )
+            log.info(f"Fitting {model_name} with hyperparameters: {model_hyperparams}")
             fitted_model = model.fit(
                 X_train=train_data,
                 predictors=predictors,
@@ -168,9 +163,7 @@ def _fit_model_for_fold(
         except ValueError as e:
             # Check if it's due to categorical incompatibility
             if "QuantReg does not support categorical" in str(e):
-                log.warning(
-                    f"{model_name} incompatible with variable types: {str(e)}"
-                )
+                log.warning(f"{model_name} incompatible with variable types: {str(e)}")
                 return None, None
             raise e
         except TypeError as e:
@@ -183,9 +176,7 @@ def _fit_model_for_fold(
                 imputed_variables=imputed_variables,
                 weight_col=weight_col,
             )
-            raise ValueError(
-                f"Invalid hyperparameters for {model_name}"
-            ) from e
+            raise ValueError(f"Invalid hyperparameters for {model_name}") from e
 
     # Handle QuantReg which needs explicit quantiles
     elif model_class == QuantReg:
@@ -200,9 +191,7 @@ def _fit_model_for_fold(
             )
         except ValueError as e:
             if "QuantReg does not support categorical" in str(e):
-                log.warning(
-                    f"QuantReg incompatible with variable types: {str(e)}"
-                )
+                log.warning(f"QuantReg incompatible with variable types: {str(e)}")
                 return None, None
             raise e
 
@@ -232,9 +221,7 @@ def _fit_model_for_fold(
                 "QuantReg does not support categorical" in str(e)
                 and model_name == "QuantReg"
             ):
-                log.warning(
-                    f"QuantReg incompatible with variable types: {str(e)}"
-                )
+                log.warning(f"QuantReg incompatible with variable types: {str(e)}")
                 return None, None
             raise e
 
@@ -292,10 +279,7 @@ def _compute_fold_loss_by_metric(
 
         else:  # log_loss
             # Use probabilities if available, otherwise use class predictions
-            if (
-                test_probabilities
-                and test_probabilities[var][fold_idx] is not None
-            ):
+            if test_probabilities and test_probabilities[var][fold_idx] is not None:
                 # Get probabilities and classes for this variable
                 test_prob_info = test_probabilities[var][fold_idx]
                 train_prob_info = train_probabilities[var][fold_idx]
@@ -316,14 +300,10 @@ def _compute_fold_loss_by_metric(
 
                     # Order probabilities alphabetically
                     test_probs_ordered, alphabetical_labels = (
-                        order_probabilities_alphabetically(
-                            test_probs, model_classes
-                        )
+                        order_probabilities_alphabetically(test_probs, model_classes)
                     )
-                    train_probs_ordered, _ = (
-                        order_probabilities_alphabetically(
-                            train_probs, model_classes
-                        )
+                    train_probs_ordered, _ = order_probabilities_alphabetically(
+                        train_probs, model_classes
                     )
 
                     # Compute log loss with properly ordered probabilities
@@ -344,9 +324,7 @@ def _compute_fold_loss_by_metric(
                     log.warning(
                         f"Probabilities not in expected format for variable {var}, using class predictions"
                     )
-                    labels = np.unique(
-                        np.concatenate([test_y_var, train_y_var])
-                    )
+                    labels = np.unique(np.concatenate([test_y_var, train_y_var]))
                     labels = np.sort(labels)  # Ensure alphabetical order
                     _, test_loss = compute_loss(
                         test_y_var, test_pred_var, "log_loss", labels=labels
@@ -377,9 +355,7 @@ def _compute_fold_loss_by_metric(
     for metric_type in ["quantile_loss", "log_loss"]:
         if result[metric_type]["test"] is not None:
             result[metric_type]["test"] = np.mean(result[metric_type]["test"])
-            result[metric_type]["train"] = np.mean(
-                result[metric_type]["train"]
-            )
+            result[metric_type]["train"] = np.mean(result[metric_type]["train"])
         else:
             # No variables of this type
             result[metric_type]["test"] = np.nan
@@ -461,18 +437,12 @@ def _compute_losses_parallel(
 
         for metric_type in ["quantile_loss", "log_loss"]:
             if not np.isnan(result[metric_type]["test"]):
-                results[metric_type]["test"][q].append(
-                    result[metric_type]["test"]
-                )
-                results[metric_type]["train"][q].append(
-                    result[metric_type]["train"]
-                )
+                results[metric_type]["test"][q].append(result[metric_type]["test"])
+                results[metric_type]["train"][q].append(result[metric_type]["train"])
 
                 # Store variable list (only once)
                 if fold_idx == 0 and q == quantiles[0]:
-                    results[metric_type]["variables"] = result[metric_type][
-                        "variables"
-                    ]
+                    results[metric_type]["variables"] = result[metric_type]["variables"]
 
     return results
 
@@ -538,13 +508,9 @@ def cross_validate_model(
         for var in imputed_variables:
             metric_type = get_metric_for_variable_type(data[var], var)
             variable_metrics[var] = (
-                "quantile_loss"
-                if metric_type == "quantile_loss"
-                else "log_loss"
+                "quantile_loss" if metric_type == "quantile_loss" else "log_loss"
             )
-            log.info(
-                f"Variable '{var}' will use metric: {variable_metrics[var]}"
-            )
+            log.info(f"Variable '{var}' will use metric: {variable_metrics[var]}")
 
         # Set up k-fold cross-validation
         kf = KFold(n_splits=n_splits, shuffle=True, random_state=random_state)
@@ -676,9 +642,7 @@ def cross_validate_model(
                         },
                         {
                             q: np.mean(values)
-                            for q, values in metric_results[metric_type][
-                                "test"
-                            ].items()
+                            for q, values in metric_results[metric_type]["test"].items()
                         },
                     ],
                     index=["train", "test"],
@@ -695,9 +659,7 @@ def cross_validate_model(
                         },
                         {
                             q: np.std(values) if len(values) > 1 else 0.0
-                            for q, values in metric_results[metric_type][
-                                "test"
-                            ].items()
+                            for q, values in metric_results[metric_type]["test"].items()
                         },
                     ],
                     index=["train", "test"],
@@ -751,9 +713,7 @@ def cross_validate_model(
 
             if 0.5 in quantiles:
                 for fold_idx in range(n_splits):
-                    fold_loss = metric_results[primary_metric]["test"][0.5][
-                        fold_idx
-                    ]
+                    fold_loss = metric_results[primary_metric]["test"][0.5][fold_idx]
                     if fold_loss < best_loss:
                         best_loss = fold_loss
                         best_fold = fold_idx

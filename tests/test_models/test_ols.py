@@ -54,9 +54,7 @@ def test_ols_basic_fit_predict(diabetes_data: pd.DataFrame) -> None:
     fitted_model = model.fit(X_train, predictors, imputed_variables)
 
     # Predict at multiple quantiles
-    predictions = fitted_model.predict(
-        X_test, QUANTILES, random_quantile_sample=False
-    )
+    predictions = fitted_model.predict(X_test, QUANTILES, random_quantile_sample=False)
 
     # Validate predictions
     assert isinstance(predictions, dict)
@@ -231,20 +229,14 @@ def test_ols_prediction_quality(diabetes_data: pd.DataFrame) -> None:
 
     # Split data
     np.random.seed(42)
-    train_idx = np.random.choice(
-        len(data), int(0.8 * len(data)), replace=False
-    )
+    train_idx = np.random.choice(len(data), int(0.8 * len(data)), replace=False)
     test_idx = np.array([i for i in range(len(data)) if i not in train_idx])
 
     train_data = data.iloc[train_idx].reset_index(drop=True)
     test_data = data.iloc[test_idx].reset_index(drop=True)
 
-    X_train = preprocess_data(
-        train_data, full_data=True, train_size=1.0, test_size=0.0
-    )
-    X_test = preprocess_data(
-        test_data, full_data=True, train_size=1.0, test_size=0.0
-    )
+    X_train = preprocess_data(train_data, full_data=True, train_size=1.0, test_size=0.0)
+    X_test = preprocess_data(test_data, full_data=True, train_size=1.0, test_size=0.0)
 
     # Fit model
     model = OLS()

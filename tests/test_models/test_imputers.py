@@ -57,9 +57,7 @@ def data_with_edge_cases() -> pd.DataFrame:
             "constant": np.ones(n_samples),  # Constant predictor
             "binary": np.random.choice([0, 1], n_samples),
             "categorical": np.random.choice(["A", "B", "C"], n_samples),
-            "high_correlation": np.random.randn(
-                n_samples
-            ),  # Will be made correlated
+            "high_correlation": np.random.randn(n_samples),  # Will be made correlated
             "target": np.random.randn(n_samples),
         }
     )
@@ -95,12 +93,12 @@ except ImportError:
 def test_init_signatures(model_class: Type[Imputer]) -> None:
     """Test that all models can be initialized without required arguments."""
     model = model_class()
-    assert (
-        model.predictors is None
-    ), f"{model_class.__name__} should initialize predictors as None"
-    assert (
-        model.imputed_variables is None
-    ), f"{model_class.__name__} should initialize imputed_variables as None"
+    assert model.predictors is None, (
+        f"{model_class.__name__} should initialize predictors as None"
+    )
+    assert model.imputed_variables is None, (
+        f"{model_class.__name__} should initialize imputed_variables as None"
+    )
 
 
 @pytest.mark.parametrize(
@@ -131,9 +129,9 @@ def test_fit_predict_interface(
     predictions = fitted_model.predict(X_test, quantiles)
 
     # Check prediction format
-    assert isinstance(
-        predictions, dict
-    ), f"{model_class.__name__} predict should return a dictionary"
+    assert isinstance(predictions, dict), (
+        f"{model_class.__name__} predict should return a dictionary"
+    )
     assert set(predictions.keys()).issubset(set(quantiles))
 
     # Check prediction shape
@@ -279,9 +277,7 @@ def test_imputation_categorical_targets(
 
         # Check that we still get the categorical predictions
         assert isinstance(predictions_with_probs[0.5], pd.DataFrame)
-        assert pd.api.types.is_string_dtype(
-            predictions_with_probs[0.5]["categorical"]
-        )
+        assert pd.api.types.is_string_dtype(predictions_with_probs[0.5]["categorical"])
 
         # Check probability format
         prob_info = predictions_with_probs["probabilities"]["categorical"]
@@ -402,9 +398,7 @@ def test_multiple_targets(
     model = model_class()
 
     if model_class.__name__ == "QuantReg":
-        fitted = model.fit(
-            X_train, predictors, imputed_variables, quantiles=[0.5]
-        )
+        fitted = model.fit(X_train, predictors, imputed_variables, quantiles=[0.5])
     else:
         fitted = model.fit(X_train, predictors, imputed_variables)
 
@@ -537,9 +531,7 @@ def test_weighted_training(
             quantiles=QUANTILES,
         )
     else:
-        fitted = model.fit(
-            X_train, predictors, imputed_variables, weight_col="wgt"
-        )
+        fitted = model.fit(X_train, predictors, imputed_variables, weight_col="wgt")
 
     assert fitted is not None
 
@@ -570,9 +562,7 @@ def test_extreme_quantiles(
     model = model_class()
 
     if model_class.__name__ == "QuantReg":
-        fitted = model.fit(
-            X_train, ["x1", "x2"], ["y"], quantiles=extreme_quantiles
-        )
+        fitted = model.fit(X_train, ["x1", "x2"], ["y"], quantiles=extreme_quantiles)
     else:
         fitted = model.fit(X_train, ["x1", "x2"], ["y"])
 
@@ -586,9 +576,7 @@ def test_extreme_quantiles(
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_single_quantile(
-    model_class: Type[Imputer], simple_data: pd.DataFrame
-) -> None:
+def test_single_quantile(model_class: Type[Imputer], simple_data: pd.DataFrame) -> None:
     """Test models with a single quantile."""
     X_train, X_test = preprocess_data(simple_data)
 
@@ -612,9 +600,7 @@ def test_single_quantile(
 
 def test_string_column_validation() -> None:
     """Test that the _validate_data method handles string columns appropriately."""
-    data = pd.DataFrame(
-        {"numeric_col": [1, 2, 3], "string_col": ["a", "b", "c"]}
-    )
+    data = pd.DataFrame({"numeric_col": [1, 2, 3], "string_col": ["a", "b", "c"]})
     columns = ["numeric_col", "string_col"]
 
     model = OLS()
@@ -663,9 +649,7 @@ def test_missing_predictors_in_test(model_class: Type[Imputer]) -> None:
     [OLS, QuantReg, QRF, Matching],
     ids=lambda cls: cls.__name__,
 )
-def test_reproducibility(
-    model_class: Type[Imputer], simple_data: pd.DataFrame
-) -> None:
+def test_reproducibility(model_class: Type[Imputer], simple_data: pd.DataFrame) -> None:
     # Note: MDN is excluded because PyTorch MPS (Apple Silicon) doesn't support
     # deterministic operations, making reproducibility tests unreliable.
     """Test that models produce reproducible results."""
@@ -701,9 +685,7 @@ def test_large_number_of_predictors(model_class: Type[Imputer]) -> None:
     n_predictors = 20
 
     # Create data with many predictors
-    data_dict = {
-        f"x{i}": np.random.randn(n_samples) for i in range(n_predictors)
-    }
+    data_dict = {f"x{i}": np.random.randn(n_samples) for i in range(n_predictors)}
     data_dict["y"] = np.random.randn(n_samples)
     data = pd.DataFrame(data_dict)
 

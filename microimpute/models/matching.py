@@ -99,9 +99,7 @@ class MatchingResults(ImputerResults):
             RuntimeError: If matching or prediction fails.
         """
         try:
-            self.logger.info(
-                f"Performing matching for {len(X_test)} recipient records"
-            )
+            self.logger.info(f"Performing matching for {len(X_test)} recipient records")
 
             # Create a copy to avoid modifying the input
             try:
@@ -109,9 +107,7 @@ class MatchingResults(ImputerResults):
                 X_test_copy = X_test.copy()
 
                 # Drop imputed variables if they exist in test data
-                if any(
-                    col in X_test.columns for col in self.imputed_variables
-                ):
+                if any(col in X_test.columns for col in self.imputed_variables):
                     self.logger.debug(
                         f"Dropping imputed variables from test data: {self.imputed_variables}"
                     )
@@ -122,9 +118,7 @@ class MatchingResults(ImputerResults):
                         errors="ignore",
                     )
             except Exception as copy_error:
-                self.logger.error(
-                    f"Error preparing test data: {str(copy_error)}"
-                )
+                self.logger.error(f"Error preparing test data: {str(copy_error)}")
                 raise RuntimeError(
                     "Failed to prepare test data for matching"
                 ) from copy_error
@@ -146,9 +140,7 @@ class MatchingResults(ImputerResults):
                     X_test_copy, quantiles, chunk_size, return_probs
                 )
             else:
-                return self._predict_single(
-                    X_test_copy, quantiles, return_probs
-                )
+                return self._predict_single(X_test_copy, quantiles, return_probs)
 
         except ValueError as e:
             raise e
@@ -181,9 +173,7 @@ class MatchingResults(ImputerResults):
                     z_variables=self.imputed_variables,
                 )
         except Exception as matching_error:
-            self.logger.error(
-                f"Error in hot deck matching: {str(matching_error)}"
-            )
+            self.logger.error(f"Error in hot deck matching: {str(matching_error)}")
             raise RuntimeError("Hot deck matching failed") from matching_error
 
         return self._process_matching_results(
@@ -206,8 +196,8 @@ class MatchingResults(ImputerResults):
             chunk_data = X_test_copy.iloc[i:chunk_end]
 
             self.logger.debug(
-                f"Processing chunk {i//chunk_size + 1}: "
-                f"rows {i} to {chunk_end-1} ({len(chunk_data)} records)"
+                f"Processing chunk {i // chunk_size + 1}: "
+                f"rows {i} to {chunk_end - 1} ({len(chunk_data)} records)"
             )
 
             try:
@@ -237,7 +227,7 @@ class MatchingResults(ImputerResults):
 
             except Exception as chunk_error:
                 self.logger.warning(
-                    f"Chunk {i//chunk_size + 1} failed: {chunk_error}. "
+                    f"Chunk {i // chunk_size + 1} failed: {chunk_error}. "
                     "Filling with NaN values."
                 )
                 # Create NaN-filled results for failed chunk
@@ -277,10 +267,7 @@ class MatchingResults(ImputerResults):
         Returns:
             Dict with 'probabilities' and 'classes' keys
         """
-        if (
-            variable not in categorical_targets
-            and variable not in boolean_targets
-        ):
+        if variable not in categorical_targets and variable not in boolean_targets:
             return None
 
         # Determine categories
@@ -319,9 +306,7 @@ class MatchingResults(ImputerResults):
         try:
             # Verify imputed variables exist in the result
             missing_imputed = [
-                var
-                for var in self.imputed_variables
-                if var not in fused0.columns
+                var for var in self.imputed_variables if var not in fused0.columns
             ]
             if missing_imputed:
                 self.logger.error(
@@ -338,9 +323,7 @@ class MatchingResults(ImputerResults):
             self.logger.error(
                 f"Error converting matching results: {str(convert_error)}"
             )
-            raise RuntimeError(
-                "Failed to process matching results"
-            ) from convert_error
+            raise RuntimeError("Failed to process matching results") from convert_error
 
         # Create output dictionary with results
         imputations: Dict[float, pd.DataFrame] = {}
@@ -352,9 +335,7 @@ class MatchingResults(ImputerResults):
 
         try:
             if quantiles:
-                self.logger.info(
-                    f"Creating imputations for {len(quantiles)} quantiles"
-                )
+                self.logger.info(f"Creating imputations for {len(quantiles)} quantiles")
                 # For each quantile, return a DataFrame with all imputed variables
                 for q in quantiles:
                     imputed_df = pd.DataFrame(index=X_test_copy.index)
@@ -417,12 +398,8 @@ class MatchingResults(ImputerResults):
                     # Return just the DataFrame for the single quantile
                     return imputations[q_default]
         except Exception as output_error:
-            self.logger.error(
-                f"Error creating output imputations: {str(output_error)}"
-            )
-            raise RuntimeError(
-                "Failed to create output imputations"
-            ) from output_error
+            self.logger.error(f"Error creating output imputations: {str(output_error)}")
+            raise RuntimeError("Failed to create output imputations") from output_error
 
 
 class Matching(Imputer):
@@ -493,9 +470,7 @@ class Matching(Imputer):
             self.donor_data = X_train.copy()
 
             if tune_hyperparameters:
-                self.logger.info(
-                    "Tuning hyperparameters for the matching model"
-                )
+                self.logger.info("Tuning hyperparameters for the matching model")
                 best_params = self._tune_hyperparameters(
                     data=X_train,
                     predictors=predictors,
@@ -527,9 +502,7 @@ class Matching(Imputer):
                     f"optional parameters: {matching_kwargs}"
                 )
                 self.logger.info(f"Using predictors: {predictors}")
-                self.logger.info(
-                    f"Targeting imputed variables: {imputed_variables}"
-                )
+                self.logger.info(f"Targeting imputed variables: {imputed_variables}")
 
                 return MatchingResults(
                     matching_hotdeck=self.matching_hotdeck,
@@ -547,9 +520,7 @@ class Matching(Imputer):
                 )
         except Exception as e:
             self.logger.error(f"Error setting up matching model: {str(e)}")
-            raise ValueError(
-                f"Failed to set up matching model: {str(e)}"
-            ) from e
+            raise ValueError(f"Failed to set up matching model: {str(e)}") from e
 
     @validate_call(config=VALIDATE_CONFIG)
     def _tune_hyperparameters(
@@ -610,9 +581,7 @@ class Matching(Imputer):
 
             variable_metrics = {}
             for var in imputed_variables:
-                variable_metrics[var] = get_metric_for_variable_type(
-                    data[var], var
-                )
+                variable_metrics[var] = get_metric_for_variable_type(data[var], var)
 
             # Track errors across CV folds
             fold_errors = []
@@ -634,8 +603,7 @@ class Matching(Imputer):
                     total_size = len(X_train_fold) * len(X_val_var)
                     use_chunking = (
                         len(X_val_var) > chunk_size
-                        or total_size
-                        > 25_000_000  # Lower threshold for tuning
+                        or total_size > 25_000_000  # Lower threshold for tuning
                     )
 
                     if use_chunking:
@@ -661,9 +629,7 @@ class Matching(Imputer):
                             except Exception:
                                 # If chunk fails, use mean of training data as prediction
                                 mean_val = X_train_fold[var].mean()
-                                y_pred_chunks.append(
-                                    np.full(len(chunk_data), mean_val)
-                                )
+                                y_pred_chunks.append(np.full(len(chunk_data), mean_val))
                                 y_val_chunks.append(chunk_y_val.values)
 
                         # Combine chunk results
@@ -699,9 +665,7 @@ class Matching(Imputer):
                         )
                         # Normalize by variable's standard deviation
                         std = np.std(y_val_combined.flatten())
-                        normalized_loss = (
-                            loss_value / std if std > 0 else loss_value
-                        )
+                        normalized_loss = loss_value / std if std > 0 else loss_value
                     else:  # log_loss for categorical/boolean
                         _, loss_value = compute_loss(
                             y_val_combined.flatten(),
@@ -738,8 +702,6 @@ class Matching(Imputer):
         )
 
         best_params = study.best_params
-        self.logger.info(
-            f"Matching - Best hyperparameters found: {best_params}"
-        )
+        self.logger.info(f"Matching - Best hyperparameters found: {best_params}")
 
         return best_params

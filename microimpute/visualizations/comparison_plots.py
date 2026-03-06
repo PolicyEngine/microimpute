@@ -79,9 +79,7 @@ class MethodComparisonResults:
                 "Loss",
             ]
             missing_cols = [
-                col
-                for col in required_cols
-                if col not in self.comparison_data.columns
+                col for col in required_cols if col not in self.comparison_data.columns
             ]
             if missing_cols:
                 error_msg = f"Missing required columns: {missing_cols}"
@@ -91,9 +89,7 @@ class MethodComparisonResults:
         # Get unique methods and variables
         if hasattr(self, "comparison_data"):
             self.methods = self.comparison_data["Method"].unique().tolist()
-            self.variables = (
-                self.comparison_data["Imputed Variable"].unique().tolist()
-            )
+            self.variables = self.comparison_data["Imputed Variable"].unique().tolist()
         else:
             # For dual metrics format
             self.methods = list(self.dual_metrics_data.keys())
@@ -104,9 +100,7 @@ class MethodComparisonResults:
                         method_data["quantile_loss"].get("variables", [])
                     )
                 if "log_loss" in method_data:
-                    self.variables.extend(
-                        method_data["log_loss"].get("variables", [])
-                    )
+                    self.variables.extend(method_data["log_loss"].get("variables", []))
             self.variables = list(set(self.variables))
 
         logger.debug(
@@ -148,9 +142,7 @@ class MethodComparisonResults:
                     # Regular quantile columns
                     # Use first imputed variable if specified, otherwise "y"
                     var_name = (
-                        self.imputed_variables[0]
-                        if self.imputed_variables
-                        else "y"
+                        self.imputed_variables[0] if self.imputed_variables else "y"
                     )
                     long_format_data.append(
                         {
@@ -163,9 +155,7 @@ class MethodComparisonResults:
 
         self.comparison_data = pd.DataFrame(long_format_data)
 
-    def _process_dual_metrics_input(
-        self, dual_data: Dict[str, Dict[str, Dict]]
-    ):
+    def _process_dual_metrics_input(self, dual_data: Dict[str, Dict[str, Dict]]):
         """Process dual metrics format from cross-validation results.
 
         Args:
@@ -185,10 +175,7 @@ class MethodComparisonResults:
                 and "quantile_loss" in method_results
             ):
                 ql_data = method_results["quantile_loss"]
-                if (
-                    ql_data.get("results") is not None
-                    and not ql_data["results"].empty
-                ):
+                if ql_data.get("results") is not None and not ql_data["results"].empty:
                     # Get test results (single row)
                     if "test" in ql_data["results"].index:
                         test_results = ql_data["results"].loc["test"]
@@ -204,9 +191,7 @@ class MethodComparisonResults:
                         # across variables, so create ONE row per
                         # (method, quantile) to avoid duplicate bars.
                         variables = ql_data.get("variables", ["y"])
-                        var_label = (
-                            variables[0] if len(variables) == 1 else "average"
-                        )
+                        var_label = variables[0] if len(variables) == 1 else "average"
 
                         for quantile in test_results.index:
                             long_format_data.append(
@@ -238,15 +223,9 @@ class MethodComparisonResults:
                         )
 
             # Process log loss if available
-            if (
-                self.metric in ["log_loss", "combined"]
-                and "log_loss" in method_results
-            ):
+            if self.metric in ["log_loss", "combined"] and "log_loss" in method_results:
                 ll_data = method_results["log_loss"]
-                if (
-                    ll_data.get("results") is not None
-                    and not ll_data["results"].empty
-                ):
+                if ll_data.get("results") is not None and not ll_data["results"].empty:
                     # Log loss is constant across quantiles.
                     # Same as quantile_loss: one row per method,
                     # not per variable, since values are aggregated.
@@ -255,9 +234,7 @@ class MethodComparisonResults:
                         test_std = ll_data.get("std_test", np.nan)
                         ll_variables = ll_data.get("variables", [])
                         ll_var_label = (
-                            ll_variables[0]
-                            if len(ll_variables) == 1
-                            else "average"
+                            ll_variables[0] if len(ll_variables) == 1 else "average"
                         )
                         long_format_data.append(
                             {
@@ -356,9 +333,7 @@ class MethodComparisonResults:
                 quantile_data = quantile_data[numeric_mask]
 
                 # Convert to numeric and filter to valid quantile range
-                quantile_data["Percentile"] = pd.to_numeric(
-                    quantile_data["Percentile"]
-                )
+                quantile_data["Percentile"] = pd.to_numeric(quantile_data["Percentile"])
                 melted_df = quantile_data[
                     (quantile_data["Percentile"] >= 0)
                     & (quantile_data["Percentile"] <= 1)
@@ -374,12 +349,9 @@ class MethodComparisonResults:
                 melted_df = melted_df[numeric_mask]
 
                 # Convert to numeric and filter to valid quantile range
-                melted_df["Percentile"] = pd.to_numeric(
-                    melted_df["Percentile"]
-                )
+                melted_df["Percentile"] = pd.to_numeric(melted_df["Percentile"])
                 melted_df = melted_df[
-                    (melted_df["Percentile"] >= 0)
-                    & (melted_df["Percentile"] <= 1)
+                    (melted_df["Percentile"] >= 0) & (melted_df["Percentile"] <= 1)
                 ].copy()
 
             melted_df = melted_df.rename(columns={"Loss": self.metric_name})
@@ -587,9 +559,7 @@ class MethodComparisonResults:
 
                 # Convert to numeric and filter to valid quantile range
                 ql_df["Percentile"] = pd.to_numeric(ql_df["Percentile"])
-                ql_df = ql_df[
-                    (ql_df["Percentile"] >= 0) & (ql_df["Percentile"] <= 1)
-                ]
+                ql_df = ql_df[(ql_df["Percentile"] >= 0) & (ql_df["Percentile"] <= 1)]
             else:
                 # Backward compatibility
                 ql_df = self.comparison_data.copy()
@@ -602,9 +572,7 @@ class MethodComparisonResults:
 
                 # Convert to numeric and filter to valid quantile range
                 ql_df["Percentile"] = pd.to_numeric(ql_df["Percentile"])
-                ql_df = ql_df[
-                    (ql_df["Percentile"] >= 0) & (ql_df["Percentile"] <= 1)
-                ]
+                ql_df = ql_df[(ql_df["Percentile"] >= 0) & (ql_df["Percentile"] <= 1)]
 
             if not ql_df.empty:
                 for i, method in enumerate(self.methods):
@@ -742,13 +710,9 @@ class MethodComparisonResults:
                     # Get losses for each method for this variable
                     method_losses = {}
                     for method in self.methods:
-                        method_var_data = var_data[
-                            var_data["Method"] == method
-                        ]
+                        method_var_data = var_data[var_data["Method"] == method]
                         if not method_var_data.empty:
-                            method_losses[method] = method_var_data[
-                                "Loss"
-                            ].mean()
+                            method_losses[method] = method_var_data["Loss"].mean()
                         else:
                             method_losses[method] = np.inf
 
@@ -773,18 +737,14 @@ class MethodComparisonResults:
                             "Method": method,
                             "Variable": var,
                             "Rank": (
-                                ranks[method]
-                                if method in ranks
-                                else len(self.methods)
+                                ranks[method] if method in ranks else len(self.methods)
                             ),
                             "Metric": metric_type,
                         }
                     )
 
             if not contribution_data:
-                logger.warning(
-                    "No data available for stacked contribution plot"
-                )
+                logger.warning("No data available for stacked contribution plot")
                 return go.Figure()
 
             contrib_df = pd.DataFrame(contribution_data)
@@ -907,13 +867,9 @@ class MethodComparisonResults:
         logger.debug(f"Finding best method using {criterion} criterion")
 
         if criterion == "mean":
-            method_scores = self.comparison_data.groupby("Method")[
-                "Loss"
-            ].mean()
+            method_scores = self.comparison_data.groupby("Method")["Loss"].mean()
         elif criterion == "median":
-            method_scores = self.comparison_data.groupby("Method")[
-                "Loss"
-            ].median()
+            method_scores = self.comparison_data.groupby("Method")["Loss"].median()
         else:
             raise ValueError(f"Unknown criterion: {criterion}")
 

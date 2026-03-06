@@ -21,9 +21,7 @@ def test_qrf_basic_usage():
             "household_size": np.random.randint(1, 6, n_samples),
         }
     )
-    X_train["benefits"] = X_train["income"] * 0.1 + np.random.normal(
-        0, 1000, n_samples
-    )
+    X_train["benefits"] = X_train["income"] * 0.1 + np.random.normal(0, 1000, n_samples)
 
     predictors = ["age", "income", "household_size"]
     imputed_variables = ["benefits"]
@@ -50,12 +48,10 @@ def test_qrf_basic_usage():
 
     # Basic assertions
     assert "benefits" in predictions, "Should have predictions for 'benefits'"
-    assert len(predictions["benefits"]) == len(
-        X_test
-    ), "Should have predictions for all test samples"
-    assert (
-        not predictions["benefits"].isna().any()
-    ), "Should not have NaN predictions"
+    assert len(predictions["benefits"]) == len(X_test), (
+        "Should have predictions for all test samples"
+    )
+    assert not predictions["benefits"].isna().any(), "Should not have NaN predictions"
 
     print("✓ QRF smoke test passed")
 

@@ -189,9 +189,7 @@ class OLSResults(ImputerResults):
             # Classification for categorical/boolean targets
             if return_probs and prob_results is not None:
                 # Get probabilities and classes
-                prob_info = model.predict(
-                    X_test[self.predictors], return_probs=True
-                )
+                prob_info = model.predict(X_test[self.predictors], return_probs=True)
                 prob_results[variable] = prob_info
 
             # Get class predictions
@@ -339,9 +337,7 @@ class OLSResults(ImputerResults):
 
         except Exception as e:
             self.logger.error(f"Error during prediction: {str(e)}")
-            raise RuntimeError(
-                f"Failed to predict with OLS model: {str(e)}"
-            ) from e
+            raise RuntimeError(f"Failed to predict with OLS model: {str(e)}") from e
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict_quantile(
@@ -394,9 +390,7 @@ class OLSResults(ImputerResults):
                 # Adjust each mean prediction by corresponding sampled quantile times standard error
                 return mean_preds + selected_quantiles * se
             else:
-                self.logger.info(
-                    f"Predicting at specified quantile {mean_quantile}"
-                )
+                self.logger.info(f"Predicting at specified quantile {mean_quantile}")
                 specified_quantile = norm.ppf(mean_quantile)
                 return mean_preds + specified_quantile * se
 
@@ -453,9 +447,7 @@ class OLS(Imputer):
             RuntimeError: If model fitting fails.
         """
         try:
-            self.logger.info(
-                f"Fitting OLS model with {len(predictors)} predictors"
-            )
+            self.logger.info(f"Fitting OLS model with {len(predictors)} predictors")
 
             self.models = {}
 
@@ -478,16 +470,12 @@ class OLS(Imputer):
                 # Choose appropriate model based on variable type
                 if variable in (categorical_targets or {}):
                     # Use logistic regression for categorical targets
-                    model = _LogisticRegressionModel(
-                        seed=self.seed, logger=self.logger
-                    )
+                    model = _LogisticRegressionModel(seed=self.seed, logger=self.logger)
                     model.fit(
                         X_train[predictors],
                         Y,
                         var_type=categorical_targets[variable]["type"],
-                        categories=categorical_targets[variable].get(
-                            "categories"
-                        ),
+                        categories=categorical_targets[variable].get("categories"),
                         **kwargs,
                     )
                     self.logger.info(
@@ -495,12 +483,8 @@ class OLS(Imputer):
                     )
                 elif variable in (boolean_targets or {}):
                     # Use logistic regression for boolean targets
-                    model = _LogisticRegressionModel(
-                        seed=self.seed, logger=self.logger
-                    )
-                    model.fit(
-                        X_train[predictors], Y, var_type="boolean", **kwargs
-                    )
+                    model = _LogisticRegressionModel(seed=self.seed, logger=self.logger)
+                    model.fit(X_train[predictors], Y, var_type="boolean", **kwargs)
                     self.logger.info(
                         f"Logistic regression fitted for boolean variable {variable}"
                     )

@@ -85,15 +85,11 @@ def _reverse_transformations(
 
         # Reverse log transform if any
         if params.get("log_transform"):
-            result = unlog_transform_predictions(
-                result, params["log_transform"]
-            )
+            result = unlog_transform_predictions(result, params["log_transform"])
 
         # Reverse asinh transform if any
         if params.get("asinh_transform"):
-            result = un_asinh_transform_predictions(
-                result, params["asinh_transform"]
-            )
+            result = un_asinh_transform_predictions(result, params["asinh_transform"])
 
         return result
 
@@ -162,9 +158,7 @@ def _can_model_handle_variables(
             continue
 
         # Use VariableTypeDetector to categorize the variable
-        var_type, _ = detector.categorize_variable(
-            training_data[var], var, log
-        )
+        var_type, _ = detector.categorize_variable(training_data[var], var, log)
 
         # Check if model supports this variable type
         if var_type in ["categorical", "numeric_categorical"]:
@@ -317,28 +311,22 @@ def _generate_imputations_for_all_models(
             continue  # Skip the best method as it's already done
 
         # Check if model can handle the variable types using original data
-        if not _can_model_handle_variables(
-            model_name, donor_data, imputed_variables
-        ):
-            log.info(
-                f"Skipping {model_name} due to incompatible variable types."
-            )
+        if not _can_model_handle_variables(model_name, donor_data, imputed_variables):
+            log.info(f"Skipping {model_name} due to incompatible variable types.")
             continue
 
         log.info(f"Generating imputations with {model_name}.")
 
         # Preprocess data fresh for this model
-        training_data, imputing_data, transform_params = (
-            prepare_data_for_imputation(
-                donor_data,
-                receiver_data,
-                predictors,
-                imputed_variables,
-                weight_col,
-                train_size,
-                1 - train_size,
-                preprocessing=preprocessing,
-            )
+        training_data, imputing_data, transform_params = prepare_data_for_imputation(
+            donor_data,
+            receiver_data,
+            predictors,
+            imputed_variables,
+            weight_col,
+            train_size,
+            1 - train_size,
+            preprocessing=preprocessing,
         )
 
         # Get model-specific hyperparameters if available
@@ -360,9 +348,7 @@ def _generate_imputations_for_all_models(
         )
 
         # Reverse transformations if needed
-        final_imputations = _reverse_transformations(
-            imputations, transform_params
-        )
+        final_imputations = _reverse_transformations(imputations, transform_params)
 
         final_imputations_dict[model_name] = final_imputations[imputation_q]
         fitted_models_dict[model_name] = fitted_model
@@ -486,17 +472,15 @@ def autoimpute(
         # Keep track of original imputed variable names
         original_imputed_variables = imputed_variables.copy()
 
-        training_data, imputing_data, transform_params = (
-            prepare_data_for_imputation(
-                donor_data,
-                receiver_data,
-                predictors,
-                imputed_variables,
-                weight_col,
-                train_size,
-                1 - train_size,
-                preprocessing=preprocessing,
-            )
+        training_data, imputing_data, transform_params = prepare_data_for_imputation(
+            donor_data,
+            receiver_data,
+            predictors,
+            imputed_variables,
+            weight_col,
+            train_size,
+            1 - train_size,
+            preprocessing=preprocessing,
         )
 
         # Step 2: Model evaluation
@@ -524,14 +508,10 @@ def autoimpute(
 
         # Log hyperparameter usage
         if hyperparameters:
-            model_names = [
-                model_class.__name__ for model_class in model_classes
-            ]
+            model_names = [model_class.__name__ for model_class in model_classes]
             for model_name, model_params in hyperparameters.items():
                 if model_name in model_names:
-                    log.info(
-                        f"Using hyperparameters for {model_name}: {model_params}"
-                    )
+                    log.info(f"Using hyperparameters for {model_name}: {model_params}")
                 else:
                     log.info(
                         f"Hyperparameters provided for {model_name} but model not in list: {model_names}"
@@ -563,9 +543,7 @@ def autoimpute(
         log.info(
             f"Comparing across {model_classes} methods using metric_priority='{metric_priority}'."
         )
-        best_method, _ = select_best_model_dual_metrics(
-            method_results, metric_priority
-        )
+        best_method, _ = select_best_model_dual_metrics(method_results, metric_priority)
 
         # Step 4: Generate imputations with best method
         if numeric_log_level <= logging.INFO:
@@ -624,9 +602,7 @@ def autoimpute(
         )
 
         # Reverse transformations if needed
-        final_imputations = _reverse_transformations(
-            imputations, transform_params
-        )
+        final_imputations = _reverse_transformations(imputations, transform_params)
 
         log.info(
             f"Imputation generation completed for {len(receiver_data)} samples "
@@ -639,9 +615,7 @@ def autoimpute(
             if var in median_imputations.columns:
                 receiver_data[var] = median_imputations[var]
             else:
-                log.warning(
-                    f"Imputed variable {var} not found in the imputations."
-                )
+                log.warning(f"Imputed variable {var} not found in the imputations.")
 
         # Initialize results
         final_imputations_dict = {
@@ -668,21 +642,19 @@ def autoimpute(
                     else:
                         merged_hyperparams[model_name] = params
 
-            other_imputations, other_models = (
-                _generate_imputations_for_all_models(
-                    model_classes,
-                    best_method,
-                    donor_data,
-                    receiver_data,
-                    predictors,
-                    original_imputed_variables,
-                    weight_col,
-                    imputation_q,
-                    train_size,
-                    merged_hyperparams if merged_hyperparams else None,
-                    log_level,
-                    preprocessing=preprocessing,
-                )
+            other_imputations, other_models = _generate_imputations_for_all_models(
+                model_classes,
+                best_method,
+                donor_data,
+                receiver_data,
+                predictors,
+                original_imputed_variables,
+                weight_col,
+                imputation_q,
+                train_size,
+                merged_hyperparams if merged_hyperparams else None,
+                log_level,
+                preprocessing=preprocessing,
             )
             final_imputations_dict.update(other_imputations)
             fitted_models_dict.update(other_models)

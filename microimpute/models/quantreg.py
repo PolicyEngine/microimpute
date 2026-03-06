@@ -149,9 +149,7 @@ class QuantRegResults(ImputerResults):
             else:
                 quantiles = list(self.models[self.imputed_variables[0]].keys())
                 if random_quantile_sample:
-                    self.logger.info(
-                        "Sampling random quantiles for each prediction"
-                    )
+                    self.logger.info("Sampling random quantiles for each prediction")
                     mean_quantile = np.mean(quantiles)
 
                     # Get predictions for all quantiles first
@@ -167,9 +165,7 @@ class QuantRegResults(ImputerResults):
                             # Check if this is a constant target
                             if variable in self.constant_targets:
                                 # Get the constant model from any quantile
-                                available_q = list(
-                                    self.models[variable].keys()
-                                )[0]
+                                available_q = list(self.models[variable].keys())[0]
                                 model = self.models[variable][available_q]
                                 predictions = model.predict(X_test)
                             else:
@@ -178,9 +174,7 @@ class QuantRegResults(ImputerResults):
                                     # Constant model - just return the constant value
                                     predictions = model.predict(X_test)
                                 else:
-                                    predictions = model.predict(
-                                        X_test_with_const
-                                    )
+                                    predictions = model.predict(X_test_with_const)
                                     # Convert to boolean if this was a boolean target
                                     if variable in self.boolean_targets:
                                         predictions = predictions > 0.5
@@ -200,11 +194,9 @@ class QuantRegResults(ImputerResults):
 
                         # For all variables, use the sampled quantile for this row
                         for variable in self.imputed_variables:
-                            result_df.loc[idx, variable] = (
-                                random_q_imputations[sampled_q].loc[
-                                    idx, variable
-                                ]
-                            )
+                            result_df.loc[idx, variable] = random_q_imputations[
+                                sampled_q
+                            ].loc[idx, variable]
 
                     # Add to imputations dictionary using the mean quantile as key
                     imputations[mean_quantile] = result_df
@@ -225,9 +217,7 @@ class QuantRegResults(ImputerResults):
                             # Check if this is a constant target
                             if variable in self.constant_targets:
                                 # Get the constant model from any quantile
-                                available_q = list(
-                                    self.models[variable].keys()
-                                )[0]
+                                available_q = list(self.models[variable].keys())[0]
                                 model = self.models[variable][available_q]
                                 predictions = model.predict(X_test)
                             else:
@@ -236,18 +226,14 @@ class QuantRegResults(ImputerResults):
                                     # Constant model - just return the constant value
                                     predictions = model.predict(X_test)
                                 else:
-                                    predictions = model.predict(
-                                        X_test_with_const
-                                    )
+                                    predictions = model.predict(X_test_with_const)
                                     # Convert to boolean if this was a boolean target
                                     if variable in self.boolean_targets:
                                         predictions = predictions > 0.5
                             imputed_df[variable] = predictions
                         imputations[q] = imputed_df
 
-            self.logger.info(
-                f"Completed predictions for {len(imputations)} quantiles"
-            )
+            self.logger.info(f"Completed predictions for {len(imputations)} quantiles")
 
             # Return behavior based on how the model was fitted:
             # - If quantiles were explicitly specified during fit OR predict, return dict
@@ -339,7 +325,9 @@ class QuantReg(Imputer):
             if quantiles:
                 invalid_quantiles = [q for q in quantiles if not 0 <= q <= 1]
                 if invalid_quantiles:
-                    error_msg = f"Quantiles must be between 0 and 1, got: {invalid_quantiles}"
+                    error_msg = (
+                        f"Quantiles must be between 0 and 1, got: {invalid_quantiles}"
+                    )
                     self.logger.error(error_msg)
                     raise ValueError(error_msg)
                 self.logger.info(
@@ -373,9 +361,7 @@ class QuantReg(Imputer):
                         # Convert boolean to numeric for regression
                         if variable in (boolean_targets or {}):
                             Y = Y.astype(float)
-                        self.models[variable][q] = sm.QuantReg(
-                            Y, X_with_const
-                        ).fit(q=q)
+                        self.models[variable][q] = sm.QuantReg(Y, X_with_const).fit(q=q)
                     self.logger.info(f"Model for q={q} fitted successfully")
             else:
                 random_generator = np.random.default_rng(self.seed)
@@ -400,9 +386,7 @@ class QuantReg(Imputer):
                     # Convert boolean to numeric for regression
                     if variable in (boolean_targets or {}):
                         Y = Y.astype(float)
-                    self.models[variable][q] = sm.QuantReg(
-                        Y, X_with_const
-                    ).fit(q=q)
+                    self.models[variable][q] = sm.QuantReg(Y, X_with_const).fit(q=q)
                 self.logger.info(f"Model for q={q:.4f} fitted successfully")
 
             self.logger.info(f"QuantReg has {len(self.models)} fitted models")
@@ -421,6 +405,4 @@ class QuantReg(Imputer):
             )
         except Exception as e:
             self.logger.error(f"Error fitting QuantReg model: {str(e)}")
-            raise RuntimeError(
-                f"Failed to fit QuantReg model: {str(e)}"
-            ) from e
+            raise RuntimeError(f"Failed to fit QuantReg model: {str(e)}") from e

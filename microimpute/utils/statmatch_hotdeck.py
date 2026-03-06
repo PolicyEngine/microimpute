@@ -83,9 +83,7 @@ def nnd_hotdeck_using_rpy2(
         missing_in_receiver = [
             v for v in matching_variables if v not in receiver.columns
         ]
-        missing_in_donor = [
-            v for v in matching_variables if v not in donor.columns
-        ]
+        missing_in_donor = [v for v in matching_variables if v not in donor.columns]
         if missing_in_receiver:
             msg = f"Matching variables missing in receiver: {missing_in_receiver}"
             log.error(msg)
@@ -134,12 +132,8 @@ def nnd_hotdeck_using_rpy2(
             mtc_ids = mtc_ids_r
         else:
             mtc_array = np.array(mtc_ids_r)
-            log.debug(
-                f"mtc_array shape: {mtc_array.shape}, dtype: {mtc_array.dtype}"
-            )
-            log.debug(
-                f"Receiver length: {len(receiver)}, Donor length: {len(donor)}"
-            )
+            log.debug(f"mtc_array shape: {mtc_array.shape}, dtype: {mtc_array.dtype}")
+            log.debug(f"Receiver length: {len(receiver)}, Donor length: {len(donor)}")
 
             # If we have a 1D array with strings, convert to integers
             if mtc_array.dtype.kind in ["U", "S"]:
@@ -148,17 +142,13 @@ def nnd_hotdeck_using_rpy2(
             # Check if mtc_array is empty or has unexpected shape
             if mtc_array.size == 0:
                 log.error("mtc_array is empty!")
-                raise ValueError(
-                    "No matching indices returned from NND_hotdeck"
-                )
+                raise ValueError("No matching indices returned from NND_hotdeck")
 
             # If the mtc.ids array has 2 values per recipient (recipient_idx, donor_idx pairs)
             if len(mtc_array) == 2 * len(receiver):
                 donor_indices = mtc_array.reshape(-1, 2)[:, 1]
                 # Make sure these indices are within the valid range (1 to donor dataset size)
-                donor_indices_valid = (
-                    np.remainder(donor_indices - 1, len(donor)) + 1
-                )
+                donor_indices_valid = np.remainder(donor_indices - 1, len(donor)) + 1
             else:
                 if len(mtc_array) >= len(receiver):
                     # Use the indices directly (up to the length of receiver)
@@ -176,15 +166,11 @@ def nnd_hotdeck_using_rpy2(
                     donor_indices_valid = np.concatenate(
                         [
                             mtc_array,
-                            np.repeat(
-                                fill_value, len(receiver) - len(mtc_array)
-                            ),
+                            np.repeat(fill_value, len(receiver) - len(mtc_array)),
                         ]
                     )
             # Create the final mtc.ids matrix required by create_fused
-            mtc_matrix = np.column_stack(
-                (recipient_indices, donor_indices_valid)
-            )
+            mtc_matrix = np.column_stack((recipient_indices, donor_indices_valid))
             # Convert to R matrix
             mtc_ids = ro.r.matrix(
                 ro.IntVector(mtc_matrix.flatten()),
@@ -219,14 +205,10 @@ def nnd_hotdeck_using_rpy2(
         raise
     except IndexError as e:
         log.error(f"Index error in statistical matching: {e}")
-        log.error(
-            f"Receiver shape: {receiver.shape}, Donor shape: {donor.shape}"
-        )
+        log.error(f"Receiver shape: {receiver.shape}, Donor shape: {donor.shape}")
         log.error(f"Matching variables: {matching_variables}")
         log.error(f"Z variables: {z_variables}")
-        raise RuntimeError(
-            f"Statistical matching failed with index error: {e}"
-        ) from e
+        raise RuntimeError(f"Statistical matching failed with index error: {e}") from e
     except Exception as e:
         log.error(f"Unexpected error in statistical matching: {e}")
         log.error(f"Error type: {type(e).__name__}")
