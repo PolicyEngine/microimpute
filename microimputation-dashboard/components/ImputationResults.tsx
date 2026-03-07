@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import { ImputationDataPoint } from '@/types/imputation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
 import DistributionOverlay from './DistributionOverlay';
+import { colors } from '@policyengine/design-system/tokens';
 
 interface ImputationResultsProps {
   data: ImputationDataPoint[];
@@ -102,19 +103,19 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
     const value = normalizedValue ?? (rawValue * 100);  // Assume raw is already a fraction if no range
 
     // Thresholds as percentage of variable range
-    if (value < 1) return '#16a34a';   // Dark green - excellent (<1% of range)
-    if (value < 3) return '#22c55e';   // Green - good (<3% of range)
-    if (value < 5) return '#eab308';   // Yellow - moderate (<5% of range)
-    if (value < 10) return '#f97316';  // Orange - fair (<10% of range)
-    return '#ef4444';                   // Red - poor (>=10% of range)
+    if (value < 1) return colors.success;        // Green - excellent (<1% of range)
+    if (value < 3) return colors.success;        // Green - good (<3% of range)
+    if (value < 5) return colors.warning;        // Yellow - moderate (<5% of range)
+    if (value < 10) return colors.warning;       // Yellow/orange - fair (<10% of range)
+    return colors.error;                          // Red - poor (>=10% of range)
   };
 
   const getKLColor = (value: number): string => {
-    if (value < 0.1) return '#16a34a'; // Dark green - excellent
-    if (value < 0.5) return '#22c55e'; // Green - good
-    if (value < 1.0) return '#eab308'; // Yellow - moderate
-    if (value < 5.0) return '#f97316'; // Orange - fair
-    return '#ef4444'; // Red - poor
+    if (value < 0.1) return colors.success;    // Green - excellent
+    if (value < 0.5) return colors.success;    // Green - good
+    if (value < 1.0) return colors.warning;    // Yellow - moderate
+    if (value < 5.0) return colors.warning;    // Yellow/orange - fair
+    return colors.error;                        // Red - poor
   };
 
   return (
@@ -168,8 +169,8 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                 margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tick={{ fill: '#000000' }} />
-                <YAxis type="category" dataKey="variable" width={90} tick={{ fill: '#000000' }} />
+                <XAxis type="number" tick={{ fill: colors.text.primary }} />
+                <YAxis type="category" dataKey="variable" width={90} tick={{ fill: colors.text.primary }} />
                 <Tooltip
                   formatter={(value: number, _name: string, props: { payload?: DistributionMetric }) => {
                     const normalizedValue = props.payload?.normalizedValue;
@@ -177,10 +178,10 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                     const pctStr = normalizedValue !== undefined ? ` (${normalizedValue.toFixed(2)}% of range)` : '';
                     return [`${distanceStr}${pctStr}`, 'Wasserstein Distance'];
                   }}
-                  contentStyle={{ color: '#000000' }}
-                  labelStyle={{ color: '#000000' }}
+                  contentStyle={{ color: colors.text.primary }}
+                  labelStyle={{ color: colors.text.primary }}
                 />
-                <Legend wrapperStyle={{ color: '#000000' }} />
+                <Legend wrapperStyle={{ color: colors.text.primary }} />
                 <Bar dataKey="value" name="Wasserstein Distance">
                   {wassersteinData.map((entry, index) => (
                     <Cell
@@ -296,14 +297,14 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                 margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tick={{ fill: '#000000' }} />
-                <YAxis type="category" dataKey="variable" width={90} tick={{ fill: '#000000' }} />
+                <XAxis type="number" tick={{ fill: colors.text.primary }} />
+                <YAxis type="category" dataKey="variable" width={90} tick={{ fill: colors.text.primary }} />
                 <Tooltip
                   formatter={(value: number) => [value.toFixed(6), 'KL-Divergence']}
-                  contentStyle={{ color: '#000000' }}
-                  labelStyle={{ color: '#000000' }}
+                  contentStyle={{ color: colors.text.primary }}
+                  labelStyle={{ color: colors.text.primary }}
                 />
-                <Legend wrapperStyle={{ color: '#000000' }} />
+                <Legend wrapperStyle={{ color: colors.text.primary }} />
                 <Bar dataKey="value" name="KL-Divergence">
                   {klDivergenceData.map((entry, index) => (
                     <Cell

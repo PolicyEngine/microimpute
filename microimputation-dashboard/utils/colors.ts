@@ -1,22 +1,20 @@
 // Consistent color mapping for imputation methods across all charts
-// Using Plotly color palette for consistency with Python visualizations
+// Using design-system chart series colors as primary, Plotly palette as fallback
+import { chartColors } from '@policyengine/design-system/charts';
+import { colors } from '@policyengine/design-system/tokens';
 
-// Primary colors to use in order of appearance for the first 5 models
+// Primary colors from PE design-system chart series
 export const PRIMARY_COLORS = [
-  '#636EFA', // Plotly blue
-  '#EF553B', // Plotly red
-  '#00CC96', // Plotly teal
-  '#AB63FA', // Plotly purple
-  '#FFA15A', // Plotly orange
+  ...chartColors.series, // 5 PE chart series colors
 ];
 
 // Additional fallback colors for when there are more than 5 models
 export const FALLBACK_COLORS = [
-  '#19D3F3', // Plotly cyan
-  '#FF6692', // Plotly pink
-  '#B6E880', // Plotly lime
-  '#FF97FF', // Plotly magenta
-  '#FECB52', // Plotly yellow
+  colors.blue[300],   // --pe-color-blue-300
+  colors.error,       // --pe-color-error
+  colors.success,     // --pe-color-success
+  colors.warning,     // --pe-color-warning
+  colors.primary[200], // --pe-color-primary-200
 ];
 
 /**

@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { ImputationDataPoint } from '@/types/imputation';
+import { colors } from '@policyengine/design-system/tokens';
 
 interface PredictorCorrelationMatrixProps {
   data: ImputationDataPoint[];
@@ -158,25 +159,26 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
   const getColor = (value: number): string => {
     // Scale from -1 to 1
     // Negative: red shades, Positive: blue shades, Zero: white
-    if (value === 1.0) return '#1e40af'; // Dark blue for diagonal
-    if (value >= 0.7) return '#3b82f6'; // Blue
-    if (value >= 0.4) return '#60a5fa'; // Light blue
-    if (value >= 0.2) return '#93c5fd'; // Very light blue
-    if (value >= -0.2) return '#f3f4f6'; // Nearly white
-    if (value >= -0.4) return '#fca5a5'; // Light red
-    if (value >= -0.7) return '#f87171'; // Red
-    return '#ef4444'; // Dark red
+    if (value === 1.0) return colors.blue[900];  // Dark blue for diagonal
+    if (value >= 0.7) return colors.blue[500];    // Blue
+    if (value >= 0.4) return colors.blue[400];    // Light blue
+    if (value >= 0.2) return colors.blue[300];    // Very light blue
+    if (value >= -0.2) return colors.gray[50];    // Nearly white
+    if (value >= -0.4) return '#fca5a5';          // Light red (no PE token)
+    if (value >= -0.7) return '#f87171';          // Red (no PE token)
+    return colors.error;                           // Dark red
   };
 
   // Helper function to get color based on mutual information value (0 to ~1)
   const getMIColor = (value: number): string => {
     // Scale from 0 (white) to high values (dark purple)
+    // Purple scale for MI (no direct PE tokens, using consistent hex)
     if (value >= 0.15) return '#581c87'; // Dark purple
     if (value >= 0.10) return '#7c3aed'; // Purple
     if (value >= 0.07) return '#a78bfa'; // Light purple
     if (value >= 0.04) return '#c4b5fd'; // Very light purple
     if (value >= 0.02) return '#ddd6fe'; // Almost white purple
-    return '#f3f4f6'; // Nearly white
+    return colors.gray[50];              // Nearly white
   };
 
   const cellSize = 100; // Size of each cell in pixels
@@ -221,9 +223,9 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
       {/* Correlation Matrix */}
       <div className="overflow-auto max-h-[600px]">
         <div className="inline-block">
-          <div style={{ display: 'grid', gridTemplateColumns: `${cellSize}px repeat(${predictors.length}, ${cellSize}px)`, border: '1px solid #e5e7eb' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: `${cellSize}px repeat(${predictors.length}, ${cellSize}px)`, border: `1px solid ${colors.border.light}` }}>
             {/* Top-left empty cell */}
-            <div style={{ width: cellSize, height: cellSize, borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }} className="bg-white" />
+            <div style={{ width: cellSize, height: cellSize, borderRight: `1px solid ${colors.border.light}`, borderBottom: `1px solid ${colors.border.light}` }} className="bg-white" />
 
             {/* Column headers */}
             {predictors.map((pred, idx) => (
@@ -232,8 +234,8 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                 style={{
                   width: cellSize,
                   height: cellSize,
-                  borderRight: idx < predictors.length - 1 ? '1px solid #e5e7eb' : 'none',
-                  borderBottom: '1px solid #e5e7eb'
+                  borderRight: idx < predictors.length - 1 ? `1px solid ${colors.border.light}` : 'none',
+                  borderBottom: `1px solid ${colors.border.light}`
                 }}
                 className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900"
                 title={pred}
@@ -263,8 +265,8 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                   style={{
                     width: cellSize,
                     height: cellSize,
-                    borderRight: '1px solid #e5e7eb',
-                    borderBottom: rowIdx < predictors.length - 1 ? '1px solid #e5e7eb' : 'none'
+                    borderRight: `1px solid ${colors.border.light}`,
+                    borderBottom: rowIdx < predictors.length - 1 ? `1px solid ${colors.border.light}` : 'none'
                   }}
                   className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900"
                   title={pred1}
@@ -289,8 +291,8 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                   // Use purple scale for mutual_info, blue/red scale for correlations
                   const bgColor = selectedMetric === 'mutual_info' ? getMIColor(value) : getColor(value);
                   const textColor = selectedMetric === 'mutual_info'
-                    ? (value > 0.07 ? '#ffffff' : '#000000')
-                    : (Math.abs(value) > 0.5 ? '#ffffff' : '#000000');
+                    ? (value > 0.07 ? colors.white : colors.text.primary)
+                    : (Math.abs(value) > 0.5 ? colors.white : colors.text.primary);
 
                   return (
                     <div
@@ -300,8 +302,8 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                         height: cellSize,
                         backgroundColor: bgColor,
                         color: textColor,
-                        borderRight: colIdx < predictors.length - 1 ? '1px solid #e5e7eb' : 'none',
-                        borderBottom: rowIdx < predictors.length - 1 ? '1px solid #e5e7eb' : 'none',
+                        borderRight: colIdx < predictors.length - 1 ? `1px solid ${colors.border.light}` : 'none',
+                        borderBottom: rowIdx < predictors.length - 1 ? `1px solid ${colors.border.light}` : 'none',
                       }}
                       className="flex items-center justify-center text-xs font-medium"
                       title={`${pred1} vs ${pred2}: ${value.toFixed(3)}`}
@@ -362,9 +364,9 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
             {/* MI Matrix */}
             <div className="overflow-auto max-h-[600px] mb-4">
               <div className="inline-block">
-                <div style={{ display: 'grid', gridTemplateColumns: `${cellSize}px repeat(${targetsList.length}, ${cellSize}px)`, border: '1px solid #e5e7eb' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: `${cellSize}px repeat(${targetsList.length}, ${cellSize}px)`, border: `1px solid ${colors.border.light}` }}>
                   {/* Top-left empty cell */}
-                  <div style={{ width: cellSize, height: cellSize, borderRight: '1px solid #e5e7eb', borderBottom: '1px solid #e5e7eb' }} className="bg-white" />
+                  <div style={{ width: cellSize, height: cellSize, borderRight: `1px solid ${colors.border.light}`, borderBottom: `1px solid ${colors.border.light}` }} className="bg-white" />
 
                   {/* Column headers (targets) */}
                   {targetsList.map((target, idx) => (
@@ -373,8 +375,8 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                       style={{
                         width: cellSize,
                         height: cellSize,
-                        borderRight: idx < targetsList.length - 1 ? '1px solid #e5e7eb' : 'none',
-                        borderBottom: '1px solid #e5e7eb'
+                        borderRight: idx < targetsList.length - 1 ? `1px solid ${colors.border.light}` : 'none',
+                        borderBottom: `1px solid ${colors.border.light}`
                       }}
                       className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900"
                       title={target}
@@ -404,8 +406,8 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                         style={{
                           width: cellSize,
                           height: cellSize,
-                          borderRight: '1px solid #e5e7eb',
-                          borderBottom: rowIdx < predictorsList.length - 1 ? '1px solid #e5e7eb' : 'none'
+                          borderRight: `1px solid ${colors.border.light}`,
+                          borderBottom: rowIdx < predictorsList.length - 1 ? `1px solid ${colors.border.light}` : 'none'
                         }}
                         className="bg-gray-100 flex items-center justify-center font-semibold text-gray-900"
                         title={predictor}
@@ -428,7 +430,7 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                       {targetsList.map((target, colIdx) => {
                         const value = miMatrixData.get(predictor)?.get(target) ?? 0;
                         const bgColor = getMIColor(value);
-                        const textColor = value > 0.07 ? '#ffffff' : '#000000';
+                        const textColor = value > 0.07 ? colors.white : colors.text.primary;
 
                         return (
                           <div
@@ -438,8 +440,8 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
                               height: cellSize,
                               backgroundColor: bgColor,
                               color: textColor,
-                              borderRight: colIdx < targetsList.length - 1 ? '1px solid #e5e7eb' : 'none',
-                              borderBottom: rowIdx < predictorsList.length - 1 ? '1px solid #e5e7eb' : 'none',
+                              borderRight: colIdx < targetsList.length - 1 ? `1px solid ${colors.border.light}` : 'none',
+                              borderBottom: rowIdx < predictorsList.length - 1 ? `1px solid ${colors.border.light}` : 'none',
                             }}
                             className="flex items-center justify-center text-xs font-medium"
                             title={`${predictor} → ${target}: ${value.toFixed(4)}`}

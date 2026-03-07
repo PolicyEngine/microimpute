@@ -13,6 +13,7 @@ import {
   ResponsiveContainer,
   Brush,
 } from 'recharts';
+import { colors } from '@policyengine/design-system/tokens';
 
 /**
  * Format a number to scientific notation if it's very large or very small
@@ -161,22 +162,22 @@ export default function DistributionOverlay({
               angle={-45}
               textAnchor="end"
               height={80}
-              tick={{ fill: '#000000', fontSize: 11 }}
+              tick={{ fill: colors.text.primary, fontSize: 11 }}
               label={{
                 value: `${dist.variable} (binned values)`,
                 position: 'insideBottom',
                 offset: -50,
-                style: { fill: '#000000' },
+                style: { fill: colors.text.primary },
               }}
             />
             <YAxis
-              tick={{ fill: '#000000' }}
+              tick={{ fill: colors.text.primary }}
               label={{
                 value: 'Percentage (%)',
                 angle: -90,
                 position: 'insideLeft',
                 offset: 10,
-                style: { fill: '#000000', textAnchor: 'middle' },
+                style: { fill: colors.text.primary, textAnchor: 'middle' },
               }}
             />
             <Tooltip
@@ -191,31 +192,31 @@ export default function DistributionOverlay({
                 }
                 return `Bin: ${_label}`;
               }}
-              contentStyle={{ color: '#000000' }}
-              labelStyle={{ color: '#000000' }}
+              contentStyle={{ color: colors.text.primary }}
+              labelStyle={{ color: colors.text.primary }}
             />
             <Bar
               dataKey="Donor"
-              fill="#3b82f6"
+              fill={colors.blue[500]}
               fillOpacity={0.7}
               name={`Donor (n=${dist.nSamplesDonor})`}
             />
             <Bar
               dataKey="Receiver"
-              fill="#ef4444"
+              fill={colors.error}
               fillOpacity={0.7}
               name={`Receiver (n=${dist.nSamplesReceiver})`}
             />
             <Brush
               dataKey="name"
               height={30}
-              stroke="#8884d8"
-              fill="#f3f4f6"
+              stroke={colors.primary[500]}
+              fill={colors.gray[50]}
               tickFormatter={() => ''}
             />
             <Legend
               verticalAlign="bottom"
-              wrapperStyle={{ color: '#000000', paddingTop: '45px' }}
+              wrapperStyle={{ color: colors.text.primary, paddingTop: '45px' }}
             />
           </BarChart>
         </ResponsiveContainer>
@@ -244,39 +245,39 @@ export default function DistributionOverlay({
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis
               dataKey="category"
-              tick={{ fill: '#000000', fontSize: 12 }}
+              tick={{ fill: colors.text.primary, fontSize: 12 }}
               label={{
                 value: `${dist.variable} (categories)`,
                 position: 'insideBottom',
                 offset: -10,
-                style: { fill: '#000000' },
+                style: { fill: colors.text.primary },
               }}
             />
             <YAxis
-              tick={{ fill: '#000000' }}
+              tick={{ fill: colors.text.primary }}
               label={{
                 value: 'Percentage (%)',
                 angle: -90,
                 position: 'insideLeft',
                 offset: 10,
-                style: { fill: '#000000', textAnchor: 'middle' },
+                style: { fill: colors.text.primary, textAnchor: 'middle' },
               }}
             />
             <Tooltip
               formatter={(value: number) => [`${value.toFixed(2)}%`, '']}
-              contentStyle={{ color: '#000000' }}
-              labelStyle={{ color: '#000000' }}
+              contentStyle={{ color: colors.text.primary }}
+              labelStyle={{ color: colors.text.primary }}
             />
-            <Legend wrapperStyle={{ color: '#000000', paddingTop: '10px' }} />
+            <Legend wrapperStyle={{ color: colors.text.primary, paddingTop: '10px' }} />
             <Bar
               dataKey="Donor"
-              fill="#3b82f6"
+              fill={colors.blue[500]}
               fillOpacity={0.7}
               name={`Donor (n=${dist.nSamplesDonor})`}
             />
             <Bar
               dataKey="Receiver"
-              fill="#ef4444"
+              fill={colors.error}
               fillOpacity={0.7}
               name={`Receiver (n=${dist.nSamplesReceiver})`}
             />
