@@ -1257,3 +1257,183 @@ def test_qrf_hyperparameter_tuning_improves_performance() -> None:
     assert tuned_loss <= untuned_loss * (1 + margin), (
         f"Tuned loss ({tuned_loss:.4f}) should be ≤ {(1 + margin) * 100}% of untuned loss ({untuned_loss:.4f} * {1 + margin} = {untuned_loss * (1 + margin):.4f})"
     )
+
+
+# === max_train_samples Tests ===
+
+
+def test_qrf_max_train_samples_subsamples() -> None:
+    """Test that max_train_samples reduces training data size."""
+    np.random.seed(42)
+    n_samples = 500
+
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "x2": np.random.randn(n_samples),
+            "y": np.random.randn(n_samples),
+        }
+    )
+
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.INFO)
+
+    model = QRF(log_level="INFO", max_train_samples=100)
+    model.logger.addHandler(handler)
+
+    fitted = model.fit(
+        data,
+        predictors=["x1", "x2"],
+        imputed_variables=["y"],
+        n_estimators=10,
+    )
+
+    log_output = log_stream.getvalue()
+    assert "Subsampling training data from 500 to 100 rows" in log_output
+
+    # Predictions should still work
+    test_data = data[["x1", "x2"]].head(10)
+    predictions = fitted.predict(test_data)
+    assert isinstance(predictions, pd.DataFrame)
+    assert len(predictions) == 10
+
+    model.logger.removeHandler(handler)
+
+
+def test_qrf_max_train_samples_no_op_when_small() -> None:
+    """max_train_samples should be a no-op when data is already small."""
+    np.random.seed(42)
+    n_samples = 50
+
+    data = pd.DataFrame(
+        {
+            "x1": np.random.randn(n_samples),
+            "y": np.random.randn(n_samples),
+        }
+    )
+
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.INFO)
+
+    model = QRF(log_level="INFO", max_train_samples=100)
+    model.logger.addHandler(handler)
+
+    model.fit(
+        data,
+        predictors=["x1"],
+        imputed_variables=["y"],
+        n_estimators=10,
+    )
+
+    log_output = log_stream.getvalue()
+    assert "Subsampling" not in log_output
+
+    model.logger.removeHandler(handler)
+
+
+# === fit_predict Tests ===
+
+
+def test_qrf_fit_predict_basic() -> None:
+    """fit_predict should return the same shape as fit + predict."""
+    np.random.seed(42)
+    n_train, n_test = 200, 50
+
+    train = pd.DataFrame(
+        {
+            "x": np.random.randn(n_train),
+            "y1": np.random.randn(n_train),
+            "y2": np.random.randn(n_train),
+        }
+    )
+    test = pd.DataFrame({"x": np.random.randn(n_test)})
+
+    model = QRF(log_level="WARNING")
+    result = model.fit_predict(
+        X_train=train,
+        X_test=test,
+        predictors=["x"],
+        imputed_variables=["y1", "y2"],
+        n_estimators=10,
+    )
+
+    assert isinstance(result, pd.DataFrame)
+    assert result.shape == (n_test, 2)
+    assert list(result.columns) == ["y1", "y2"]
+    assert not result.isna().any().any()
+
+
+def test_qrf_fit_predict_missing_variables() -> None:
+    """fit_predict should zero-fill variables missing from X_train."""
+    np.random.seed(42)
+    n_train, n_test = 200, 50
+
+    train = pd.DataFrame(
+        {
+            "x": np.random.randn(n_train),
+            "y_present": np.random.randn(n_train),
+        }
+    )
+    test = pd.DataFrame({"x": np.random.randn(n_test)})
+
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.WARNING)
+
+    model = QRF(log_level="WARNING")
+    model.logger.addHandler(handler)
+
+    result = model.fit_predict(
+        X_train=train,
+        X_test=test,
+        predictors=["x"],
+        imputed_variables=["y_present", "y_missing1", "y_missing2"],
+        n_estimators=10,
+    )
+
+    log_output = log_stream.getvalue()
+    assert "y_missing1" in log_output
+    assert "y_missing2" in log_output
+    assert "zero-filled" in log_output
+
+    # Output should have all three columns
+    assert list(result.columns) == [
+        "y_present",
+        "y_missing1",
+        "y_missing2",
+    ]
+    # Present variable should have non-zero values
+    assert result["y_present"].abs().sum() > 0
+    # Missing variables should be zero
+    assert (result["y_missing1"] == 0).all()
+    assert (result["y_missing2"] == 0).all()
+
+    model.logger.removeHandler(handler)
+
+
+def test_qrf_fit_predict_with_max_train_samples() -> None:
+    """fit_predict should work together with max_train_samples."""
+    np.random.seed(42)
+    n_train, n_test = 500, 30
+
+    train = pd.DataFrame(
+        {
+            "x": np.random.randn(n_train),
+            "y": np.random.randn(n_train),
+        }
+    )
+    test = pd.DataFrame({"x": np.random.randn(n_test)})
+
+    model = QRF(log_level="WARNING", max_train_samples=100)
+    result = model.fit_predict(
+        X_train=train,
+        X_test=test,
+        predictors=["x"],
+        imputed_variables=["y"],
+        n_estimators=10,
+    )
+
+    assert result.shape == (n_test, 1)
+    assert not result.isna().any().any()

@@ -492,6 +492,7 @@ class QRF(Imputer):
         memory_efficient: bool = False,
         batch_size: Optional[int] = None,
         cleanup_interval: int = 10,
+        max_train_samples: Optional[int] = None,
     ) -> None:
         """Initialize the QRF model.
 
@@ -500,6 +501,9 @@ class QRF(Imputer):
             memory_efficient: Enable memory optimization features.
             batch_size: Process variables in batches to reduce memory usage.
             cleanup_interval: Frequency of garbage collection (every N variables).
+            max_train_samples: If set, subsample X_train to at most this many
+                rows before fitting. Reduces memory and training time while
+                preserving sequential covariance structure.
         """
         super().__init__(log_level=log_level)
         self.models = {}
@@ -507,6 +511,7 @@ class QRF(Imputer):
         self.memory_efficient = memory_efficient
         self.batch_size = batch_size
         self.cleanup_interval = cleanup_interval
+        self.max_train_samples = max_train_samples
 
         self.logger.debug("Initializing QRF imputer")
 
@@ -675,6 +680,20 @@ class QRF(Imputer):
             RuntimeError: If model fitting fails.
         """
         try:
+            # Subsample training data if max_train_samples is set
+            if (
+                self.max_train_samples is not None
+                and len(X_train) > self.max_train_samples
+            ):
+                self.logger.info(
+                    f"Subsampling training data from "
+                    f"{len(X_train)} to {self.max_train_samples} rows"
+                )
+                X_train = X_train.sample(
+                    n=self.max_train_samples,
+                    random_state=self.seed,
+                )
+
             # Store target type information early for hyperparameter tuning
             self.categorical_targets = categorical_targets or {}
             self.boolean_targets = boolean_targets or {}
@@ -1080,6 +1099,62 @@ class QRF(Imputer):
                 self.logger.debug(
                     f"  Memory cleanup performed. Usage: {self._get_memory_usage_info()}"
                 )
+
+    def fit_predict(
+        self,
+        X_train: pd.DataFrame,
+        X_test: pd.DataFrame,
+        predictors: List[str],
+        imputed_variables: List[str],
+        **kwargs: Any,
+    ) -> pd.DataFrame:
+        """Fit the model and immediately predict, then release the fitted model.
+
+        Convenience method that combines fit() + predict() + cleanup.
+        Useful when you don't need to keep the fitted model around.
+
+        Variables in ``imputed_variables`` that are missing from ``X_train``
+        are automatically skipped during fitting and zero-filled in the
+        output, so callers don't need to pre-filter.
+
+        Args:
+            X_train: DataFrame containing the training data.
+            X_test: DataFrame containing the test data (predictors only).
+            predictors: List of column names to use as predictors.
+            imputed_variables: List of column names to impute.
+            **kwargs: Additional keyword arguments passed to fit().
+
+        Returns:
+            DataFrame with one column per imputed variable.
+        """
+        # Identify missing variables before fit (which would error).
+        available = [v for v in imputed_variables if v in X_train.columns]
+        missing = [v for v in imputed_variables if v not in X_train.columns]
+        if missing:
+            self.logger.warning(
+                f"fit_predict: {len(missing)} variables not in X_train "
+                f"and will be zero-filled: {missing}"
+            )
+
+        fitted = self.fit(
+            X_train=X_train,
+            predictors=predictors,
+            imputed_variables=available,
+            **kwargs,
+        )
+
+        test_predictors = [p for p in predictors if p in X_test.columns]
+        result = fitted.predict(X_test=X_test[test_predictors])
+        del fitted
+        gc.collect()
+
+        # Zero-fill missing variables to match the requested output shape.
+        for var in missing:
+            result[var] = 0
+
+        # Reorder columns to match the original requested order.
+        result = result[[v for v in imputed_variables if v in result.columns]]
+        return result
 
     def _tune_qrf_hyperparameters(
         self,
