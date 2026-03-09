@@ -24,7 +24,7 @@ jobs:
             - name: Setup Python
               uses: actions/setup-python@v5
               with:
-                python-version: 3.13
+                python-version: 3.14
             - name: Bump version and build changelog
               run: |
                 pip install towncrier
@@ -41,7 +41,7 @@ jobs:
       runs-on: ubuntu-latest
       strategy:
         matrix:
-          python-version: ["3.13"]
+          python-version: ["3.14"]
       steps:
         - name: Checkout code
           uses: actions/checkout@v4
