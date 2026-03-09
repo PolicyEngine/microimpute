@@ -1,3 +1,10 @@
+## [1.15.0] - 2026-03-09
+
+### Added
+
+- Added `max_train_samples` parameter and `fit_predict()` method to QRF, with automatic zero-filling of missing output variables.
+
+
 ## [1.14.5] - 2026-03-06
 
 No significant changes.
