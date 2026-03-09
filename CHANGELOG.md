@@ -1,3 +1,10 @@
+## [1.15.1] - 2026-03-09
+
+### Changed
+
+- Added Python 3.14 support, bumped dependency upper bounds (pandas, plotly, scipy, pytest, pytest-cov), and upgraded GitHub Actions versions.
+
+
 ## [1.15.0] - 2026-03-09
 
 ### Added
