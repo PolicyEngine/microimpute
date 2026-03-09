@@ -511,6 +511,8 @@ class QRF(Imputer):
         self.memory_efficient = memory_efficient
         self.batch_size = batch_size
         self.cleanup_interval = cleanup_interval
+        if max_train_samples is not None and max_train_samples < 1:
+            raise ValueError("max_train_samples must be a positive integer")
         self.max_train_samples = max_train_samples
 
         self.logger.debug("Initializing QRF imputer")
@@ -692,7 +694,7 @@ class QRF(Imputer):
                 X_train = X_train.sample(
                     n=self.max_train_samples,
                     random_state=self.seed,
-                )
+                ).reset_index(drop=True)
 
             # Store target type information early for hyperparameter tuning
             self.categorical_targets = categorical_targets or {}
@@ -1127,8 +1129,6 @@ class QRF(Imputer):
         Returns:
             DataFrame with one column per imputed variable.
         """
-        # Identify missing variables before fit (which would error).
-        available = [v for v in imputed_variables if v in X_train.columns]
         missing = [v for v in imputed_variables if v not in X_train.columns]
         if missing:
             self.logger.warning(
@@ -1139,12 +1139,12 @@ class QRF(Imputer):
         fitted = self.fit(
             X_train=X_train,
             predictors=predictors,
-            imputed_variables=available,
+            imputed_variables=imputed_variables,
+            skip_missing=True,
             **kwargs,
         )
 
-        test_predictors = [p for p in predictors if p in X_test.columns]
-        result = fitted.predict(X_test=X_test[test_predictors])
+        result = fitted.predict(X_test=X_test[predictors])
         del fitted
         gc.collect()
 
