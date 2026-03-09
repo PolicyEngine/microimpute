@@ -14,7 +14,7 @@ authors = [
     { name = "María Juaristi", email = "juaristi@uni.minerva.edu" },
     { name = "Nikhil Woodruff", email = "nikhil.woodruff@outlook.com" }
 ]
-requires-python = ">=3.12,<3.14"
+requires-python = ">=3.12,<3.15"
 dependencies = [
     "numpy>=2.0.0,<3.0.0",
     "pandas>=2.2.0,<3.0.0",
