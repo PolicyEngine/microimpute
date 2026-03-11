@@ -3,6 +3,7 @@
 import { useMemo } from 'react';
 import { ImputationDataPoint } from '@/types/imputation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { colors } from '@policyengine/design-system/tokens';
 
 interface PredictorOrderingRobustnessProps {
   data: ImputationDataPoint[];
@@ -300,8 +301,8 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
                 margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
               >
                 <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tickFormatter={(val) => `${val.toFixed(1)}%`} tick={{ fill: '#000000' }} />
-                <YAxis type="category" dataKey="predictor" width={90} tick={{ fill: '#000000' }} />
+                <XAxis type="number" tickFormatter={(val) => `${val.toFixed(1)}%`} tick={{ fill: colors.text.primary }} />
+                <YAxis type="category" dataKey="predictor" width={90} tick={{ fill: colors.text.primary }} />
                 <Tooltip
                   formatter={(value: number, name: string) => {
                     if (name === 'relativeImpact') {
@@ -309,15 +310,15 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
                     }
                     return [value.toFixed(6), 'Loss Increase'];
                   }}
-                  contentStyle={{ color: '#000000' }}
-                  labelStyle={{ color: '#000000' }}
+                  contentStyle={{ color: colors.text.primary }}
+                  labelStyle={{ color: colors.text.primary }}
                 />
-                <Legend wrapperStyle={{ color: '#000000' }} />
+                <Legend wrapperStyle={{ color: colors.text.primary }} />
                 <Bar dataKey="relativeImpact" name="Relative Impact (%)">
                   {importanceData.map((entry, index) => (
                     <Cell
                       key={`cell-${index}`}
-                      fill={entry.relativeImpact >= 0 ? '#ef4444' : '#22c55e'}
+                      fill={entry.relativeImpact >= 0 ? colors.error : colors.success}
                     />
                   ))}
                 </Bar>

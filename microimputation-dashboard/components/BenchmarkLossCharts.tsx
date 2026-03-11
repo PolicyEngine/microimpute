@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import { ImputationDataPoint } from '@/types/imputation';
 import { getMethodColor } from '@/utils/colors';
+import { colors } from '@policyengine/design-system/tokens';
 
 interface BenchmarkLossChartsProps {
   data: ImputationDataPoint[];
@@ -413,24 +414,24 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
             </h3>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={quantileChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                <CartesianGrid strokeDasharray="3 3" stroke={colors.border.light} />
                 <XAxis
                   dataKey="quantile"
                   label={{ value: 'Quantiles', position: 'insideBottom', offset: -5 }}
-                  tick={{ fill: '#666' }}
+                  tick={{ fill: colors.gray[500] }}
                 />
                 <YAxis
                   label={{ value: 'Test quantile loss', angle: -90, position: 'insideLeft' }}
-                  tick={{ fill: '#666' }}
+                  tick={{ fill: colors.gray[500] }}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #ccc',
-                    color: '#000',
+                    backgroundColor: colors.white,
+                    border: `1px solid ${colors.border.medium}`,
+                    color: colors.text.primary,
                   }}
-                  labelStyle={{ color: '#000', fontWeight: 'bold' }}
-                  itemStyle={{ color: '#000' }}
+                  labelStyle={{ color: colors.text.primary, fontWeight: 'bold' }}
+                  itemStyle={{ color: colors.text.primary }}
                   formatter={(value: number) => value.toFixed(6)}
                 />
                 <Legend wrapperStyle={{ paddingTop: '20px' }} />
@@ -462,23 +463,23 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
             </h3>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={logLossChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                <CartesianGrid strokeDasharray="3 3" stroke={colors.border.light} />
                 <XAxis
                   dataKey="method"
-                  tick={{ fill: '#666' }}
+                  tick={{ fill: colors.gray[500] }}
                 />
                 <YAxis
                   label={{ value: 'Log loss', angle: -90, position: 'insideLeft' }}
-                  tick={{ fill: '#666' }}
+                  tick={{ fill: colors.gray[500] }}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#fff',
-                    border: '1px solid #ccc',
-                    color: '#000',
+                    backgroundColor: colors.white,
+                    border: `1px solid ${colors.border.medium}`,
+                    color: colors.text.primary,
                   }}
-                  labelStyle={{ color: '#000', fontWeight: 'bold' }}
-                  itemStyle={{ color: '#000' }}
+                  labelStyle={{ color: colors.text.primary, fontWeight: 'bold' }}
+                  itemStyle={{ color: colors.text.primary }}
                   formatter={(value: number) => [value.toFixed(6), 'Log loss']}
                 />
                 <Bar dataKey="value">
@@ -534,29 +535,29 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                   <h4 className="text-lg font-semibold mb-3 text-gray-900">Quantile loss: train vs test</h4>
                   <ResponsiveContainer width="100%" height={350}>
                     <BarChart data={trainTestData.quantile}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                      <CartesianGrid strokeDasharray="3 3" stroke={colors.border.light} />
                       <XAxis
                         dataKey="quantile"
                         label={{ value: 'Quantiles', position: 'insideBottom', offset: -5 }}
-                        tick={{ fill: '#666' }}
+                        tick={{ fill: colors.gray[500] }}
                       />
                       <YAxis
                         label={{ value: 'Quantile loss', angle: -90, position: 'insideLeft' }}
-                        tick={{ fill: '#666' }}
+                        tick={{ fill: colors.gray[500] }}
                       />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: '#fff',
-                          border: '1px solid #ccc',
-                          color: '#000',
+                          backgroundColor: colors.white,
+                          border: `1px solid ${colors.border.medium}`,
+                          color: colors.text.primary,
                         }}
-                        labelStyle={{ color: '#000', fontWeight: 'bold' }}
-                        itemStyle={{ color: '#000' }}
+                        labelStyle={{ color: colors.text.primary, fontWeight: 'bold' }}
+                        itemStyle={{ color: colors.text.primary }}
                         formatter={(value: number) => value.toFixed(6)}
                       />
                       <Legend wrapperStyle={{ paddingTop: '25px' }} />
-                      <Bar dataKey="train" fill="#06b6d4" name="Train" />
-                      <Bar dataKey="test" fill="#16a34a" name="Test" />
+                      <Bar dataKey="train" fill={colors.primary[400]} name="Train" />
+                      <Bar dataKey="test" fill={colors.success} name="Test" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -568,28 +569,28 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                   <h4 className="text-lg font-semibold mb-3 text-gray-900">Log loss: train vs test</h4>
                   <ResponsiveContainer width="100%" height={350}>
                     <BarChart data={trainTestData.logLoss}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                      <CartesianGrid strokeDasharray="3 3" stroke={colors.border.light} />
                       <XAxis
                         dataKey="category"
-                        tick={{ fill: '#666' }}
+                        tick={{ fill: colors.gray[500] }}
                       />
                       <YAxis
                         label={{ value: 'Log loss', angle: -90, position: 'insideLeft' }}
-                        tick={{ fill: '#666' }}
+                        tick={{ fill: colors.gray[500] }}
                       />
                       <Tooltip
                         contentStyle={{
-                          backgroundColor: '#fff',
-                          border: '1px solid #ccc',
-                          color: '#000',
+                          backgroundColor: colors.white,
+                          border: `1px solid ${colors.border.medium}`,
+                          color: colors.text.primary,
                         }}
-                        labelStyle={{ color: '#000', fontWeight: 'bold' }}
-                        itemStyle={{ color: '#000' }}
+                        labelStyle={{ color: colors.text.primary, fontWeight: 'bold' }}
+                        itemStyle={{ color: colors.text.primary }}
                         formatter={(value: number) => value.toFixed(6)}
                       />
                       <Legend wrapperStyle={{ paddingTop: '25px' }} />
-                      <Bar dataKey="train" fill="#06b6d4" name="Train" />
-                      <Bar dataKey="test" fill="#16a34a" name="Test" />
+                      <Bar dataKey="train" fill={colors.primary[400]} name="Train" />
+                      <Bar dataKey="test" fill={colors.success} name="Test" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

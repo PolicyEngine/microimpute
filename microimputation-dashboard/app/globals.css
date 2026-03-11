@@ -1,8 +1,9 @@
 @import "tailwindcss";
+@import "@policyengine/design-system/tokens.css";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: var(--pe-color-bg-primary);
+  --foreground: var(--pe-color-text-primary);
 }
 
 @theme inline {

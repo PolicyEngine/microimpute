@@ -14,6 +14,7 @@ import {
 } from 'recharts';
 import { ImputationDataPoint } from '@/types/imputation';
 import { getMethodColor } from '@/utils/colors';
+import { colors } from '@policyengine/design-system/tokens';
 
 interface PerVariableChartsProps {
   data: ImputationDataPoint[];
@@ -108,7 +109,7 @@ export default function PerVariableCharts({
           </h4>
           <ResponsiveContainer width="100%" height={400}>
             <BarChart data={quantileChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+              <CartesianGrid strokeDasharray="3 3" stroke={colors.border.light} />
               <XAxis
                 dataKey="quantile"
                 label={{
@@ -116,7 +117,7 @@ export default function PerVariableCharts({
                   position: 'insideBottom',
                   offset: -5,
                 }}
-                tick={{ fill: '#666' }}
+                tick={{ fill: colors.gray[500] }}
               />
               <YAxis
                 label={{
@@ -124,16 +125,16 @@ export default function PerVariableCharts({
                   angle: -90,
                   position: 'insideLeft',
                 }}
-                tick={{ fill: '#666' }}
+                tick={{ fill: colors.gray[500] }}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#fff',
-                  border: '1px solid #ccc',
-                  color: '#000',
+                  backgroundColor: colors.white,
+                  border: `1px solid ${colors.border.medium}`,
+                  color: colors.text.primary,
                 }}
-                labelStyle={{ color: '#000', fontWeight: 'bold' }}
-                itemStyle={{ color: '#000' }}
+                labelStyle={{ color: colors.text.primary, fontWeight: 'bold' }}
+                itemStyle={{ color: colors.text.primary }}
                 formatter={(value: number) => value.toFixed(6)}
               />
               <Legend wrapperStyle={{ paddingTop: '20px' }} />
@@ -157,24 +158,24 @@ export default function PerVariableCharts({
           </h4>
           <ResponsiveContainer width="100%" height={400}>
             <BarChart data={logLossChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-              <XAxis dataKey="method" tick={{ fill: '#666' }} />
+              <CartesianGrid strokeDasharray="3 3" stroke={colors.border.light} />
+              <XAxis dataKey="method" tick={{ fill: colors.gray[500] }} />
               <YAxis
                 label={{
                   value: 'Log Loss',
                   angle: -90,
                   position: 'insideLeft',
                 }}
-                tick={{ fill: '#666' }}
+                tick={{ fill: colors.gray[500] }}
               />
               <Tooltip
                 contentStyle={{
-                  backgroundColor: '#fff',
-                  border: '1px solid #ccc',
-                  color: '#000',
+                  backgroundColor: colors.white,
+                  border: `1px solid ${colors.border.medium}`,
+                  color: colors.text.primary,
                 }}
-                labelStyle={{ color: '#000', fontWeight: 'bold' }}
-                itemStyle={{ color: '#000' }}
+                labelStyle={{ color: colors.text.primary, fontWeight: 'bold' }}
+                itemStyle={{ color: colors.text.primary }}
                 formatter={(value: number) => [value.toFixed(6), 'Log Loss']}
               />
               <Bar dataKey="value">
