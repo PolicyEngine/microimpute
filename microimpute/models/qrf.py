@@ -482,7 +482,7 @@ class QRF(Imputer):
     """
     Quantile Regression Forest model for imputation.
 
-    This model uses a Quantile Random Forest to predict quantiles.
+    This model uses a Quantile Regression Forest to predict quantiles.
     The underlying QRF implementation is from the quantile_forest package.
     """
 

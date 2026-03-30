@@ -5,7 +5,7 @@ Microimpute is a Python package for imputing variables from one survey dataset o
 The package currently supports:
 - Hot Deck Matching
 - Ordinary Least Squares (OLS) Linear Regression
-- Quantile Random Forests (QRF)
+- Quantile Regression Forests (QRF)
 - Quantile Regression
 - Mixture Density Networks (MDN)
 

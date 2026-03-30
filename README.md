@@ -7,7 +7,7 @@ Microimpute is a Python package for imputing variables from one survey dataset o
 - **Statistical Matching**: distance-based matching to find similar donor observations
 - **Ordinary Least Squares (OLS)**: linear regression imputation
 - **Quantile Regression**: models conditional quantiles instead of the conditional mean
-- **Quantile Random Forests (QRF)**: non-parametric, tree-based quantile estimation
+- **Quantile Regression Forests (QRF)**: non-parametric, tree-based quantile estimation
 - **Mixture Density Networks (MDN)**: neural network with a Gaussian mixture output
 
 ## Autoimpute
