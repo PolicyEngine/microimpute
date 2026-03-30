@@ -1,4 +1,4 @@
-\section{Background}
+\section{Background}\label{sec:background}
 
 This section defines the statistical matching problem and describes the imputation methods in \texttt{microimpute}. We begin with the formal problem definition and the assumption underlying all statistical matching procedures, then discuss the relationship to missing data mechanisms, and finally describe each of the five imputation methods.
 
@@ -105,7 +105,7 @@ The coefficients $\boldsymbol{\beta}(\tau)$ are estimated by minimizing the asym
 
 where the check function $\rho_\tau(u) = u(\tau - \mathbf{1}_{u<0})$ penalizes positive and negative residuals asymmetrically.
 
-The \texttt{microimpute} implementation of Quantile regression also uses the \texttt{statsmodels} library. By fitting models at multiple quantiles, it can approximate the entire conditional distribution of $Y|X$. For imputation, a random quantile $\tau^* \sim \text{Uniform}(0,1)$ can be drawn, and the imputed value computed by interpolating between estimated quantile functions \citep{wei2014multiple}.
+The \texttt{microimpute} implementation of Quantile Regression also uses the \texttt{statsmodels} library. By fitting models at multiple quantiles, it can approximate the entire conditional distribution of $Y|X$. For imputation, a random quantile $\tau^* \sim \text{Uniform}(0,1)$ can be drawn, and the imputed value computed by interpolating between estimated quantile functions \citep{wei2014multiple}.
 
 Quantile regression offers advantages over OLS:
 \begin{itemize}

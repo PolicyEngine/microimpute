@@ -1,8 +1,8 @@
 \section{Methodology}\label{sec:methodology}
 
-\subsection{$\texttt{microimpute}$ package implementation}
+\subsection{\texttt{microimpute} package implementation}
 
-$\texttt{microimpute}$\footnote{Documentation, implementation details, and usage examples are available at https://policyengine.github.io/microimpute/.} is an open-source Python framework for statistical matching that provides a common interface for imputing variables across survey datasets using multiple methods. While several imputation approaches exist individually, researchers have lacked a standardized tool for comparing their distributional performance on a given dataset and automatically selecting the best approach. In this study, \texttt{microimpute} is both a methodological contribution and the analytical engine behind the wealth imputation experiments described below.
+\texttt{microimpute}\footnote{Documentation, implementation details, and usage examples are available at \url{https://policyengine.github.io/microimpute/}.} is an open-source Python framework for statistical matching that provides a common interface for imputing variables across survey datasets using multiple methods. While several imputation approaches exist individually, researchers have lacked a standardized tool for comparing their distributional performance on a given dataset and automatically selecting the best approach. In this study, \texttt{microimpute} is both a methodological contribution and the analytical engine behind the wealth imputation experiments described below.
 
 \subsubsection{Core capabilities}
 
@@ -61,7 +61,7 @@ To create a ground truth for evaluation, we employ cross-validation, splitting t
     \item Impute wealth (\texttt{networth}) onto the SCF holdout set using each method, with the remaining four folds as training data
     \begin{enumerate}
         \item SCF survey data weights (captured in the variable \texttt{household\_weight}) are passed into \texttt{autoimpute} for sampling
-        \item Demographic and financial variables available in both surveys serve as predictors, after preprocessing for consistent variable names and encoding: \texttt{is\_female}, \texttt{age}, \texttt{race}, \texttt{own\_children\_in\_household}, \texttt{employment\_income}, \texttt{interest\_dividend\_income}, \texttt{pension\_income}
+        \item Demographic and financial variables available in both surveys serve as predictors, after preprocessing for consistent variable names and encoding: \texttt{is\_female}, \texttt{age}, \texttt{race}, \texttt{own\_\allowbreak{}children\_\allowbreak{}in\_\allowbreak{}household}, \texttt{employment\_\allowbreak{}income}, \texttt{interest\_\allowbreak{}dividend\_\allowbreak{}income}, \texttt{pension\_\allowbreak{}income}
         \item Each method performs imputation at 20 equally spaced quantiles
     \end{enumerate}
 

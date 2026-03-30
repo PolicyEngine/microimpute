@@ -1,4 +1,4 @@
-\section{Discussion}
+\section{Discussion}\label{sec:discussion}
 
 This paper has evaluated five imputation methods within the \texttt{microimpute} framework, finding that Quantile Regression Forests offer advantages for the SCF-to-CPS wealth imputation application. By preserving the full conditional distribution of wealth, QRF captures statistical properties of wealth data that traditional methods miss.
 
@@ -12,7 +12,7 @@ Two practical aspects also mattered. First, native survey weight support through
 
 Two supplementary analyses help contextualize the main SCF-CPS results.
 
-The cross-dataset benchmarking exercise (Appendix~\ref{app:benchmarking}) shows that method performance is context-dependent. QRF achieves the best Wasserstein distance on datasets with complex non-linear relationships, such as the Brazilian houses dataset and the SCF wealth imputation. Matching, by contrast, achieves the lowest Wasserstein distance on four of six benchmarking datasets and the best mean rank overall (1.67 vs.\ QRF's 1.83). This strong marginal performance follows from Matching's mechanism: drawing imputed values directly from the donor pool inherently preserves the shape and tail behavior of the original distribution, yielding low Wasserstein distances even when the conditioning on predictor values is suboptimal. But as the main SCF-CPS results show, good marginal distributions do not guarantee accurate conditional imputation. Households may receive plausible-looking wealth values that do not correctly reflect their individual characteristics. The trade-off between marginal and conditional accuracy, and the effect of differing survey designs on record matching, deserve careful attention in any application.
+The cross-dataset benchmarking exercise (Appendix~\ref{app:benchmarking}) shows that method performance is context-dependent. QRF achieves the best Wasserstein distance on datasets with complex nonlinear relationships, such as the Brazilian houses dataset and the SCF wealth imputation. Matching, by contrast, achieves the lowest Wasserstein distance on four of six benchmarking datasets and the best mean rank overall (1.67 vs.\ QRF's 1.83). This strong marginal performance follows from Matching's mechanism: drawing imputed values directly from the donor pool inherently preserves the shape and tail behavior of the original distribution, yielding low Wasserstein distances even when the conditioning on predictor values is suboptimal. But as the main SCF-CPS results show, good marginal distributions do not guarantee accurate conditional imputation. Households may receive plausible-looking wealth values that do not correctly reflect their individual characteristics. The trade-off between marginal and conditional accuracy, and the effect of differing survey designs on record matching, deserve careful attention in any application.
 
 OLS performs competitively on datasets where the predictor-target relationship is approximately linear (e.g., \texttt{abalone}, \texttt{space\_ga}), confirming that simpler parametric methods remain effective when their structural assumptions hold. MDN consistently ranks last across the benchmarking datasets, likely reflecting a combination of the relatively small sample sizes in these datasets and the hyperparameter sensitivity of neural network-based approaches, which require larger training sets to realize their flexibility advantage.
 
@@ -22,7 +22,7 @@ The predictor importance analysis (Appendix~\ref{app:robustness}) reveals a clea
 
 The predictor importance and progressive inclusion tools in \texttt{microimpute} let researchers assess which variables drive imputation performance in their specific context and make informed decisions about variable selection when data are limited.
 
-Together, these supplementary analyses put the main results in perspective. QRF's strong performance in the SCF-CPS setting reflects the particular characteristics of the wealth imputation problem, namely a large donor dataset, highly non-linear relationships, and informative financial predictors available in both surveys. Researchers applying \texttt{microimpute} to other settings should expect method rankings to vary with dataset characteristics.
+Together, these supplementary analyses put the main results in perspective. QRF's strong performance in the SCF-CPS setting reflects the particular characteristics of the wealth imputation problem, namely a large donor dataset, highly nonlinear relationships, and informative financial predictors available in both surveys. Researchers applying \texttt{microimpute} to other settings should expect method rankings to vary with dataset characteristics.
 
 \subsection{Reform analysis and policy uncertainty}
 

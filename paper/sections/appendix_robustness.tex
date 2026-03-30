@@ -4,9 +4,9 @@ To assess the relative contribution of each predictor variable to the quality of
 
 \subsection{Leave-one-out analysis}
 
-We measure the impact of each predictor by excluding it from the QRF model and observing the resulting increase in average quantile loss relative to the full model (baseline loss: 1,572,392, computed on the original dollar scale rather than the asinh-transformed scale used in Section~5). Table~\ref{tab:leave_one_out} reports the results.
+We measure the impact of each predictor by excluding it from the QRF model and observing the resulting increase in average quantile loss relative to the full model (baseline loss: 1,572,392, computed on the original dollar scale rather than the asinh-transformed scale used in Section~\ref{sec:results}). Table~\ref{tab:leave_one_out} reports the results.
 
-\begin{table}[h]
+\begin{table}[H]
     \centering
     \caption{Leave-one-out predictor importance for QRF wealth imputation. Relative impact measures the percentage increase in average quantile loss when the predictor is excluded.}
     \label{tab:leave_one_out}
@@ -33,7 +33,7 @@ Interest and dividend income is by far the most important predictor, with its re
 
 We complement the leave-one-out results by adding predictors one at a time, following the importance ordering determined by the leave-one-out analysis (Table~\ref{tab:leave_one_out}), and measuring the marginal improvement at each step. Table~\ref{tab:progressive_inclusion} reports the results.
 
-\begin{table}[h]
+\begin{table}[H]
     \centering
     \caption{Progressive predictor inclusion for QRF wealth imputation. Predictors are added in order of importance, and marginal improvement measures the reduction in average quantile loss from adding each predictor.}
     \label{tab:progressive_inclusion}
@@ -56,4 +56,4 @@ The progressive analysis confirms the leave-one-out findings. The first three pr
 
 \subsection{Implications for the Conditional Independence Assumption}
 
-The strong predictive power of the shared financial variables, particularly interest and dividend income, employment income, and pension income, is consistent with, though not sufficient evidence for, the plausibility of the CIA in the SCF-CPS matching context. These variables capture the main dimensions of household financial position available in both surveys. The fact that they collectively explain a large share of the variation in net worth suggests that the common variables $X$ may be sufficient to render the target variable $Y$ (wealth) approximately conditionally independent of variables $Z$ unique to the CPS, though this assumption remains fundamentally untestable as discussed in Section~2.2.
+The strong predictive power of the shared financial variables, particularly interest and dividend income, employment income, and pension income, is consistent with, though not sufficient evidence for, the plausibility of the CIA in the SCF-CPS matching context. These variables capture the main dimensions of household financial position available in both surveys. The fact that they collectively explain a large share of the variation in net worth suggests that the common variables $X$ may be sufficient to render the target variable $Y$ (wealth) approximately conditionally independent of variables $Z$ unique to the CPS, though this assumption remains fundamentally untestable as discussed in Section~\ref{sec:cia}.
