@@ -17,7 +17,7 @@ Comparing all five models to each other, we can evaluate performance through qua
     \label{fig:quantile_loss_comparison}
 \end{figure}
 
-We observe how QRF proves to be the best-performing model out of the five. It significantly outperforms Matching and OLS on average, while only being outperformed by QuantReg past the 80th quantile. The dashed lines in Figure~\ref{fig:quantile_loss_comparison} indicate each method's average quantile loss across all quantiles, clearly separating QRF and Matching from the remaining methods. Matching's performance presents the perfect opportunity to see the quantile loss's directional bias at work. Because Matching does not incorporate quantile information into its imputation process in any way, it will match donor and receiver units, and thus impute values identically regardless of the quantile at work. The laddering behavior observed above results from the fact that Matching's wealth imputations consistently underpredict relative to the true wealth values, and this property is increasingly favored for quantiles below the median, and increasingly penalized as quantiles approach the right end of the distribution.
+We observe how QRF proves to be the best-performing model out of the five. It outperforms all other models on average, while only being outperformed slightly by Matching in the middle of the distribution. The dashed lines in Figure~\ref{fig:quantile_loss_comparison} indicate each method's average quantile loss across all quantiles, clearly separating QRF and Matching from the remaining methods. Matching's performance presents the perfect opportunity to see the quantile loss's directional bias at work. Because Matching does not incorporate quantile information into its imputation process in any way, it will match donor and receiver units, and thus impute values identically regardless of the quantile at work. The laddering behavior observed above results from the fact that Matching's wealth imputations consistently underpredict relative to the true wealth values, and this property is increasingly favored for quantiles below the median, and increasingly penalized as quantiles approach the right end of the distribution.
 
 Table~\ref{tab:avg_quantile_loss} summarizes average quantile loss across all quantiles and cross-validation folds, with relative improvement computed against the worst-performing method (MDN) as a reference.
 
@@ -29,18 +29,18 @@ Table~\ref{tab:avg_quantile_loss} summarizes average quantile loss across all qu
         \toprule
         Method & Avg Quantile Loss & Std & Improvement (\%) \\
         \midrule
-        QRF & 0.560 & 0.016 & 76.2 \\
-        Matching & 0.601 & 0.018 & 74.4 \\
-        OLS & 1.866 & 0.196 & 20.6 \\
-        QuantReg & 2.104 & 0.241 & 10.4 \\
-        MDN & 2.349 & 0.227 & --- \\
+        QRF & 0.560 & 0.016 & 74.9 \\
+        Matching & 0.597 & 0.015 & 73.3 \\
+        OLS & 1.866 & 0.196 & 16.4 \\
+        QuantReg & 2.104 & 0.241 & 5.7 \\
+        MDN & 2.232 & 0.212 & --- \\
         \bottomrule
     \end{tabular}
     \vspace{0.5em}
     \par\noindent\footnotesize\textit{Note:} Quantile loss values are reported on the asinh-transformed target scale and should be interpreted comparatively across methods rather than as absolute performance levels.
 \end{table}
 
-QRF and Matching achieve substantially lower quantile loss than the remaining methods, with QRF reducing loss by 76.2\% and Matching by 74.4\% relative to MDN. The gap between these two leading methods is modest (0.560 vs.\ 0.601), while OLS, QuantReg, and MDN cluster at substantially higher loss values.
+QRF and Matching achieve substantially lower quantile loss than the remaining methods, with QRF reducing loss by 74.9\% and Matching by 73.3\% relative to MDN. The gap between these two leading methods is modest (0.560 vs.\ 0.597), while OLS, QuantReg, and MDN cluster at higher loss values.
 
 \subsubsection{Imputed wealth distribution comparisons}
 
@@ -115,7 +115,7 @@ As described in Section~\ref{sec:policy_validation}, we feed each model's impute
     \end{tabular}
 \end{table}
 
-Without imputed wealth data, the baseline produces 19.8 million recipients and \$152.6 billion in expenditure (267.2\% of administrative totals). All five imputation methods substantially reduce this overestimation by screening out households whose imputed wealth exceeds the resource limits. Quantile Regression yields the closest match to administrative totals (111.7\%), while QRF, despite achieving the best quantile loss, produces higher SSI estimates (163.3\%). This divergence reflects the interaction between imputation accuracy and the policy function: QRF faithfully reproduces the conditional distribution of wealth, including the substantial mass of near-zero values in the SCF, which places more households just below the eligibility threshold. QuantReg's linear compression of the wealth distribution, while statistically less accurate, coincidentally pushes more values above the threshold. The remaining overestimation across all methods reflects that SCF net worth includes assets excluded from SSI countable resources (such as the primary residence and one vehicle).
+Without imputed wealth data, the baseline produces 19.8 million recipients and \$152.6 billion in expenditure (267.2\% of administrative totals). All five imputation methods reduce this overestimation by screening out households whose imputed wealth exceeds the resource limits. Quantile Regression yields the closest match to administrative totals (111.7\%), while QRF, despite achieving the best quantile loss, produces higher SSI estimates (163.3\%). This divergence reflects the interaction between imputation accuracy and the policy function: QRF faithfully reproduces the conditional distribution of wealth, including the substantial mass of near-zero values in the SCF, which places more households just below the eligibility threshold. QuantReg's linear compression of the wealth distribution, while statistically less accurate, coincidentally pushes more values above the threshold. The remaining overestimation across all methods reflects that SCF net worth includes assets excluded from SSI countable resources (such as the primary residence and one vehicle).
 
 \subsubsection{Policy reform: SSI Savings Penalty Elimination Act}
 
