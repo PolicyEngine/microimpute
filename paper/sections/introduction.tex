@@ -6,13 +6,13 @@ Statistical matching is widely applicable in the social sciences, particularly i
 
 The main methodological difficulty is accurately modeling the conditional distribution of the target variable given shared predictors, as different approaches make different assumptions about this relationship. Parametric methods may be too restrictive for economic variables with heavy tails and heteroscedasticity, while nonparametric and machine learning approaches are more flexible but also more complex \citep{meinshausen2006quantile, andridge2010review}. Section~2 reviews these trade-offs in detail.
 
-This paper presents the \texttt{microimpute} package, a Python library implementing five statistical matching methods: Hot Deck Matching, Ordinary Least Squares, Quantile Regression, Mixture Density Networks, and Quantile Random Forests. The package provides a framework for comparing these methods through systematic benchmarking, with automated model selection based on quantile loss performance. We demonstrate the methodology through an application to wealth imputation, transferring net worth data from the Survey of Consumer Finances to the Current Population Survey. This task exemplifies the challenges of statistical matching for heavy-tailed distributions.
+This paper presents the \texttt{microimpute} package, a Python library implementing five statistical matching methods: Hot Deck Matching, Ordinary Least Squares, Quantile Regression, Mixture Density Networks, and Quantile Regression Forests. The package provides a framework for comparing these methods through systematic benchmarking, with automated model selection based on quantile loss performance. We demonstrate the methodology through an application to wealth imputation, transferring net worth data from the Survey of Consumer Finances to the Current Population Survey. This task exemplifies the challenges of statistical matching for heavy-tailed distributions.
 
 This work provides the following contributions:
 \begin{itemize}
     \item An open-source implementation of five imputation methods under a common interface, allowing systematic comparison across methods
     \item An automated benchmarking pipeline that evaluates distributional accuracy using quantile loss, so that researchers can select the most appropriate method for their data
-    \item Empirical evidence on the relative performance of these methods for wealth imputation, suggesting that Quantile Random Forests are well-suited to heavy-tailed distributions, though method choice remains context-dependent
+    \item Empirical evidence on the relative performance of these methods for wealth imputation, suggesting that Quantile Regression Forests are well-suited to heavy-tailed distributions, though method choice remains context-dependent
     \item A policy reform simulation of the SSI Savings Penalty Elimination Act, showing that imputation method choice produces meaningfully different estimates of reform impact, and that without imputed wealth data, such reforms cannot be simulated at all
 \end{itemize}
 

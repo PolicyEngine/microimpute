@@ -146,9 +146,9 @@ Nonetheless, its limitations include:
     \item \textbf{Computational cost}: Training is more expensive than parametric methods
 \end{itemize}
 
-\subsubsection{Quantile Random Forests (QRF)}\label{sec:qrf_background}
+\subsubsection{Quantile Regression Forests (QRF)}\label{sec:qrf_background}
 
-Quantile Random Forests extend Random Forests to estimate conditional quantiles \citep{meinshausen2006quantile}. A standard Random Forest builds an ensemble of decision trees, each trained on a bootstrap sample, with predictions averaged across trees. QRF modifies this by retaining all training observations in each terminal node rather than just their mean.
+Quantile Regression Forests extend Random Forests to estimate conditional quantiles \citep{meinshausen2006quantile}. A standard Random Forest builds an ensemble of decision trees, each trained on a bootstrap sample, with predictions averaged across trees. QRF modifies this by retaining all training observations in each terminal node rather than just their mean.
 
 For a new observation with covariates $x$, QRF estimates the conditional distribution function as:
 \begin{equation}
@@ -184,15 +184,15 @@ Nevertheless, QRF also has limitations:
 
 \subsection{Current Practice in Microsimulation}
 
-Statistical matching and data fusion are fundamental operations in microsimulation modeling, yet the methods employed in practice have remained relatively unchanged for decades. A review of major tax-benefit microsimulation models reveals a strong reliance on traditional imputation approaches, primarily hot deck matching and OLS-based regression.
+Statistical matching and data fusion are fundamental operations in microsimulation modeling, yet the methods employed in practice have remained relatively unchanged for decades. A review of major tax-benefit microsimulation models reveals a strong reliance on traditional imputation approaches, primarily Hot Deck Matching and OLS-based regression.
 
-Hot deck matching remains the dominant approach in European microsimulation. EUROMOD, the EU-wide tax-benefit model, employs a multi-stage imputation procedure combining predictive mean matching with distance-based hot deck methods to integrate consumption data from Household Budget Surveys into its EU-SILC input data \citep{sutherland2013euromod}. Hot deck methods are simple to implement and guarantee that imputed values are actual observed values from the donor file. However, as discussed above, these methods struggle with tail behavior and may not adequately capture the full conditional distribution of the target variable.
+Hot Deck Matching remains the dominant approach in European microsimulation. EUROMOD, the EU-wide tax-benefit model, employs a multi-stage imputation procedure combining predictive mean matching with distance-based hot deck methods to integrate consumption data from Household Budget Surveys into its EU-SILC input data \citep{sutherland2013euromod}. Hot deck methods are simple to implement and guarantee that imputed values are actual observed values from the donor file. However, as discussed above, these methods struggle with tail behavior and may not adequately capture the full conditional distribution of the target variable.
 
 In U.S. tax policy microsimulation, regression-based approaches are more common. The Tax Policy Center employs a two-stage probit and OLS procedure for wealth imputation, first predicting the probability of holding each asset type, then predicting amounts conditional on positive holdings \citep{nunns2012tax}. Similarly, the Institute on Taxation and Economic Policy (ITEP) model relies on statistical matching between tax return data and the American Community Survey, supplemented with regression-based imputations from the Survey of Consumer Finances \citep{itep2023model}. These regression approaches assume linear relationships and normally distributed errors, assumptions frequently violated by economic variables with heavy tails and heteroscedasticity.
 
 More recent microsimulation efforts have begun incorporating administrative data through record linkage rather than statistical matching \citep{abowd2019census}, but this approach requires access to restricted data and raises privacy concerns. For researchers working with publicly available survey data, statistical matching remains the primary option, and there is room for methods that capture distributional features more effectively.
 
-These limitations are especially pronounced for heavy-tailed variables where the relationship with predictors varies across the distribution. Machine learning methods such as Quantile Random Forests can capture nonlinear relationships, model the entire conditional distribution, and handle heavy-tailed data without restrictive parametric assumptions, yet they have seen limited adoption in microsimulation practice. The \texttt{microimpute} package provides a common framework for comparing traditional and machine learning approaches, so that researchers can empirically evaluate which method works best for their data.
+These limitations are especially pronounced for heavy-tailed variables where the relationship with predictors varies across the distribution. Machine learning methods such as Quantile Regression Forests can capture nonlinear relationships, model the entire conditional distribution, and handle heavy-tailed data without restrictive parametric assumptions, yet they have seen limited adoption in microsimulation practice. The \texttt{microimpute} package provides a common framework for comparing traditional and machine learning approaches, so that researchers can empirically evaluate which method works best for their data.
 
 \subsection{Supplemental Security Income as a Validation Case}
 

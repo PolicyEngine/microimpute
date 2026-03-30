@@ -36,6 +36,8 @@ Table~\ref{tab:avg_quantile_loss} summarizes average quantile loss across all qu
         MDN & 2.349 & 0.227 & --- \\
         \bottomrule
     \end{tabular}
+    \vspace{0.5em}
+    \par\noindent\footnotesize\textit{Note:} Quantile loss values are reported on the asinh-transformed target scale and should be interpreted comparatively across methods rather than as absolute performance levels.
 \end{table}
 
 QRF and Matching achieve substantially lower quantile loss than the remaining methods, with QRF reducing loss by 76.2\% and Matching by 74.4\% relative to MDN. The gap between these two leading methods is modest (0.560 vs.\ 0.601), while OLS, QuantReg, and MDN cluster at substantially higher loss values.
@@ -72,7 +74,9 @@ Table~\ref{tab:wasserstein} reports the Wasserstein distance between each model'
     \end{tabular}
 \end{table}
 
-QRF achieves the lowest Wasserstein distance (\$910,299), confirming that its imputed distribution most closely reproduces the donor wealth distribution. To contextualize this magnitude, the 2022 SCF reports a median U.S. household net worth of approximately \$192,700 \citep{fed2023scf}; QRF's Wasserstein distance thus represents roughly 4.7 median household net worths of cumulative distributional displacement, which is small relative to the full range of the wealth distribution but non-trivial in absolute terms. Matching follows at \$1.19 million, consistent with its mechanism of drawing values directly from the donor pool. OLS produces a substantially larger distance (\$68.0 million), reflecting its compressed predictions that fail to span the full range of the wealth distribution. QuantReg and MDN exhibit Wasserstein distances several orders of magnitude larger, indicating severe distributional mismatch driven by concentrated imputed values in narrow regions.
+QRF achieves the lowest Wasserstein distance (\$910,299), confirming that its imputed distribution most closely reproduces the donor wealth distribution. To contextualize this magnitude, the 2022 SCF reports a median U.S. household net worth of approximately \$192,700 \citep{fed2023scf}; QRF's Wasserstein distance thus represents roughly 4.7 median household net worths of cumulative distributional displacement, which is small relative to the full range of the wealth distribution but non-trivial in absolute terms. Matching follows at \$1.19 million, consistent with its mechanism of drawing values directly from the donor pool. OLS produces a substantially larger distance (\$68.0 million), reflecting its compressed predictions that fail to span the full range of the wealth distribution. QuantReg and MDN exhibit Wasserstein distances several orders of magnitude larger.
+
+However, the Wasserstein distance is sensitive to extreme values, and the untrimmed ranking warrants a robustness check. After excluding observations outside the 1st--99th percentile range of the SCF net worth distribution, the ranking reverses: MDN achieves the lowest trimmed Wasserstein distance (\$151K), followed by QuantReg (\$650K), OLS (\$743K), QRF (\$892K), and Matching (\$1.21M). Notably, MDN and QuantReg drop only 0.3\% and 0.4\% of receiver records respectively under trimming, fewer than QRF (1.2\%) or Matching (1.7\%). This indicates that their extreme untrimmed Wasserstein distances are driven by a small number of really large imputed values that dominate the metric. QRF and Matching, by contrast, are nearly unaffected by trimming (their distances change by less than 2\%), reflecting stable behavior across the full distribution even if their core distributional fit is less precise. The untrimmed Wasserstein distances in Table~\ref{tab:wasserstein}  therefore reflect tail stability and methods that appear to perform poorly may in fact model the bulk of the wealth distribution well, even if they miss important tail behavior.
 
 \subsubsection{Distribution of wealth by disposable income decile}
 
