@@ -13,7 +13,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { ImputationDataPoint } from '@/types/imputation';
-import { getMethodColor } from '@/utils/colors';
+import { getMethodColor, GRID_COLOR, LINE_COLOR } from '@/utils/colors';
+import ChartLegend from './ChartLegend';
 
 interface BenchmarkLossChartsProps {
   data: ImputationDataPoint[];
@@ -413,15 +414,20 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
             </h3>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={quantileChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                <CartesianGrid stroke={GRID_COLOR} />
                 <XAxis
                   dataKey="quantile"
                   label={{ value: 'Quantiles', position: 'insideBottom', offset: -5 }}
-                  tick={{ fill: '#666' }}
+                  tick={{ fill: '#333' }}
+                  axisLine={{ stroke: LINE_COLOR }}
+                  tickLine={{ stroke: LINE_COLOR }}
                 />
                 <YAxis
-                  label={{ value: 'Test quantile loss', angle: -90, position: 'insideLeft' }}
-                  tick={{ fill: '#666' }}
+                  width={100}
+                  label={{ value: 'Test quantile loss', angle: -90, position: 'center', dx: -35}}
+                  tick={{ fill: '#333' }}
+                  axisLine={{ stroke: LINE_COLOR }}
+                  tickLine={{ stroke: LINE_COLOR }}
                 />
                 <Tooltip
                   contentStyle={{
@@ -433,7 +439,7 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                   itemStyle={{ color: '#000' }}
                   formatter={(value: number) => value.toFixed(6)}
                 />
-                <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                <Legend content={<ChartLegend />} />
                 {methods.map((method, index) => (
                   <Bar
                     key={method}
@@ -444,13 +450,16 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                 ))}
               </BarChart>
             </ResponsiveContainer>
-            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
-              <p className="text-sm text-gray-700">
-                <strong>Quantile loss</strong> measures how well the imputation method predicts different quantiles of the distribution for numerical variables, creating an asymmetric loss function that penalizes under-prediction more heavily for higher quantiles and over-prediction more heavily for lower quantiles.
-                <br />
-                Lower values indicate better performance.
-              </p>
-            </div>
+            <details className="mt-4">
+              <summary className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 bg-blue-50 border border-blue-200 rounded-md px-3 py-1.5 cursor-pointer hover:bg-blue-100 select-none">&#9432; Interpretation</summary>
+              <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-sm text-gray-700">
+                  <strong>Quantile loss</strong> measures how well the imputation method predicts different quantiles of the distribution for numerical variables, creating an asymmetric loss function that penalizes under-prediction more heavily for higher quantiles and over-prediction more heavily for lower quantiles.
+                  <br />
+                  Lower values indicate better performance.
+                </p>
+              </div>
+            </details>
           </div>
         )}
 
@@ -462,14 +471,19 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
             </h3>
             <ResponsiveContainer width="100%" height={400}>
               <BarChart data={logLossChartData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                <CartesianGrid stroke={GRID_COLOR} />
                 <XAxis
                   dataKey="method"
-                  tick={{ fill: '#666' }}
+                  tick={{ fill: '#333' }}
+                  axisLine={{ stroke: LINE_COLOR }}
+                  tickLine={{ stroke: LINE_COLOR }}
                 />
                 <YAxis
-                  label={{ value: 'Log loss', angle: -90, position: 'insideLeft' }}
-                  tick={{ fill: '#666' }}
+                  width={100}
+                  label={{ value: 'Log loss', angle: -90, position: 'center' , dx: -35}}
+                  tick={{ fill: '#333' }}
+                  axisLine={{ stroke: LINE_COLOR }}
+                  tickLine={{ stroke: LINE_COLOR }}
                 />
                 <Tooltip
                   contentStyle={{
@@ -482,17 +496,23 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                   formatter={(value: number) => [value.toFixed(6), 'Log loss']}
                 />
                 <Bar dataKey="value">
-                  {logLossChartData.map((entry, index) => (
-                    <Cell key={entry.method} fill={getMethodColor(entry.method, index)} />
-                  ))}
+                  {logLossChartData.map((entry) => {
+                    const globalIndex = methods.indexOf(entry.method);
+                    return (
+                      <Cell key={entry.method} fill={getMethodColor(entry.method, globalIndex >= 0 ? globalIndex : 0)} />
+                    );
+                  })}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
-            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
-              <p className="text-sm text-gray-700">
-                <strong>Log loss</strong> measures how well the imputation method predicts categorical and boolean variables by evaluating the accuracy of predicted probabilities. It heavily penalizes confident misclassifications, such that a perfect classifier would have a log loss of 0, while worse predictions yield increasingly higher values.
-              </p>
-            </div>
+            <details className="mt-4">
+              <summary className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 bg-blue-50 border border-blue-200 rounded-md px-3 py-1.5 cursor-pointer hover:bg-blue-100 select-none">&#9432; Interpretation</summary>
+              <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-sm text-gray-700">
+                  <strong>Log loss</strong> measures how well the imputation method predicts categorical and boolean variables by evaluating the accuracy of predicted probabilities. It heavily penalizes confident misclassifications, such that a perfect classifier would have a log loss of 0, while worse predictions yield increasingly higher values.
+                </p>
+              </div>
+            </details>
           </div>
         )}
 
@@ -527,22 +547,27 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
               </div>
             </div>
 
-            <div className={`grid gap-6 ${hasQuantileTrainTest && hasLogLossTrainTest ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <div className={`grid gap-6 ${hasQuantileTrainTest && hasLogLossTrainTest ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1'}`}>
               {/* Quantile Loss Train/Test */}
               {hasQuantileTrainTest && (
                 <div>
                   <h4 className="text-lg font-semibold mb-3 text-gray-900">Quantile loss: train vs test</h4>
                   <ResponsiveContainer width="100%" height={350}>
                     <BarChart data={trainTestData.quantile}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                      <CartesianGrid stroke={GRID_COLOR} />
                       <XAxis
                         dataKey="quantile"
                         label={{ value: 'Quantiles', position: 'insideBottom', offset: -5 }}
-                        tick={{ fill: '#666' }}
+                        tick={{ fill: '#333' }}
+                  axisLine={{ stroke: LINE_COLOR }}
+                  tickLine={{ stroke: LINE_COLOR }}
                       />
                       <YAxis
-                        label={{ value: 'Quantile loss', angle: -90, position: 'insideLeft' }}
-                        tick={{ fill: '#666' }}
+                        width={80}
+                        label={{ value: 'Quantile loss', angle: -90, position: 'center' , dx: -35}}
+                        tick={{ fill: '#333' }}
+                  axisLine={{ stroke: LINE_COLOR }}
+                  tickLine={{ stroke: LINE_COLOR }}
                       />
                       <Tooltip
                         contentStyle={{
@@ -554,9 +579,9 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                         itemStyle={{ color: '#000' }}
                         formatter={(value: number) => value.toFixed(6)}
                       />
-                      <Legend wrapperStyle={{ paddingTop: '25px' }} />
-                      <Bar dataKey="train" fill="#06b6d4" name="Train" />
-                      <Bar dataKey="test" fill="#16a34a" name="Test" />
+                      <Legend content={<ChartLegend />} />
+                      <Bar dataKey="train" fill="#3b82f6" fillOpacity={0.7} name="Train" />
+                      <Bar dataKey="test" fill="#ef4444" fillOpacity={0.7} name="Test" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -568,14 +593,19 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                   <h4 className="text-lg font-semibold mb-3 text-gray-900">Log loss: train vs test</h4>
                   <ResponsiveContainer width="100%" height={350}>
                     <BarChart data={trainTestData.logLoss}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                      <CartesianGrid stroke={GRID_COLOR} />
                       <XAxis
                         dataKey="category"
-                        tick={{ fill: '#666' }}
+                        tick={{ fill: '#333' }}
+                  axisLine={{ stroke: LINE_COLOR }}
+                  tickLine={{ stroke: LINE_COLOR }}
                       />
                       <YAxis
-                        label={{ value: 'Log loss', angle: -90, position: 'insideLeft' }}
-                        tick={{ fill: '#666' }}
+                        width={100}
+                  label={{ value: 'Log loss', angle: -90, position: 'center' , dx: -35}}
+                        tick={{ fill: '#333' }}
+                  axisLine={{ stroke: LINE_COLOR }}
+                  tickLine={{ stroke: LINE_COLOR }}
                       />
                       <Tooltip
                         contentStyle={{
@@ -587,22 +617,25 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                         itemStyle={{ color: '#000' }}
                         formatter={(value: number) => value.toFixed(6)}
                       />
-                      <Legend wrapperStyle={{ paddingTop: '25px' }} />
-                      <Bar dataKey="train" fill="#06b6d4" name="Train" />
-                      <Bar dataKey="test" fill="#16a34a" name="Test" />
+                      <Legend content={<ChartLegend />} />
+                      <Bar dataKey="train" fill="#3b82f6" fillOpacity={0.7} name="Train" />
+                      <Bar dataKey="test" fill="#ef4444" fillOpacity={0.7} name="Test" />
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               )}
             </div>
 
-            <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-md">
-              <p className="text-sm text-gray-700">
-                <strong>Overfitting assessment:</strong> When test performance (green bars) is significantly worse than train performance (cyan bars), it suggests the model may be overfitting to the training data and not generalizing well to unseen data. If both train and test performances are poor, the model may be underfitting and failing to capture underlying patterns.
-                <br />
-                Healthy performance is indicated by similar train and test metrics, with both being reasonably low.
-              </p>
-            </div>
+            <details className="mt-4">
+              <summary className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 bg-blue-50 border border-blue-200 rounded-md px-3 py-1.5 cursor-pointer hover:bg-blue-100 select-none">&#9432; Interpretation</summary>
+              <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+                <p className="text-sm text-gray-700">
+                  <strong>Overfitting assessment:</strong> When test performance (red bars) is significantly worse than train performance (blue bars), it suggests the model may be overfitting to the training data and not generalizing well to unseen data. If both train and test performances are poor, the model may be underfitting and failing to capture underlying patterns.
+                  <br />
+                  Healthy performance is indicated by similar train and test metrics, with both being reasonably low.
+                </p>
+              </div>
+            </details>
           </div>
         )}
       </div>

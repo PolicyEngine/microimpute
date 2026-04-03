@@ -1,8 +1,8 @@
-\section{Background}
+\section{Background}\label{sec:background}
 
 This section defines the statistical matching problem and describes the imputation methods in \texttt{microimpute}. We begin with the formal problem definition and the assumption underlying all statistical matching procedures, then discuss the relationship to missing data mechanisms, and finally describe each of the five imputation methods.
 
-\subsection{The Statistical Matching Problem}
+\subsection{The statistical matching problem}
 
 Statistical matching arises when a researcher seeks to combine information from two (or more) data sources that have been collected independently on different samples \citep{dorazio2006statistical}. The canonical setup involves:
 
@@ -30,11 +30,11 @@ All statistical matching procedures rely, either explicitly or implicitly, on th
 
 This assumption states that the target variable $Y$ (from the donor) and any variables $Z$ unique to the receiver are independent, conditional on the common variables $X$ \citep{dorazio2006statistical}. In other words, once we account for the shared covariates, knowing $Z$ provides no additional information about $Y$.
 
-The CIA is fundamentally untestable because $Y$ and $Z$ are never jointly observed in either data source. Its plausibility depends on the richness of the common variables $X$. When $X$ captures the key determinants of both $Y$ and $Z$, the assumption is more likely to hold. In practice, researchers must rely on substantive knowledge to assess whether the available common variables are sufficient to render $Y$ and $Z$ conditionally independent.
+The CIA is fundamentally untestable because $Y$ and $Z$ are never jointly observed in either data source. Its plausibility depends on the richness of the common variables $X$. When $X$ captures the key determinants of both $Y$ and $Z$, the assumption is more likely to hold. In practice, researchers must rely on their knowledge to assess whether the available common variables are sufficient to render $Y$ and $Z$ conditionally independent.
 
-Violations of the CIA lead to biased estimates of the joint distribution of $(Y, Z)$ in the synthetic file. However, if the research question concerns only the marginal distribution of $Y$ in the receiver population, the CIA is not strictly required. What matters is that the conditional distribution $P(Y|X)$ is correctly specified and that $X$ has sufficient overlap between donor and receiver files \citep{dorazio2021statistical}.
+Violations of the CIA lead to biased estimates of the joint distribution of $(Y, Z)$ in the synthetic file. However, if the research question concerns only the marginal distribution of $Y$ in the receiver population, the CIA is not required. What matters is that the conditional distribution $P(Y|X)$ is correctly specified and that $X$ has sufficient overlap between donor and receiver files \citep{dorazio2021statistical}.
 
-\subsection{Missing Data Mechanisms}
+\subsection{Missing data mechanisms}
 
 Statistical matching may also warrant discussion within the framework of missing data theory, where $Y$ is ``missing'' for all observations in the receiver file \citep{little2002statistical}. The missing data literature distinguishes three mechanisms:
 
@@ -46,11 +46,11 @@ Statistical matching may also warrant discussion within the framework of missing
     \item \textbf{Missing Not at Random (MNAR)}: The probability of missingness depends on the unobserved values. This would occur if, for example, high-wealth individuals were systematically less likely to appear in the wealth survey.
 \end{itemize}
 
-Under MAR, valid inference about $P(Y|X)$ can be obtained from the donor data alone, which justifies the statistical matching approach. Most imputation methods, including those implemented in \texttt{microimpute}, assume MAR. When MNAR is suspected, sensitivity analyses or methods that explicitly model the selection mechanism may be required \citep{little2002statistical}.
+Under MAR, inference about $P(Y|X)$ can be obtained from the donor data alone, which justifies the statistical matching approach. Most imputation methods, including those implemented in \texttt{microimpute}, assume MAR. When MNAR is suspected, sensitivity analyses or methods that explicitly model the selection mechanism may be required \citep{little2002statistical}.
 
-In statistical matching applications, an important consideration arises when the donor and receiver files come from surveys with different sampling designs. For instance, wealth surveys often oversample high-net-worth households to improve precision for this rare population, while general household surveys use designs representative of the broader population. This differential sampling can introduce a form of selection that resembles MNAR if not properly addressed. Luckily, survey weights provide a mechanism to mitigate this issue. By incorporating weights that reflect each observation's representativeness of the target population, imputation methods can adjust for known differences in sampling probabilities between the donor and receiver surveys \citep{dugoff2014generalizing}. The \texttt{microimpute} package supports the use of survey weights throughout its imputation pipeline, allowing methods to account for complex survey designs. While survey weights cannot fully address MNAR when missingness depends on unobserved values of $Y$ itself, they can substantially reduce bias arising from differential sampling designs across data sources.
+In statistical matching applications, an important consideration arises when the donor and receiver files come from surveys with different sampling designs. For instance, wealth surveys often oversample high-net-worth households to improve precision for this rare population, while general household surveys use designs representative of the broader population. This differential sampling can introduce a form of selection that resembles MNAR if not properly addressed. Luckily, survey weights provide a mechanism to mitigate this issue. By incorporating weights that reflect each observation's representativeness of the target population, imputation methods can adjust for known differences in sampling probabilities between the donor and receiver surveys \citep{dugoff2014generalizing}. The \texttt{microimpute} package supports the use of survey weights throughout its imputation pipeline, allowing methods to account for complex survey designs. While survey weights cannot fully address MNAR when missingness depends on unobserved values of $Y$ itself, they can reduce bias arising from differential sampling designs across data sources.
 
-\subsection{Imputation Methods}
+\subsection{Imputation methods}
 
 We now describe the five imputation methods implemented in \texttt{microimpute}. Each method provides a different approach to estimating the conditional distribution $P(Y|X)$ and generating imputations.
 
@@ -60,8 +60,8 @@ Hot deck imputation replaces missing values in a receiver record with observed v
 
 Hot deck methods are nonparametric and avoid distributional assumptions, making them robust when the true conditional distribution is unknown or complex \citep{dorazio2006statistical}. However, they face limitations:
 \begin{itemize}
-    \item \textbf{Donor scarcity}: For receiver observations in sparse regions of the covariate space suitable donors may be unavailable, which can lead to the reuse of the same donors, which can affect the accuracy in the distribution of imputed values
-    \item \textbf{Discrete outputs}: Imputed values are restricted to the set of observed donor values, which may not adequately represent the continuous nature of $Y$
+    \item \textbf{Donor scarcity}: For receiver observations in sparse regions of the covariate space suitable donors may be unavailable, which can lead to the reuse of the same donors and affect the accuracy of the distribution of imputed values
+    \item \textbf{Discrete outputs}: Imputed values are restricted to the set of observed donor values, which may not represent the continuous nature of $Y$
     \item \textbf{Tail behavior}: Extreme values in the receiver population may have no appropriate donors or poor matches, leading to biased imputations at the tails
 \end{itemize}
 
@@ -105,7 +105,7 @@ The coefficients $\boldsymbol{\beta}(\tau)$ are estimated by minimizing the asym
 
 where the check function $\rho_\tau(u) = u(\tau - \mathbf{1}_{u<0})$ penalizes positive and negative residuals asymmetrically.
 
-The \texttt{microimpute} implementation of Quantile regression also uses the \texttt{statsmodels} library. By fitting models at multiple quantiles, it can approximate the entire conditional distribution of $Y|X$. For imputation, a random quantile $\tau^* \sim \text{Uniform}(0,1)$ can be drawn, and the imputed value computed by interpolating between estimated quantile functions \citep{wei2014multiple}.
+The \texttt{microimpute} implementation of Quantile Regression also uses the \texttt{statsmodels} library. By fitting models at multiple quantiles, it can approximate the entire conditional distribution of $Y|X$. For imputation, a random quantile $\tau^* \sim \text{Uniform}(0,1)$ can be drawn, and the imputed value computed by interpolating between estimated quantile functions \citep{wei2014multiple}.
 
 Quantile regression offers advantages over OLS:
 \begin{itemize}
@@ -146,9 +146,9 @@ Nonetheless, its limitations include:
     \item \textbf{Computational cost}: Training is more expensive than parametric methods
 \end{itemize}
 
-\subsubsection{Quantile Random Forests (QRF)}\label{sec:qrf_background}
+\subsubsection{Quantile Regression Forests (QRF)}\label{sec:qrf_background}
 
-Quantile Random Forests extend Random Forests to estimate conditional quantiles \citep{meinshausen2006quantile}. A standard Random Forest builds an ensemble of decision trees, each trained on a bootstrap sample, with predictions averaged across trees. QRF modifies this by retaining all training observations in each terminal node rather than just their mean.
+Quantile Regression Forests extend Random Forests to estimate conditional quantiles \citep{meinshausen2006quantile}. A standard Random Forest builds an ensemble of decision trees, each trained on a bootstrap sample, with predictions averaged across trees. QRF modifies this by retaining all training observations in each terminal node rather than just their mean.
 
 For a new observation with covariates $x$, QRF estimates the conditional distribution function as:
 \begin{equation}
@@ -182,22 +182,22 @@ Nevertheless, QRF also has limitations:
     \item \textbf{Discrete approximation}: The estimated distribution is discrete, with support limited to observed $Y$ values in the training data
 \end{itemize}
 
-\subsection{Current Practice in Microsimulation}
+\subsection{Current practice in microsimulation}
 
-Statistical matching and data fusion are fundamental operations in microsimulation modeling, yet the methods employed in practice have remained relatively unchanged for decades. A review of major tax-benefit microsimulation models reveals a strong reliance on traditional imputation approaches, primarily hot deck matching and OLS-based regression.
+Statistical matching and data fusion are fundamental operations in microsimulation modeling, yet the methods employed in practice have remained relatively unchanged for decades. A review of major tax-benefit microsimulation models reveals a strong reliance on traditional imputation approaches, primarily Hot Deck Matching and OLS-based regression.
 
-Hot deck matching remains the dominant approach in European microsimulation. EUROMOD, the EU-wide tax-benefit model, employs a multi-stage imputation procedure combining predictive mean matching with distance-based hot deck methods to integrate consumption data from Household Budget Surveys into its EU-SILC input data \citep{sutherland2013euromod}. Hot deck methods are simple to implement and guarantee that imputed values are actual observed values from the donor file. However, as discussed above, these methods struggle with tail behavior and may not adequately capture the full conditional distribution of the target variable.
+Hot Deck Matching remains the dominant approach in European microsimulation. EUROMOD, the EU-wide tax-benefit model, employs a multi-stage imputation procedure combining predictive mean matching with distance-based hot deck methods to integrate consumption data from Household Budget Surveys into its EU-SILC input data \citep{sutherland2013euromod}. Hot deck methods are simple to implement and guarantee that imputed values are actual observed values from the donor file. However, as discussed above, these methods struggle with tail behavior and may not capture the full conditional distribution of the target variable.
 
-In U.S. tax policy microsimulation, regression-based approaches are more common. The Tax Policy Center employs a two-stage probit and OLS procedure for wealth imputation, first predicting the probability of holding each asset type, then predicting amounts conditional on positive holdings \citep{nunns2012tax}. Similarly, the Institute on Taxation and Economic Policy (ITEP) model relies on statistical matching between tax return data and the American Community Survey, supplemented with regression-based imputations from the Survey of Consumer Finances \citep{itep2023model}. These regression approaches assume linear relationships and normally distributed errors, assumptions frequently violated by economic variables with heavy tails and heteroscedasticity.
+In U.S. tax policy microsimulation, regression-based approaches are more common. The Tax Policy Center employs a two-stage probit and OLS procedure for wealth imputation, first predicting the probability of holding each asset type, then predicting amounts conditional on positive holdings \citep{nunns2012tax}. Similarly, the Institute on Taxation and Economic Policy (ITEP) model relies on matching tax return data to the American Community Survey, supplemented with regression-based imputations from the Survey of Consumer Finances \citep{itep2023model}. These regression approaches assume linear relationships and normally distributed errors, assumptions frequently violated by economic variables with heavy tails and heteroscedasticity.
 
 More recent microsimulation efforts have begun incorporating administrative data through record linkage rather than statistical matching \citep{abowd2019census}, but this approach requires access to restricted data and raises privacy concerns. For researchers working with publicly available survey data, statistical matching remains the primary option, and there is room for methods that capture distributional features more effectively.
 
-These limitations are especially pronounced for heavy-tailed variables where the relationship with predictors varies across the distribution. Machine learning methods such as Quantile Random Forests can capture nonlinear relationships, model the entire conditional distribution, and handle heavy-tailed data without restrictive parametric assumptions, yet they have seen limited adoption in microsimulation practice. The \texttt{microimpute} package provides a common framework for comparing traditional and machine learning approaches, so that researchers can empirically evaluate which method works best for their data.
+These limitations are especially pronounced for heavy-tailed variables where the relationship with predictors varies across the distribution. Machine learning methods such as Quantile Regression Forests can capture nonlinear relationships, model the entire conditional distribution, and handle heavy-tailed data without restrictive parametric assumptions, yet they have seen limited adoption in microsimulation practice. The \texttt{microimpute} package provides a common framework for comparing traditional and machine learning approaches, so that researchers can empirically evaluate which method works best for their data.
 
-\subsection{Supplemental Security Income as a Validation Case}
+\subsection{Supplemental Security Income as a validation case}
 
-The limitations of traditional imputation approaches have concrete consequences for downstream policy analysis. The Supplemental Security Income (SSI) program illustrates this well. SSI is a federal means-tested program for aged, blind, and disabled individuals with strict resource limits (\$2,000 for individuals, \$3,000 for couples) that have remained unchanged since 1989 \citep{ssa2023ssi}. The resource test requires household wealth and asset data that the CPS does not collect, making SSI eligibility determination dependent on imputed or heuristic wealth values.
+The limitations of traditional imputation approaches have consequences for downstream policy analysis. The Supplemental Security Income (SSI) program illustrates this well. SSI is a federal means-tested program for aged, blind, and disabled individuals with strict resource limits (\$2,000 for individuals, \$3,000 for couples) that have remained unchanged since 1989 \citep{ssa2023ssi}. The resource test requires household wealth and asset data that the CPS does not collect, making SSI eligibility determination dependent on imputed or heuristic wealth values.
 
-In 2024, SSI served approximately 7.4 million recipients with \$59.6 billion in federal payments \citep{ssa2024ssi}. Because different wealth imputation methods produce different wealth distributions, they directly affect which simulated households pass the resource test and therefore the resulting estimates of SSI recipient counts and expenditure. This makes SSI a particularly informative case for comparing imputation approaches, as described in Section~\ref{sec:policy_validation}.
+In 2024, SSI served approximately 7.4 million recipients with \$59.6 billion in federal payments \citep{ssa2024ssi}. Because different wealth imputation methods produce different wealth distributions, method choice affects which simulated households pass the resource test and therefore the resulting estimates of SSI recipient counts and expenditure. This makes SSI a particularly informative case for comparing imputation approaches, as described in Section~\ref{sec:policy_validation}.
 
-The frozen resource limits also make SSI a compelling case for policy reform analysis. In 2024 dollars, the original 1989 thresholds of \$2,000/\$3,000 are worth approximately \$4,800/\$7,200, meaning the resource test has become substantially more restrictive over time without any legislative change. The SSI Savings Penalty Elimination Act (S.~1234 / H.R.~2540), a bipartisan bill introduced in April 2025, proposes raising these limits to \$10,000 for individuals and \$20,000 for couples, with future CPI indexing \citep{ssi_spea_2025}. Simulating the impact of this reform, and determining which additional households would gain eligibility under the higher thresholds requires household-level wealth data, making it a natural application for cross-survey imputation. As we show in Section~\ref{sec:policy_validation}, the choice of imputation method produces meaningfully different estimates of this reform's impact, meaning that imputation is not merely a data preprocessing step but a modeling choice with real consequences for policy analysis.
+The frozen resource limits also make SSI a compelling case for policy reform analysis. In 2024 dollars, the original 1989 thresholds of \$2,000/\$3,000 are worth approximately \$4,800/\$7,200, meaning the resource test has become substantially more restrictive over time without any legislative change. The SSI Savings Penalty Elimination Act (S.~1234 / H.R.~2540), a bipartisan bill introduced in April 2025, proposes raising these limits to \$10,000 for individuals and \$20,000 for couples, with future CPI indexing \citep{ssi_spea_2025}. Simulating the impact of this reform, and determining which additional households would gain eligibility under the higher thresholds requires household-level wealth data, making it a natural application for cross-survey imputation. As we show in Section~\ref{sec:policy_validation}, the choice of imputation method produces different estimates of this reform's impact, meaning that imputation is not merely a data preprocessing step but a modeling choice with real consequences for policy analysis.

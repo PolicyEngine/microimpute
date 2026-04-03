@@ -268,6 +268,12 @@ class _MDNModel:
             col for col in X.columns.tolist() if col not in categorical_cols
         ]
 
+        # Cast continuous columns to float64 to avoid pandas 3.x
+        # LossySetitemError when pytorch_tabular's scaler writes
+        # normalized float values back into integer-typed columns.
+        for col in continuous_cols:
+            train_data[col] = train_data[col].astype("float64")
+
         # Configure data
         data_config = DataConfig(
             target=[y.name],
@@ -350,6 +356,12 @@ class _MDNModel:
         """
         # Put model in eval mode
         self.model.model.eval()
+
+        # Cast continuous columns to float64 for pandas 3.x compat
+        X = X.copy()
+        for col in self.model.config.continuous_cols:
+            if col in X.columns:
+                X[col] = X[col].astype("float64")
 
         # Create inference dataloader
         test_loader = self.model.datamodule.prepare_inference_dataloader(X)
@@ -466,6 +478,12 @@ class _NeuralClassifierModel:
             col for col in X.columns.tolist() if col not in categorical_cols
         ]
 
+        # Cast continuous columns to float64 to avoid pandas 3.x
+        # LossySetitemError when pytorch_tabular's scaler writes
+        # normalized float values back into integer-typed columns.
+        for col in continuous_cols:
+            train_data[col] = train_data[col].astype("float64")
+
         # Configure data
         data_config = DataConfig(
             target=[y.name],
@@ -541,6 +559,12 @@ class _NeuralClassifierModel:
             Predicted values as Series, or dict with probabilities if
             return_probs=True.
         """
+        # Cast continuous columns to float64 for pandas 3.x compat
+        X = X.copy()
+        for col in self.model.config.continuous_cols:
+            if col in X.columns:
+                X[col] = X[col].astype("float64")
+
         # Get predictions with probabilities
         preds_df = self.model.predict(X, ret_logits=False)
 

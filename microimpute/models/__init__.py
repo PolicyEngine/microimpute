@@ -6,7 +6,7 @@ the base Imputer class and provides quantile-based predictions.
 
 Available models:
     - OLS: ordinary least squares regression with bootstrapped quantiles
-    - QRF: quantile random forest for non-parametric quantile regression
+    - QRF: quantile regression forest for non-parametric quantile regression
     - QuantReg: linear quantile regression model
     - Matching: statistical matching/hot-deck imputation (optional, requires rpy2)
     - MDN: Mixture Density Network for probabilistic imputation

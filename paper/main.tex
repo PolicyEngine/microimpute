@@ -1,24 +1,26 @@
-\documentclass[12pt]{article}
+\documentclass[11pt]{article}
 
+\usepackage{mathptmx}           % Times New Roman font
+\usepackage{setspace}           % Line spacing control
 \usepackage{graphicx}
 \usepackage{amsmath}
-\usepackage[round]{natbib}  % Keep round option
-\usepackage{hyperref}
+\usepackage[round]{natbib}
 \usepackage{booktabs}
 \usepackage{geometry}
 \usepackage{xcolor}
 \usepackage{float}
+\usepackage{caption}            % Caption formatting
+\usepackage{footmisc}           % Footnote size control (before hyperref)
+\usepackage[hyphens]{url}       % Allow URL line breaks at hyphens
+\usepackage{hyperref}
 
-% Draft notice in title
-\newcommand{\draftnote}{\textbf{[DRAFT]}}
+\captionsetup{font=small,labelfont=bf}
+\renewcommand{\footnotelayout}{\fontsize{10}{12}\selectfont}
 
-% Set citation style in preamble
-\bibpunct{(}{)}{;}{a}{,}{,}  % Move here
-\setcitestyle{authoryear,round}  % Move here
+\bibpunct{(}{)}{;}{a}{,}{,}
+\setcitestyle{authoryear,round}
 
-\input{macros}
-
-\geometry{margin=1in}
+\geometry{margin=1.5in}
 \hypersetup{
     colorlinks=true,
     linkcolor=blue,
@@ -28,19 +30,17 @@
 }
 
 
-\title{$\texttt{microimpute}$: Benchmarking Cross-Survey Imputation Methods for U.S. Household Wealth}
-% Define the \samethanks command
-\newcommand*\samethanks[1][\value{footnote}]{\footnotemark[#1]}
-
-% Define authors with the same affiliation
+\title{\texttt{microimpute}: Benchmarking Cross-Survey Imputation Methods for U.S. Household Wealth}
 \author{
     María Juaristi\thanks{Minerva University, PolicyEngine}
 }
-\date{\today}
+\date{}
 
 \begin{document}
+\onehalfspacing
 
 \maketitle
+\vspace{-3em}
 
 \input{sections/abstract}
 \input{sections/introduction}
@@ -51,7 +51,9 @@
 \input{sections/discussion}
 \input{sections/conclusion}
 
-\bibliographystyle{plainnat}
+\input{sections/disclosures}
+
+\bibliographystyle{apalike}
 \bibliography{./bibliography/references}
 
 \clearpage

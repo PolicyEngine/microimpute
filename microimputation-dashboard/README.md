@@ -12,7 +12,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting started
 
-First, run the development server:
+First, run the development server from the root of the `microimpute` repository:
 
 ```bash
 make dashboard

@@ -342,13 +342,14 @@ export default function VisualizationDashboard({
     const tabsList = [];
 
     if (dataAnalysis.hasBenchmarkLoss) {
-      tabsList.push({ id: 'overview', label: 'Model benchmarking' });
+      tabsList.push({ id: 'overview', label: 'Model benchmarking', description: 'Compare quantile loss and log loss across imputation methods' });
     }
 
     if (dataAnalysis.hasDistributionDistance) {
       tabsList.push({
         id: 'imputation',
         label: 'Imputation results',
+        description: 'Distributional quality metrics (Wasserstein distance, KL divergence) and donor vs receiver comparisons',
       });
     }
 
@@ -357,6 +358,7 @@ export default function VisualizationDashboard({
         id: 'numerical',
         label: 'Numerical Variables',
         count: dataAnalysis.numericalVars.length,
+        description: 'Per-variable quantile loss breakdown for numerical variables',
       });
     }
 
@@ -365,6 +367,7 @@ export default function VisualizationDashboard({
         id: 'categorical',
         label: 'Categorical Variables',
         count: dataAnalysis.categoricalVars.length,
+        description: 'Per-variable log loss breakdown for categorical variables',
       });
     }
 
@@ -372,6 +375,7 @@ export default function VisualizationDashboard({
       tabsList.push({
         id: 'correlation',
         label: 'Predictor correlation',
+        description: 'Pearson, Spearman, and mutual information correlations between predictor variables',
       });
     }
 
@@ -379,6 +383,7 @@ export default function VisualizationDashboard({
       tabsList.push({
         id: 'ordering',
         label: 'Predictor selection',
+        description: 'Progressive predictor inclusion and importance analysis',
       });
     }
 
@@ -387,7 +392,7 @@ export default function VisualizationDashboard({
 
   if (!dataAnalysis.hasBenchmarkLoss) {
     return (
-      <div className="space-y-8">
+      <div className="space-y-6">
         {/* Header */}
         <div>
           <div className="flex justify-between items-start mb-4 gap-4">
@@ -397,7 +402,7 @@ export default function VisualizationDashboard({
                 Loaded: <span className="text-blue-600 break-all">{fileName}</span>
               </p>
             </div>
-            <div className="flex gap-3 flex-shrink-0">
+            <div className="flex flex-wrap gap-3 flex-shrink-0">
               {githubArtifactInfo && (
                 <button
                   onClick={handleShare}
@@ -429,7 +434,7 @@ export default function VisualizationDashboard({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-6">
       {/* Header */}
       <div>
         <div className="flex justify-between items-start mb-4 gap-4">
@@ -460,15 +465,20 @@ export default function VisualizationDashboard({
       </div>
 
       {/* Imputation Summary */}
-      <div className="bg-white rounded-lg shadow-lg p-6">
-        <h2 className="text-xl font-semibold text-gray-900 mb-1">Imputation summary</h2>
-        <p className="text-sm text-gray-600 mb-4">
-          Assessment of the quality of the imputations produced by the best-performing (or the only selected) model
-        </p>
+      <div className="space-y-4">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900 mb-1">Imputation summary</h2>
+          <p className="text-sm text-gray-600">
+            Assessment of the quality of the imputations produced by the best-performing (or the only selected) model.
+          </p>
+          <p className="text-sm text-gray-600">
+            Look for the &#9432; Interpretation buttons throughout the dashboard to learn more about each metric.
+          </p>
+        </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 mt-6">
-          {/* Imputed Variables Section - 1/4 width */}
-          <div className="border border-gray-200 rounded-md p-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* Imputed Variables Card */}
+          <div className="bg-white rounded-lg shadow-lg p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
               Imputed Variables
             </h3>
@@ -492,15 +502,15 @@ export default function VisualizationDashboard({
             )}
           </div>
 
-          {/* Best Model Section - 1/4 width */}
-          <div className="border border-gray-200 rounded-md p-4">
+          {/* Best Model Card */}
+          <div className="bg-white rounded-lg shadow-lg p-5">
             <h3 className="text-sm font-semibold text-gray-700 mb-2 uppercase tracking-wide">
               {dataAnalysis.allMethods.length === 1 ? 'Imputation Model' : 'Best Performing Model'}
             </h3>
             {dataAnalysis.bestModel ? (
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
-                  <span className="text-base font-bold text-blue-700">
+                  <span className="text-base font-bold text-gray-900">
                     {dataAnalysis.bestModel}
                   </span>
                   {dataAnalysis.allMethods.length === 1 && (
@@ -527,17 +537,15 @@ export default function VisualizationDashboard({
             )}
           </div>
 
-          {/* Metrics Section - 1/2 width */}
-          <div className="lg:col-span-2 border border-gray-200 rounded-md p-4">
+          {/* Performance Metrics Card - spans 2 columns */}
+          <div className="lg:col-span-2 md:col-span-2 bg-white rounded-lg shadow-lg p-5 flex flex-col">
             <h3 className="text-sm font-semibold text-gray-700 mb-3 uppercase tracking-wide">
               Performance Metrics
             </h3>
-            <div className="grid grid-cols-2 gap-4">
-              {/* Average Test Losses */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 flex-1">
               {(() => {
                 const benchmarkData = data.filter(d => d.type === 'benchmark_loss' && d.method === dataAnalysis.bestModel && d.split === 'test');
 
-                // Calculate avg quantile loss
                 const quantileLossData = benchmarkData.filter(
                   d => d.metric_name === 'quantile_loss' &&
                        typeof d.quantile === 'number' &&
@@ -547,7 +555,6 @@ export default function VisualizationDashboard({
                   ? quantileLossData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / quantileLossData.length
                   : null;
 
-                // Calculate avg log loss
                 const logLossData = benchmarkData.filter(
                   d => d.metric_name === 'log_loss' &&
                        d.metric_value !== null
@@ -556,7 +563,6 @@ export default function VisualizationDashboard({
                   ? logLossData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / logLossData.length
                   : null;
 
-                // Calculate avg Wasserstein distance
                 const wassersteinData = data.filter(
                   d => d.type === 'distribution_distance' &&
                        d.metric_name === 'wasserstein_distance' &&
@@ -566,7 +572,6 @@ export default function VisualizationDashboard({
                   ? wassersteinData.reduce((sum, d) => sum + (d.metric_value ?? 0), 0) / wassersteinData.length
                   : null;
 
-                // Calculate avg KL divergence
                 const klData = data.filter(
                   d => d.type === 'distribution_distance' &&
                        d.metric_name === 'kl_divergence' &&
@@ -579,27 +584,27 @@ export default function VisualizationDashboard({
                 return (
                   <>
                     {avgQuantileLoss !== null && (
-                      <div className="bg-purple-50 p-3 rounded">
-                        <p className="text-xs text-gray-600 mb-1">Avg. test quantile loss</p>
-                        <p className="text-lg font-bold text-gray-900">{avgQuantileLoss.toFixed(4)}</p>
+                      <div className="bg-gray-50 p-3 rounded flex flex-col">
+                        <p className="text-xs text-gray-600 mb-1 min-h-[2lh]">Avg. test quantile loss</p>
+                        <p className="text-lg font-bold text-gray-900 flex-1 flex items-center">{avgQuantileLoss.toFixed(4)}</p>
                       </div>
                     )}
                     {avgLogLoss !== null && (
-                      <div className="bg-purple-50 p-3 rounded">
-                        <p className="text-xs text-gray-600 mb-1">Avg. test log loss</p>
-                        <p className="text-lg font-bold text-gray-900">{avgLogLoss.toFixed(4)}</p>
+                      <div className="bg-gray-50 p-3 rounded flex flex-col">
+                        <p className="text-xs text-gray-600 mb-1 min-h-[2lh]">Avg. test log loss</p>
+                        <p className="text-lg font-bold text-gray-900 flex-1 flex items-center">{avgLogLoss.toFixed(4)}</p>
                       </div>
                     )}
                     {avgWasserstein !== null && (
-                      <div className="bg-orange-50 p-3 rounded">
-                        <p className="text-xs text-gray-600 mb-1">Avg. wasserstein distance</p>
-                        <p className="text-lg font-bold text-gray-900">{avgWasserstein.toFixed(4)}</p>
+                      <div className="bg-gray-50 p-3 rounded flex flex-col">
+                        <p className="text-xs text-gray-600 mb-1 min-h-[2lh]">Avg. wasserstein distance</p>
+                        <p className="text-lg font-bold text-gray-900 flex-1 flex items-center">{avgWasserstein.toFixed(4)}</p>
                       </div>
                     )}
                     {avgKL !== null && (
-                      <div className="bg-orange-50 p-3 rounded">
-                        <p className="text-xs text-gray-600 mb-1">Avg. KL divergence</p>
-                        <p className="text-lg font-bold text-gray-900">{avgKL.toFixed(4)}</p>
+                      <div className="bg-gray-50 p-3 rounded flex flex-col">
+                        <p className="text-xs text-gray-600 mb-1 min-h-[2lh]">Avg. KL divergence</p>
+                        <p className="text-lg font-bold text-gray-900 flex-1 flex items-center">{avgKL.toFixed(4)}</p>
                       </div>
                     )}
                   </>
@@ -612,7 +617,7 @@ export default function VisualizationDashboard({
 
       {/* Tabs Navigation */}
       {tabs.length > 1 && (
-        <div className="bg-white rounded-lg shadow-lg px-6 pt-6">
+        <div className="bg-white rounded-lg shadow-lg px-6 pt-1">
           <VisualizationTabs
             tabs={tabs}
             activeTab={activeTab}

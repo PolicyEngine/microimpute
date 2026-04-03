@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { Upload, File as FileIcon, Link, Database, GitBranch } from 'lucide-react';
 import JSZip from 'jszip';
 import { DeeplinkParams, GitHubArtifactInfo } from '@/utils/deeplinks';
+import { parseImputationCSV, getImputationMetrics } from '@/utils/csvParser';
+import { ImputationDataPoint } from '@/types/imputation';
 
 interface FileUploadProps {
   onFileLoad: (content: string, filename: string) => void;
@@ -53,6 +55,13 @@ export default function FileUpload({
   const [activeTab, setActiveTab] = useState<'drop' | 'url' | 'sample' | 'github'>('drop');
   const [loadedFile, setLoadedFile] = useState<string>('');
   const [error, setError] = useState<string>('');
+  const [previewData, setPreviewData] = useState<{
+    totalRecords: number;
+    variables: string[];
+    methods: string[];
+    types: string[];
+    sampleRows: ImputationDataPoint[];
+  } | null>(null);
 
   // GitHub-specific state
   const [githubRepo, setGithubRepo] = useState('');
@@ -63,6 +72,29 @@ export default function FileUpload({
   const [availableArtifacts, setAvailableArtifacts] = useState<GitHubArtifact[]>([]);
   const [selectedArtifact, setSelectedArtifact] = useState('');
   const [isLoadingGithubData, setIsLoadingGithubData] = useState(false);
+
+  // Known imputation methods supported by microimpute
+  const KNOWN_METHODS = ['QRF', 'QuantReg', 'OLS', 'Matching', 'MDN'];
+
+  // Generate a preview summary from raw CSV content
+  const generatePreview = useCallback((csvContent: string) => {
+    try {
+      const parsed = parseImputationCSV(csvContent);
+      const metrics = getImputationMetrics(parsed);
+      const types = [...new Set(parsed.map(d => d.type).filter(Boolean))];
+      // Filter methods to only known imputation methods
+      const filteredMethods = metrics.methods.filter(m => KNOWN_METHODS.includes(m));
+      setPreviewData({
+        totalRecords: metrics.totalRecords,
+        variables: metrics.variables,
+        methods: filteredMethods,
+        types,
+        sampleRows: parsed.slice(0, 5),
+      });
+    } catch {
+      setPreviewData(null);
+    }
+  }, []);
 
   // Helper function to load a single artifact from deeplink parameters
   const loadArtifactFromDeeplink = useCallback(async (artifactInfo: GitHubArtifactInfo): Promise<string> => {
@@ -129,6 +161,7 @@ export default function FileUpload({
       const displayName = `${primary.repo}@${primary.branch} (${primary.commit.substring(0, 7)}) - ${primary.artifact}`;
       onFileLoad(primaryData, displayName);
       setLoadedFile(displayName);
+      generatePreview(primaryData);
 
       // Notify parent component that deeplink loading is complete
       if (onDeeplinkLoadComplete) {
@@ -182,8 +215,7 @@ export default function FileUpload({
     const missingColumns = EXPECTED_COLUMNS.filter(col => !header.includes(col));
     if (missingColumns.length > 0) {
       throw new Error(
-        `Invalid CSV format: Missing required columns: ${missingColumns.join(', ')}. ` +
-        `Expected columns: ${EXPECTED_COLUMNS.join(', ')}`
+        `Invalid CSV format\nMissing required columns: ${missingColumns.join(', ')}\nExpected columns: ${EXPECTED_COLUMNS.join(', ')}`
       );
     }
 
@@ -251,6 +283,9 @@ export default function FileUpload({
 
   async function processFile(file: globalThis.File) {
     setIsLoading(true);
+    setLoadedFile('');
+    setPreviewData(null);
+    setError('');
     try {
       const content = await file.text();
 
@@ -270,10 +305,11 @@ export default function FileUpload({
 
       onFileLoad(content, file.name);
       setLoadedFile(file.name);
+      generatePreview(content);
     } catch (err) {
       setError(
         err instanceof Error
-          ? `File processing error: ${err.message}`
+          ? err.message
           : 'Failed to read file. Please ensure it is a valid CSV file and try again.'
       );
     } finally {
@@ -332,6 +368,8 @@ export default function FileUpload({
   function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     setError('');
+    setLoadedFile('');
+    setPreviewData(null);
 
     if (!file) {
       setError('No file was selected. Please try again.');
@@ -442,6 +480,7 @@ export default function FileUpload({
       const filename = url.pathname.split('/').pop() || 'remote-file.csv';
       onFileLoad(content, filename);
       setLoadedFile(filename);
+      generatePreview(content);
     } catch (err) {
       if (err instanceof Error) {
         if (err.name === 'AbortError') {
@@ -668,6 +707,7 @@ export default function FileUpload({
 
       onFileLoad(csvContent, displayName);
       setLoadedFile(displayName);
+      generatePreview(csvContent);
       setError('');
 
       // Notify parent component about GitHub artifact info for sharing
@@ -704,7 +744,21 @@ export default function FileUpload({
       {/* Page Title */}
       <div>
         <h1 className="text-4xl font-bold text-gray-900 mb-2">Microimpute Dashboard</h1>
-        <p className="text-gray-600">Microimputation quality and model benchmarking assessment</p>
+        <p className="text-gray-600">
+          Visualize and assess the quality of microimputation results across multiple statistical
+          methods. This dashboard evaluates model accuracy using quantile loss and log loss benchmarks,
+          distributional fidelity via Wasserstein distance and KL divergence, and predictor
+          diagnostics including correlation analysis and progressive inclusion robustness checks.
+          For more details, see the{' '}
+          <a
+            href="https://github.com/PolicyEngine/microimpute"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-blue-600 hover:text-blue-800 underline"
+          >
+            MicroImpute documentation
+          </a>.
+        </p>
       </div>
 
       {/* Upload Card */}
@@ -720,7 +774,7 @@ export default function FileUpload({
             ? 'bg-blue-50 border border-blue-200'
             : 'bg-red-50 border border-red-200'
         }`}>
-          <p className={`text-sm ${
+          <p className={`text-sm whitespace-pre-line ${
             error.startsWith('🔄') ? 'text-blue-700' : 'text-red-700'
           }`}>{error}</p>
         </div>
@@ -733,12 +787,13 @@ export default function FileUpload({
       )}
 
       {/* Tab navigation */}
-      <div className="flex border-b border-gray-200 mb-6">
+      <div className="flex flex-wrap border-b border-gray-200 mb-6">
         <button
           onClick={() => {
             setActiveTab('drop');
             setError('');
             setLoadedFile('');
+            setPreviewData(null);
           }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'drop'
@@ -754,6 +809,7 @@ export default function FileUpload({
             setActiveTab('url');
             setError('');
             setLoadedFile('');
+            setPreviewData(null);
           }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'url'
@@ -769,6 +825,7 @@ export default function FileUpload({
             setActiveTab('github');
             setError('');
             setLoadedFile('');
+            setPreviewData(null);
           }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'github'
@@ -784,6 +841,7 @@ export default function FileUpload({
             setActiveTab('sample');
             setError('');
             setLoadedFile('');
+            setPreviewData(null);
           }}
           className={`px-4 py-2 text-sm font-medium border-b-2 ${
             activeTab === 'sample'
@@ -1033,9 +1091,81 @@ export default function FileUpload({
         </div>
       )}
 
+      {/* Data Preview */}
+      {loadedFile && previewData && (
+        <div className="mt-6 pt-6 border-t border-gray-200">
+          <h3 className="text-lg font-semibold text-gray-900 mb-3">Data preview</h3>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+            <div className="bg-gray-50 p-3 rounded">
+              <p className="text-xs text-gray-500">Records</p>
+              <p className="text-lg font-bold text-gray-900">{previewData.totalRecords.toLocaleString()}</p>
+            </div>
+            <div className="bg-gray-50 p-3 rounded">
+              <p className="text-xs text-gray-500">Methods</p>
+              <p className="text-lg font-bold text-gray-900">{previewData.methods.length}</p>
+            </div>
+            <div className="bg-gray-50 p-3 rounded">
+              <p className="text-xs text-gray-500">Variables</p>
+              <p className="text-lg font-bold text-gray-900">{previewData.variables.length}</p>
+            </div>
+            <div className="bg-gray-50 p-3 rounded">
+              <p className="text-xs text-gray-500">Assessment types</p>
+              <p className="text-lg font-bold text-gray-900">{previewData.types.length}</p>
+            </div>
+          </div>
+          {previewData.methods.length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs text-gray-500 mb-1">Methods found</p>
+              <div className="flex flex-wrap gap-1">
+                {previewData.methods.map(m => (
+                  <span key={m} className="text-xs font-mono bg-blue-50 text-blue-700 px-2 py-0.5 rounded">{m}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {previewData.types.length > 0 && (
+            <div className="mb-3">
+              <p className="text-xs text-gray-500 mb-1">Assessment types</p>
+              <div className="flex flex-wrap gap-1">
+                {previewData.types.map(t => (
+                  <span key={t} className="text-xs font-mono bg-gray-100 text-gray-700 px-2 py-0.5 rounded">{t}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {previewData.sampleRows.length > 0 && (
+            <div className="overflow-x-auto mb-4">
+              <p className="text-xs text-gray-500 mb-1">First {previewData.sampleRows.length} rows</p>
+              <table className="min-w-full text-xs divide-y divide-gray-200">
+                <thead className="bg-gray-50">
+                  <tr>
+                    {['type', 'method', 'variable', 'quantile', 'metric_name', 'metric_value', 'split'].map(col => (
+                      <th key={col} className="px-2 py-1 text-left font-medium text-gray-500 uppercase tracking-wider">{col}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {previewData.sampleRows.map((row, i) => (
+                    <tr key={i}>
+                      <td className="px-2 py-1 text-gray-700">{row.type}</td>
+                      <td className="px-2 py-1 text-gray-700">{row.method}</td>
+                      <td className="px-2 py-1 font-mono text-gray-700">{row.variable}</td>
+                      <td className="px-2 py-1 text-gray-700">{String(row.quantile)}</td>
+                      <td className="px-2 py-1 text-gray-700">{row.metric_name}</td>
+                      <td className="px-2 py-1 text-gray-700">{row.metric_value != null ? Number(row.metric_value).toFixed(6) : 'N/A'}</td>
+                      <td className="px-2 py-1 text-gray-700">{row.split}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* View Dashboard Button */}
       {loadedFile && (
-        <div className="mt-6 pt-6 border-t border-gray-200">
+        <div className={previewData ? '' : 'mt-6 pt-6 border-t border-gray-200'}>
           <button
             onClick={onViewDashboard}
             className="w-full bg-green-600 hover:bg-green-700 text-white font-medium py-3 px-4 rounded-md transition-colors"

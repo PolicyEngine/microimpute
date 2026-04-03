@@ -1,4 +1,4 @@
-# Quantile Random Forests
+# Quantile Regression Forests
 
 The `QRF` model uses an ensemble of decision trees to predict different quantiles of the target variable distribution. This allows it to model non-linear relationships while estimating uncertainty across the conditional distribution.
 
@@ -8,7 +8,7 @@ QRF handles both numerical and categorical variables. For numerical targets, it 
 
 ## How it works
 
-Quantile Random Forests build on standard random forests using the `quantile_forest` package. The method constructs an ensemble of decision trees, each trained on a bootstrapped sample of the data (bagging). At each split, only a random subset of features is considered, which introduces diversity among trees and reduces overfitting.
+Quantile Regression Forests build on standard random forests using the `quantile_forest` package. The method constructs an ensemble of decision trees, each trained on a bootstrapped sample of the data (bagging). At each split, only a random subset of features is considered, which introduces diversity among trees and reduces overfitting.
 
 Unlike standard random forests that aggregate predictions into averages, QRF retains the full predictive distribution from each tree and estimates quantiles directly from this empirical distribution.
 

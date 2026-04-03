@@ -31,7 +31,7 @@ The tests in this directory verify that all imputation models in this package:
   - Tests the model's ability to be fit to specific quantiles
   - Verifies proper prediction format and structure
 
-- **test_qrf.py**: Tests for the Quantile Random Forest imputer model:
+- **test_qrf.py**: Tests for the Quantile Regression Forest imputer model:
   - Cross-validation evaluation on the Iris dataset
   - Tests model fitting with optional RandomForest hyperparameters
   - Verifies prediction structure across multiple quantiles

@@ -1,23 +1,28 @@
 // Consistent color mapping for imputation methods across all charts
-// Using Plotly color palette for consistency with Python visualizations
+// Using colorblind-friendly Safe palette for consistency with Python visualizations
 
 // Primary colors to use in order of appearance for the first 5 models
 export const PRIMARY_COLORS = [
-  '#636EFA', // Plotly blue
-  '#EF553B', // Plotly red
-  '#00CC96', // Plotly teal
-  '#AB63FA', // Plotly purple
-  '#FFA15A', // Plotly orange
+  '#88CCEE', // Cyan
+  '#CC6677', // Rose
+  '#DDCC77', // Sand
+  '#117733', // Green
+  '#332288', // Indigo
 ];
 
 // Additional fallback colors for when there are more than 5 models
 export const FALLBACK_COLORS = [
-  '#19D3F3', // Plotly cyan
-  '#FF6692', // Plotly pink
-  '#B6E880', // Plotly lime
-  '#FF97FF', // Plotly magenta
-  '#FECB52', // Plotly yellow
+  '#AA4499', // Purple
+  '#44AA99', // Teal
+  '#999933', // Olive
+  '#882255', // Wine
+  '#661100', // Brown
 ];
+
+// Chart styling constants matching Python backend PLOT_CONFIG
+export const CHART_BG = '#FAFAFA';
+export const GRID_COLOR = '#E5E5E5';
+export const LINE_COLOR = '#CCCCCC';
 
 /**
  * Get color for a method based on its index in the order of appearance.

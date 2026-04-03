@@ -68,6 +68,9 @@ jobs:
       - name: Install R and dependencies (Python 3.14 only)
         if: matrix.python-version == '3.14'
         run: |
+          # Install R from CRAN repo (rpy2 requires R >= 4.5 for R_getVar symbol)
+          wget -qO- https://cloud.r-project.org/bin/linux/ubuntu/marutter_pubkey.asc | sudo gpg --dearmor -o /usr/share/keyrings/cran-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/cran-archive-keyring.gpg] https://cloud.r-project.org/bin/linux/ubuntu $(lsb_release -cs)-cran40/" | sudo tee /etc/apt/sources.list.d/cran.list
           sudo apt-get update
           sudo apt-get install -y r-base r-base-dev libtirpc-dev
       - name: Install R packages (Python 3.14 only)
