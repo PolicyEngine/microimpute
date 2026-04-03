@@ -8,6 +8,7 @@ on:
 
       paths:
         - "changelog.d/**"
+        - "CHANGELOG.md"
         - "!pyproject.toml"
 
 jobs:
