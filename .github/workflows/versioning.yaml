@@ -8,7 +8,7 @@ on:
 
       paths:
         - "changelog.d/**"
-        - "!pyproject.toml"
+        - "CHANGELOG.md"
 
 jobs:
     Versioning:
