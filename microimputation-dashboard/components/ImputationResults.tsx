@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import { ImputationDataPoint } from '@/types/imputation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { GRID_COLOR, LINE_COLOR } from '@/utils/colors';
+import ChartLegend from './ChartLegend';
 import DistributionOverlay from './DistributionOverlay';
 
 interface ImputationResultsProps {
@@ -139,25 +141,28 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
           </h3>
 
           {/* Explanation */}
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-sm text-gray-700 mb-2">
-              <strong>What is Wasserstein distance?</strong> Also known as &quot;Earth Mover&apos;s Distance&quot;,
-              this metric measures how much &quot;work&quot; is needed to transform one probability distribution
-              into another. Think of it as the minimum cost to rearrange one pile of dirt to match
-              another pile&apos;s shape.
-            </p>
-            <p className="text-sm text-gray-700 mb-2">
-              <strong>Why use it for imputation?</strong> Wasserstein distance is ideal for numerical
-              variables because it considers the actual distances between values, not just whether
-              they match exactly. A value of 0 means perfect imputation, and larger values indicate
-              greater differences between imputed and true distributions.
-            </p>
-            <p className="text-sm text-gray-700">
-              <strong>Interpretation:</strong> Since Wasserstein distance is scale-dependent, quality is assessed
-              relative to each variable&apos;s range. A distance of &lt;1% of the variable range is excellent,
-              &lt;3% is good, &lt;5% is moderate, &lt;10% is fair, and &ge;10% suggests poor distributional match.
-            </p>
-          </div>
+          <details className="mb-6">
+            <summary className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 bg-blue-50 border border-blue-200 rounded-md px-3 py-1.5 cursor-pointer hover:bg-blue-100 select-none">&#9432; Interpretation</summary>
+            <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+              <p className="text-sm text-gray-700 mb-2">
+                <strong>What is Wasserstein distance?</strong> Also known as &quot;Earth Mover&apos;s Distance&quot;,
+                this metric measures how much &quot;work&quot; is needed to transform one probability distribution
+                into another. Think of it as the minimum cost to rearrange one pile of dirt to match
+                another pile&apos;s shape.
+              </p>
+              <p className="text-sm text-gray-700 mb-2">
+                <strong>Why use it for imputation?</strong> Wasserstein distance is ideal for numerical
+                variables because it considers the actual distances between values, not just whether
+                they match exactly. A value of 0 means perfect imputation, and larger values indicate
+                greater differences between imputed and true distributions.
+              </p>
+              <p className="text-sm text-gray-700">
+                <strong>Interpretation:</strong> Since Wasserstein distance is scale-dependent, quality is assessed
+                relative to each variable&apos;s range. A distance of &lt;1% of the variable range is excellent,
+                &lt;3% is good, &lt;5% is moderate, &lt;10% is fair, and &ge;10% suggests poor distributional match.
+              </p>
+            </div>
+          </details>
 
           {/* Bar chart */}
           <div className="mb-4">
@@ -167,9 +172,9 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                 layout="vertical"
                 margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tick={{ fill: '#000000' }} />
-                <YAxis type="category" dataKey="variable" width={90} tick={{ fill: '#000000' }} />
+                <CartesianGrid stroke={GRID_COLOR} />
+                <XAxis type="number" tick={{ fill: '#333' }} axisLine={{ stroke: LINE_COLOR }} tickLine={{ stroke: LINE_COLOR }} />
+                <YAxis type="category" dataKey="variable" width={90} tick={{ fill: '#333' }} axisLine={{ stroke: LINE_COLOR }} tickLine={{ stroke: LINE_COLOR }} />
                 <Tooltip
                   formatter={(value: number, _name: string, props: { payload?: DistributionMetric }) => {
                     const normalizedValue = props.payload?.normalizedValue;
@@ -180,7 +185,7 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                   contentStyle={{ color: '#000000' }}
                   labelStyle={{ color: '#000000' }}
                 />
-                <Legend wrapperStyle={{ color: '#000000' }} />
+                <Legend content={<ChartLegend />} />
                 <Bar dataKey="value" name="Wasserstein Distance">
                   {wassersteinData.map((entry, index) => (
                     <Cell
@@ -268,24 +273,27 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
           </h3>
 
           {/* Explanation */}
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-sm text-gray-700 mb-2">
-              <strong>What is KL-divergence?</strong> Kullback-Leibler divergence measures how much
-              one probability distribution differs from another. It quantifies the &quot;information lost&quot;
-              when using the imputed distribution to approximate the true distribution.
-            </p>
-            <p className="text-sm text-gray-700 mb-2">
-              <strong>Why use it for categorical variables?</strong> KL-divergence is particularly
-              useful for categorical data because it compares probability distributions across
-              categories. It&apos;s sensitive to differences in how probabilities are distributed across
-              all possible categories.
-            </p>
-            <p className="text-sm text-gray-700">
-              <strong>Interpretation:</strong> A value of 0 means perfect match. Values below 0.5
-              indicate good imputation, while values above 5.0 suggest substantial distributional
-              differences. Note that KL-divergence is not symmetric and can range from 0 to infinity.
-            </p>
-          </div>
+          <details className="mb-6">
+            <summary className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 bg-blue-50 border border-blue-200 rounded-md px-3 py-1.5 cursor-pointer hover:bg-blue-100 select-none">&#9432; Interpretation</summary>
+            <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+              <p className="text-sm text-gray-700 mb-2">
+                <strong>What is KL-divergence?</strong> Kullback-Leibler divergence measures how much
+                one probability distribution differs from another. It quantifies the &quot;information lost&quot;
+                when using the imputed distribution to approximate the true distribution.
+              </p>
+              <p className="text-sm text-gray-700 mb-2">
+                <strong>Why use it for categorical variables?</strong> KL-divergence is particularly
+                useful for categorical data because it compares probability distributions across
+                categories. It&apos;s sensitive to differences in how probabilities are distributed across
+                all possible categories.
+              </p>
+              <p className="text-sm text-gray-700">
+                <strong>Interpretation:</strong> A value of 0 means perfect match. Values below 0.5
+                indicate good imputation, while values above 5.0 suggest substantial distributional
+                differences. Note that KL-divergence is not symmetric and can range from 0 to infinity.
+              </p>
+            </div>
+          </details>
 
           {/* Bar chart */}
           <div className="mb-4">
@@ -295,15 +303,15 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
                 layout="vertical"
                 margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tick={{ fill: '#000000' }} />
-                <YAxis type="category" dataKey="variable" width={90} tick={{ fill: '#000000' }} />
+                <CartesianGrid stroke={GRID_COLOR} />
+                <XAxis type="number" tick={{ fill: '#333' }} axisLine={{ stroke: LINE_COLOR }} tickLine={{ stroke: LINE_COLOR }} />
+                <YAxis type="category" dataKey="variable" width={90} tick={{ fill: '#333' }} axisLine={{ stroke: LINE_COLOR }} tickLine={{ stroke: LINE_COLOR }} />
                 <Tooltip
                   formatter={(value: number) => [value.toFixed(6), 'KL-Divergence']}
                   contentStyle={{ color: '#000000' }}
                   labelStyle={{ color: '#000000' }}
                 />
-                <Legend wrapperStyle={{ color: '#000000' }} />
+                <Legend content={<ChartLegend />} />
                 <Bar dataKey="value" name="KL-Divergence">
                   {klDivergenceData.map((entry, index) => (
                     <Cell

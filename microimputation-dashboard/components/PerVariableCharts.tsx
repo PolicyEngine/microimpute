@@ -13,7 +13,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { ImputationDataPoint } from '@/types/imputation';
-import { getMethodColor } from '@/utils/colors';
+import { getMethodColor, GRID_COLOR, LINE_COLOR } from '@/utils/colors';
+import ChartLegend from './ChartLegend';
 
 interface PerVariableChartsProps {
   data: ImputationDataPoint[];
@@ -36,6 +37,11 @@ export default function PerVariableCharts({
         d.split === 'test'
     );
   }, [data, variable, metricType]);
+
+  // Use global method ordering from all benchmark data for consistent colors
+  const allMethods = useMemo(() => {
+    return Array.from(new Set(data.filter(d => d.type === 'benchmark_loss').map(d => d.method)));
+  }, [data]);
 
   const methods = useMemo(() => {
     return Array.from(new Set(variableData.map((d) => d.method)));
@@ -108,7 +114,7 @@ export default function PerVariableCharts({
           </h4>
           <ResponsiveContainer width="100%" height={400}>
             <BarChart data={quantileChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+              <CartesianGrid stroke={GRID_COLOR} />
               <XAxis
                 dataKey="quantile"
                 label={{
@@ -116,15 +122,20 @@ export default function PerVariableCharts({
                   position: 'insideBottom',
                   offset: -5,
                 }}
-                tick={{ fill: '#666' }}
+                tick={{ fill: '#333' }}
+                axisLine={{ stroke: LINE_COLOR }}
+                tickLine={{ stroke: LINE_COLOR }}
               />
               <YAxis
+                width={100}
                 label={{
                   value: 'Test Quantile Loss',
                   angle: -90,
-                  position: 'insideLeft',
+                  position: 'center',
                 }}
-                tick={{ fill: '#666' }}
+                tick={{ fill: '#333' }}
+                axisLine={{ stroke: LINE_COLOR }}
+                tickLine={{ stroke: LINE_COLOR }}
               />
               <Tooltip
                 contentStyle={{
@@ -136,15 +147,18 @@ export default function PerVariableCharts({
                 itemStyle={{ color: '#000' }}
                 formatter={(value: number) => value.toFixed(6)}
               />
-              <Legend wrapperStyle={{ paddingTop: '20px' }} />
-              {methods.map((method, index) => (
-                <Bar
-                  key={method}
-                  dataKey={method}
-                  fill={getMethodColor(method, index)}
-                  name={method}
-                />
-              ))}
+              <Legend content={<ChartLegend />} />
+              {methods.map((method) => {
+                const globalIndex = allMethods.indexOf(method);
+                return (
+                  <Bar
+                    key={method}
+                    dataKey={method}
+                    fill={getMethodColor(method, globalIndex >= 0 ? globalIndex : 0)}
+                    name={method}
+                  />
+                );
+              })}
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -157,15 +171,20 @@ export default function PerVariableCharts({
           </h4>
           <ResponsiveContainer width="100%" height={400}>
             <BarChart data={logLossChartData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-              <XAxis dataKey="method" tick={{ fill: '#666' }} />
+              <CartesianGrid stroke={GRID_COLOR} />
+              <XAxis dataKey="method" tick={{ fill: '#333' }}
+                axisLine={{ stroke: LINE_COLOR }}
+                tickLine={{ stroke: LINE_COLOR }} />
               <YAxis
+                width={100}
                 label={{
                   value: 'Log Loss',
                   angle: -90,
-                  position: 'insideLeft',
+                  position: 'center',
                 }}
-                tick={{ fill: '#666' }}
+                tick={{ fill: '#333' }}
+                axisLine={{ stroke: LINE_COLOR }}
+                tickLine={{ stroke: LINE_COLOR }}
               />
               <Tooltip
                 contentStyle={{
@@ -178,9 +197,12 @@ export default function PerVariableCharts({
                 formatter={(value: number) => [value.toFixed(6), 'Log Loss']}
               />
               <Bar dataKey="value">
-                {logLossChartData.map((entry, index) => (
-                  <Cell key={entry.method} fill={getMethodColor(entry.method, index)} />
-                ))}
+                {logLossChartData.map((entry) => {
+                  const globalIndex = allMethods.indexOf(entry.method);
+                  return (
+                    <Cell key={entry.method} fill={getMethodColor(entry.method, globalIndex >= 0 ? globalIndex : 0)} />
+                  );
+                })}
               </Bar>
             </BarChart>
           </ResponsiveContainer>

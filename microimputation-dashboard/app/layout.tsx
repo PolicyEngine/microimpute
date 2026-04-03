@@ -1,17 +1,17 @@
 import type { Metadata } from "next";
-import { Roboto_Serif, Roboto_Mono } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const robotoSerif = Roboto_Serif({
-  variable: "--font-roboto-serif",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700"],
 });
 
-const robotoMono = Roboto_Mono({
-  variable: "--font-roboto-mono",
+const jetbrainsMono = JetBrains_Mono({
+  variable: "--font-jetbrains-mono",
   subsets: ["latin"],
-  weight: ["300", "400", "500", "600", "700"],
+  weight: ["400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -27,7 +27,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${robotoSerif.variable} ${robotoMono.variable} antialiased`}
+        className={`${inter.variable} ${jetbrainsMono.variable} antialiased`}
       >
         {children}
       </body>

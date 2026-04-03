@@ -13,6 +13,8 @@ import {
   ResponsiveContainer,
   Brush,
 } from 'recharts';
+import { GRID_COLOR, LINE_COLOR } from '@/utils/colors';
+import ChartLegend from './ChartLegend';
 
 /**
  * Format a number to scientific notation if it's very large or very small
@@ -155,13 +157,15 @@ export default function DistributionOverlay({
             data={chartData}
             margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
           >
-            <CartesianGrid strokeDasharray="3 3" />
+            <CartesianGrid stroke={GRID_COLOR} />
             <XAxis
               dataKey="name"
               angle={-45}
               textAnchor="end"
               height={80}
-              tick={{ fill: '#000000', fontSize: 11 }}
+              tick={{ fill: '#333', fontSize: 11 }}
+              axisLine={{ stroke: LINE_COLOR }}
+              tickLine={{ stroke: LINE_COLOR }}
               label={{
                 value: `${dist.variable} (binned values)`,
                 position: 'insideBottom',
@@ -170,13 +174,15 @@ export default function DistributionOverlay({
               }}
             />
             <YAxis
-              tick={{ fill: '#000000' }}
+              tick={{ fill: '#333' }}
+              axisLine={{ stroke: LINE_COLOR }}
+              tickLine={{ stroke: LINE_COLOR }}
               label={{
                 value: 'Percentage (%)',
                 angle: -90,
                 position: 'insideLeft',
                 offset: 10,
-                style: { fill: '#000000', textAnchor: 'middle' },
+                style: { fill: '#333', textAnchor: 'middle' },
               }}
             />
             <Tooltip
@@ -213,10 +219,7 @@ export default function DistributionOverlay({
               fill="#f3f4f6"
               tickFormatter={() => ''}
             />
-            <Legend
-              verticalAlign="bottom"
-              wrapperStyle={{ color: '#000000', paddingTop: '45px' }}
-            />
+            <Legend content={<ChartLegend className="pt-10" />} />
           </BarChart>
         </ResponsiveContainer>
         <p className="text-xs text-gray-600 mt-2 text-center">
@@ -241,10 +244,12 @@ export default function DistributionOverlay({
             data={chartData}
             margin={{ top: 20, right: 30, left: 20, bottom: 60 }}
           >
-            <CartesianGrid strokeDasharray="3 3" />
+            <CartesianGrid stroke={GRID_COLOR} />
             <XAxis
               dataKey="category"
-              tick={{ fill: '#000000', fontSize: 12 }}
+              tick={{ fill: '#333', fontSize: 12 }}
+              axisLine={{ stroke: LINE_COLOR }}
+              tickLine={{ stroke: LINE_COLOR }}
               label={{
                 value: `${dist.variable} (categories)`,
                 position: 'insideBottom',
@@ -253,13 +258,15 @@ export default function DistributionOverlay({
               }}
             />
             <YAxis
-              tick={{ fill: '#000000' }}
+              tick={{ fill: '#333' }}
+              axisLine={{ stroke: LINE_COLOR }}
+              tickLine={{ stroke: LINE_COLOR }}
               label={{
                 value: 'Percentage (%)',
                 angle: -90,
                 position: 'insideLeft',
                 offset: 10,
-                style: { fill: '#000000', textAnchor: 'middle' },
+                style: { fill: '#333', textAnchor: 'middle' },
               }}
             />
             <Tooltip
@@ -267,7 +274,7 @@ export default function DistributionOverlay({
               contentStyle={{ color: '#000000' }}
               labelStyle={{ color: '#000000' }}
             />
-            <Legend wrapperStyle={{ color: '#000000', paddingTop: '10px' }} />
+            <Legend content={<ChartLegend className="pt-400" />} />
             <Bar
               dataKey="Donor"
               fill="#3b82f6"
@@ -290,7 +297,7 @@ export default function DistributionOverlay({
   };
 
   return (
-    <div className="mb-8 p-6 bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200 rounded-lg">
+    <div className="mb-8 p-6 bg-white border border-gray-200 rounded-lg">
       <div className="mb-4">
         <h3 className="text-xl font-semibold mb-2 text-gray-900">
           Distribution comparison

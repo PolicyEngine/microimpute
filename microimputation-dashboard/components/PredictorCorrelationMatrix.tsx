@@ -318,33 +318,36 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
 
       {/* Legend - only for correlation metrics (not mutual_info) */}
       {selectedMetric !== 'mutual_info' && (
-        <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
-          <p className="text-sm text-gray-700 mb-3">
-            <strong>Interpretation:</strong> Correlation values range from -1 to 1. Positive values (blue) indicate variables that increase together, negative values (red) indicate variables that move in opposite directions, and values near 0 (white) indicate little to no linear relationship.
-          </p>
-          <div className="flex items-center gap-4 mb-3">
-            <span className="text-xs text-gray-600 font-medium">Color scale:</span>
-            <div className="flex items-center gap-1">
-              <div className="w-8 h-4 bg-red-500" title="-1.0 to -0.7" />
-              <div className="w-8 h-4 bg-red-400" title="-0.7 to -0.4" />
-              <div className="w-8 h-4 bg-red-300" title="-0.4 to -0.2" />
-              <div className="w-8 h-4 bg-gray-100" title="-0.2 to 0.2" />
-              <div className="w-8 h-4 bg-blue-300" title="0.2 to 0.4" />
-              <div className="w-8 h-4 bg-blue-400" title="0.4 to 0.7" />
-              <div className="w-8 h-4 bg-blue-600" title="0.7 to 1.0" />
-            </div>
-            <span className="text-xs text-gray-600">
-              <span className="text-red-500">◄ Negative</span>
-              <span className="mx-2">|</span>
-              <span className="text-blue-500">Positive ►</span>
-            </span>
-          </div>
-          <div className="pt-3 border-t border-blue-300">
-            <p className="text-sm text-gray-700">
-              <strong>Pearson vs Spearman:</strong> Pearson correlation measures linear relationships between variables and is sensitive to outliers. Spearman correlation measures monotonic relationships (whether variables consistently increase or decrease together) by ranking the data first, making it more robust to outliers and non-linear but monotonic relationships. Use Pearson for linear relationships and Spearman when the relationship may be non-linear or when data contains outliers.
+        <details className="mt-6">
+          <summary className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 bg-blue-50 border border-blue-200 rounded-md px-3 py-1.5 cursor-pointer hover:bg-blue-100 select-none">&#9432; Interpretation</summary>
+          <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+            <p className="text-sm text-gray-700 mb-3">
+              Correlation values range from -1 to 1. Positive values (blue) indicate variables that increase together, negative values (red) indicate variables that move in opposite directions, and values near 0 (white) indicate little to no linear relationship.
             </p>
+            <div className="flex items-center gap-4 mb-3">
+              <span className="text-xs text-gray-600 font-medium">Color scale:</span>
+              <div className="flex items-center gap-1">
+                <div className="w-8 h-4 bg-red-500" title="-1.0 to -0.7" />
+                <div className="w-8 h-4 bg-red-400" title="-0.7 to -0.4" />
+                <div className="w-8 h-4 bg-red-300" title="-0.4 to -0.2" />
+                <div className="w-8 h-4 bg-gray-100" title="-0.2 to 0.2" />
+                <div className="w-8 h-4 bg-blue-300" title="0.2 to 0.4" />
+                <div className="w-8 h-4 bg-blue-400" title="0.4 to 0.7" />
+                <div className="w-8 h-4 bg-blue-600" title="0.7 to 1.0" />
+              </div>
+              <span className="text-xs text-gray-600">
+                <span className="text-red-500">◄ Negative</span>
+                <span className="mx-2">|</span>
+                <span className="text-blue-500">Positive ►</span>
+              </span>
+            </div>
+            <div className="pt-3 border-t border-blue-300">
+              <p className="text-sm text-gray-700">
+                <strong>Pearson vs Spearman:</strong> Pearson correlation measures linear relationships between variables and is sensitive to outliers. Spearman correlation measures monotonic relationships (whether variables consistently increase or decrease together) by ranking the data first, making it more robust to outliers and non-linear but monotonic relationships. Use Pearson for linear relationships and Spearman when the relationship may be non-linear or when data contains outliers.
+              </p>
+            </div>
           </div>
-        </div>
+        </details>
       )}
 
       {/* Predictor-Target Mutual Information Section */}
@@ -456,35 +459,38 @@ export default function PredictorCorrelationMatrix({ data }: PredictorCorrelatio
           </>
         ) : null}
 
-        {/* Explanation box - always shown */}
-        <div className="p-4 bg-purple-50 border border-purple-200 rounded-md">
-          <p className="text-sm text-gray-700 mb-2">
-            <strong>What is mutual information?</strong> Mutual information measures how much information one variable provides about another. Unlike correlation, it captures both linear and non-linear relationships between variables. Values range from 0 (independent variables) to higher positive values (strong dependency).
-          </p>
-          <p className="text-sm text-gray-700 mb-3">
-            <strong>Why measure it for imputed variables?</strong> Mutual information between predictors and imputed variables reveals which predictors are most informative for imputation. High mutual information indicates that a predictor strongly influences the imputed variable&apos;s distribution, making it crucial for accurate imputation. This helps validate that your imputation models are using the most relevant predictors and can identify when key predictive relationships exist in your data.
-          </p>
+        {/* Explanation box */}
+        <details>
+          <summary className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 bg-blue-50 border border-blue-200 rounded-md px-3 py-1.5 cursor-pointer hover:bg-blue-100 select-none">&#9432; Interpretation</summary>
+          <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+            <p className="text-sm text-gray-700 mb-2">
+              <strong>What is mutual information?</strong> Mutual information measures how much information one variable provides about another. Unlike correlation, it captures both linear and non-linear relationships between variables. Values range from 0 (independent variables) to higher positive values (strong dependency).
+            </p>
+            <p className="text-sm text-gray-700 mb-3">
+              <strong>Why measure it for imputed variables?</strong> Mutual information between predictors and imputed variables reveals which predictors are most informative for imputation. High mutual information indicates that a predictor strongly influences the imputed variable&apos;s distribution, making it crucial for accurate imputation. This helps validate that your imputation models are using the most relevant predictors and can identify when key predictive relationships exist in your data.
+            </p>
 
-          {/* Color scale within explanation box */}
-          <div className="mt-3 pt-3 border-t border-purple-300">
-            <div className="flex items-center gap-4">
-              <span className="text-xs text-gray-600 font-medium">Color scale:</span>
-              <div className="flex items-center gap-1">
-                <div className="w-8 h-4 bg-gray-100" title="0 to 0.02" />
-                <div className="w-8 h-4" style={{ backgroundColor: '#ddd6fe' }} title="0.02 to 0.04" />
-                <div className="w-8 h-4" style={{ backgroundColor: '#c4b5fd' }} title="0.04 to 0.07" />
-                <div className="w-8 h-4" style={{ backgroundColor: '#a78bfa' }} title="0.07 to 0.10" />
-                <div className="w-8 h-4" style={{ backgroundColor: '#7c3aed' }} title="0.10 to 0.15" />
-                <div className="w-8 h-4" style={{ backgroundColor: '#581c87' }} title="0.15+" />
+            {/* Color scale within explanation box */}
+            <div className="mt-3 pt-3 border-t border-blue-300">
+              <div className="flex items-center gap-4">
+                <span className="text-xs text-gray-600 font-medium">Color scale:</span>
+                <div className="flex items-center gap-1">
+                  <div className="w-8 h-4 bg-gray-100" title="0 to 0.02" />
+                  <div className="w-8 h-4" style={{ backgroundColor: '#ddd6fe' }} title="0.02 to 0.04" />
+                  <div className="w-8 h-4" style={{ backgroundColor: '#c4b5fd' }} title="0.04 to 0.07" />
+                  <div className="w-8 h-4" style={{ backgroundColor: '#a78bfa' }} title="0.07 to 0.10" />
+                  <div className="w-8 h-4" style={{ backgroundColor: '#7c3aed' }} title="0.10 to 0.15" />
+                  <div className="w-8 h-4" style={{ backgroundColor: '#581c87' }} title="0.15+" />
+                </div>
+                <span className="text-xs text-gray-600">
+                  <span className="text-gray-400">Weak</span>
+                  <span className="mx-2">→</span>
+                  <span className="text-purple-700">Strong ►</span>
+                </span>
               </div>
-              <span className="text-xs text-gray-600">
-                <span className="text-gray-400">Weak</span>
-                <span className="mx-2">→</span>
-                <span className="text-purple-700">Strong ►</span>
-              </span>
             </div>
           </div>
-        </div>
+        </details>
 
         {/* Message when no predictor-target data is available */}
         {!hasPredictorTargetMI && (

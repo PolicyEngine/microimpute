@@ -113,9 +113,9 @@ function HomeContent() {
 
 
   return (
-    <main className="min-h-screen bg-gray-50">
+    <main className="min-h-screen bg-gray-50 flex flex-col">
       {/* Main content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow">
         {!showDashboard ? (
           <FileUpload
             onFileLoad={handleFileLoad}
@@ -136,10 +136,10 @@ function HomeContent() {
       </div>
 
       {/* Footer */}
-      <footer className="mt-16 bg-white border-t">
+      <footer className="mt-auto bg-white border-t">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="text-center text-sm text-gray-600">
-            <p>© 2024 PolicyEngine. Part of the MicroImpute suite.</p>
+            <p>© 2025 PolicyEngine. Part of the MicroImpute suite.</p>
             <p className="mt-2">
               <a
                 href="https://github.com/PolicyEngine/microimpute"

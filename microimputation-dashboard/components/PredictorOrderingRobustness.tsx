@@ -3,6 +3,8 @@
 import { useMemo } from 'react';
 import { ImputationDataPoint } from '@/types/imputation';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, Cell } from 'recharts';
+import { GRID_COLOR, LINE_COLOR } from '@/utils/colors';
+import ChartLegend from './ChartLegend';
 
 interface PredictorOrderingRobustnessProps {
   data: ImputationDataPoint[];
@@ -143,19 +145,22 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
           </h3>
 
           {/* Explanation */}
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-md">
-            <p className="text-sm text-gray-700 mb-2">
-              <strong>How this works:</strong> This analysis adds predictors one at a time,
-              choosing the predictor that improves performance the most at each step. This
-              step-by-step approach is efficient but doesn&apos;t test
-              every possible combination of predictors. Note that this analysis may differ depending on the model type passed when using the `progressive_predictor_inclusion` function that produced these results.
-            </p>
-            <p className="text-sm text-gray-700">
-              <strong>Reading the chart:</strong> The bars show cumulative improvement from
-              baseline as predictors are added. Larger improvements indicate more valuable
-              predictor combinations.
-            </p>
-          </div>
+          <details className="mb-6">
+            <summary className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 bg-blue-50 border border-blue-200 rounded-md px-3 py-1.5 cursor-pointer hover:bg-blue-100 select-none">&#9432; Interpretation</summary>
+            <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+              <p className="text-sm text-gray-700 mb-2">
+                <strong>How this works:</strong> This analysis adds predictors one at a time,
+                choosing the predictor that improves performance the most at each step. This
+                step-by-step approach is efficient but doesn&apos;t test
+                every possible combination of predictors. Note that this analysis may differ depending on the model type passed when using the `progressive_predictor_inclusion` function that produced these results.
+              </p>
+              <p className="text-sm text-gray-700">
+                <strong>Reading the chart:</strong> The bars show cumulative improvement from
+                baseline as predictors are added. Larger improvements indicate more valuable
+                predictor combinations.
+              </p>
+            </div>
+          </details>
 
           {/* Best Combination Highlight */}
           {bestCombination && (
@@ -278,18 +283,21 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
           </h3>
 
           {/* Explanation */}
-          <div className="mb-6 p-4 bg-blue-50 border border-purple-200 rounded-md">
-            <p className="text-sm text-gray-700 mb-2">
-              <strong>What this shows:</strong> This analysis measures how much performance
-              degrades when each predictor is removed. Predictors that cause large performance
-              drops when removed are critical to the model&apos;s accuracy.
-            </p>
-            <p className="text-sm text-gray-700">
-              <strong>Reading the chart:</strong> Positive values (bars pointing right) indicate
-              performance worsens when the predictor is removed, meaning the predictor is helpful.
-              Negative values suggest removing the predictor might actually improve performance.
-            </p>
-          </div>
+          <details className="mb-6">
+            <summary className="inline-flex items-center gap-1 text-sm font-medium text-gray-900 bg-blue-50 border border-blue-200 rounded-md px-3 py-1.5 cursor-pointer hover:bg-blue-100 select-none">&#9432; Interpretation</summary>
+            <div className="mt-2 p-4 bg-blue-50 border border-blue-200 rounded-md">
+              <p className="text-sm text-gray-700 mb-2">
+                <strong>What this shows:</strong> This analysis measures how much performance
+                degrades when each predictor is removed. Predictors that cause large performance
+                drops when removed are critical to the model&apos;s accuracy.
+              </p>
+              <p className="text-sm text-gray-700">
+                <strong>Reading the chart:</strong> Positive values (bars pointing right) indicate
+                performance worsens when the predictor is removed, meaning the predictor is helpful.
+                Negative values suggest removing the predictor might actually improve performance.
+              </p>
+            </div>
+          </details>
 
           {/* Bar chart */}
           <div className="mb-4">
@@ -299,9 +307,9 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
                 layout="vertical"
                 margin={{ top: 20, right: 30, left: 100, bottom: 20 }}
               >
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis type="number" tickFormatter={(val) => `${val.toFixed(1)}%`} tick={{ fill: '#000000' }} />
-                <YAxis type="category" dataKey="predictor" width={90} tick={{ fill: '#000000' }} />
+                <CartesianGrid stroke={GRID_COLOR} />
+                <XAxis type="number" tickFormatter={(val) => `${val.toFixed(1)}%`} tick={{ fill: '#333' }} axisLine={{ stroke: LINE_COLOR }} tickLine={{ stroke: LINE_COLOR }} />
+                <YAxis type="category" dataKey="predictor" width={90} tick={{ fill: '#333' }} axisLine={{ stroke: LINE_COLOR }} tickLine={{ stroke: LINE_COLOR }} />
                 <Tooltip
                   formatter={(value: number, name: string) => {
                     if (name === 'relativeImpact') {
@@ -312,7 +320,7 @@ export default function PredictorOrderingRobustness({ data }: PredictorOrderingR
                   contentStyle={{ color: '#000000' }}
                   labelStyle={{ color: '#000000' }}
                 />
-                <Legend wrapperStyle={{ color: '#000000' }} />
+                <Legend content={<ChartLegend />} />
                 <Bar dataKey="relativeImpact" name="Relative Impact (%)">
                   {importanceData.map((entry, index) => (
                     <Cell
