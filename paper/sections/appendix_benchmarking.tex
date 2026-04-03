@@ -1,4 +1,4 @@
-\section{Cross-Dataset Benchmarking}\label{app:benchmarking}
+\section{Cross-dataset benchmarking}\label{app:benchmarking}
 
 To validate $\texttt{microimpute}$ across domains beyond the SCF-CPS wealth imputation use case, we conduct a cross-dataset benchmarking exercise using six publicly available regression datasets from the OpenML AutoML Benchmark regression suite \citep{vanschoren2014openml}, spanning different domains, sample sizes, and dimensionalities.
 
@@ -12,7 +12,7 @@ Table~\ref{tab:benchmark_datasets} summarizes the datasets used in this analysis
     \label{tab:benchmark_datasets}
     \begin{tabular}{llrl}
         \toprule
-        Dataset & Domain & Rows & Target Variable \\
+        Dataset & Domain & Rows & Target variable \\
         \midrule
         \texttt{space\_ga} & Voting/demographics & 3,107 & \texttt{ln(VOTES/POP)} \\
         \texttt{elevators} & Aircraft control & 16,599 & \texttt{Goal} \\
@@ -60,7 +60,7 @@ Table~\ref{tab:benchmark_ranks} summarizes the mean rank of each method across a
     \label{tab:benchmark_ranks}
     \begin{tabular}{lr}
         \toprule
-        Method & Mean Rank \\
+        Method & Mean rank \\
         \midrule
         Matching & 1.67 \\
         QRF & 1.83 \\

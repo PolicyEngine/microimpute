@@ -2,7 +2,7 @@
 
 This section defines the statistical matching problem and describes the imputation methods in \texttt{microimpute}. We begin with the formal problem definition and the assumption underlying all statistical matching procedures, then discuss the relationship to missing data mechanisms, and finally describe each of the five imputation methods.
 
-\subsection{The Statistical Matching Problem}
+\subsection{The statistical matching problem}
 
 Statistical matching arises when a researcher seeks to combine information from two (or more) data sources that have been collected independently on different samples \citep{dorazio2006statistical}. The canonical setup involves:
 
@@ -34,7 +34,7 @@ The CIA is fundamentally untestable because $Y$ and $Z$ are never jointly observ
 
 Violations of the CIA lead to biased estimates of the joint distribution of $(Y, Z)$ in the synthetic file. However, if the research question concerns only the marginal distribution of $Y$ in the receiver population, the CIA is not required. What matters is that the conditional distribution $P(Y|X)$ is correctly specified and that $X$ has sufficient overlap between donor and receiver files \citep{dorazio2021statistical}.
 
-\subsection{Missing Data Mechanisms}
+\subsection{Missing data mechanisms}
 
 Statistical matching may also warrant discussion within the framework of missing data theory, where $Y$ is ``missing'' for all observations in the receiver file \citep{little2002statistical}. The missing data literature distinguishes three mechanisms:
 
@@ -50,7 +50,7 @@ Under MAR, inference about $P(Y|X)$ can be obtained from the donor data alone, w
 
 In statistical matching applications, an important consideration arises when the donor and receiver files come from surveys with different sampling designs. For instance, wealth surveys often oversample high-net-worth households to improve precision for this rare population, while general household surveys use designs representative of the broader population. This differential sampling can introduce a form of selection that resembles MNAR if not properly addressed. Luckily, survey weights provide a mechanism to mitigate this issue. By incorporating weights that reflect each observation's representativeness of the target population, imputation methods can adjust for known differences in sampling probabilities between the donor and receiver surveys \citep{dugoff2014generalizing}. The \texttt{microimpute} package supports the use of survey weights throughout its imputation pipeline, allowing methods to account for complex survey designs. While survey weights cannot fully address MNAR when missingness depends on unobserved values of $Y$ itself, they can reduce bias arising from differential sampling designs across data sources.
 
-\subsection{Imputation Methods}
+\subsection{Imputation methods}
 
 We now describe the five imputation methods implemented in \texttt{microimpute}. Each method provides a different approach to estimating the conditional distribution $P(Y|X)$ and generating imputations.
 
@@ -182,7 +182,7 @@ Nevertheless, QRF also has limitations:
     \item \textbf{Discrete approximation}: The estimated distribution is discrete, with support limited to observed $Y$ values in the training data
 \end{itemize}
 
-\subsection{Current Practice in Microsimulation}
+\subsection{Current practice in microsimulation}
 
 Statistical matching and data fusion are fundamental operations in microsimulation modeling, yet the methods employed in practice have remained relatively unchanged for decades. A review of major tax-benefit microsimulation models reveals a strong reliance on traditional imputation approaches, primarily Hot Deck Matching and OLS-based regression.
 
@@ -194,7 +194,7 @@ More recent microsimulation efforts have begun incorporating administrative data
 
 These limitations are especially pronounced for heavy-tailed variables where the relationship with predictors varies across the distribution. Machine learning methods such as Quantile Regression Forests can capture nonlinear relationships, model the entire conditional distribution, and handle heavy-tailed data without restrictive parametric assumptions, yet they have seen limited adoption in microsimulation practice. The \texttt{microimpute} package provides a common framework for comparing traditional and machine learning approaches, so that researchers can empirically evaluate which method works best for their data.
 
-\subsection{Supplemental Security Income as a Validation Case}
+\subsection{Supplemental Security Income as a validation case}
 
 The limitations of traditional imputation approaches have consequences for downstream policy analysis. The Supplemental Security Income (SSI) program illustrates this well. SSI is a federal means-tested program for aged, blind, and disabled individuals with strict resource limits (\$2,000 for individuals, \$3,000 for couples) that have remained unchanged since 1989 \citep{ssa2023ssi}. The resource test requires household wealth and asset data that the CPS does not collect, making SSI eligibility determination dependent on imputed or heuristic wealth values.
 

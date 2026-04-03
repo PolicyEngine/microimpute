@@ -1,4 +1,4 @@
-\section{Predictor Importance Analysis for SCF-CPS Imputation}\label{app:robustness}
+\section{Predictor importance analysis for SCF-CPS imputation}\label{app:robustness}
 
 To assess the relative contribution of each predictor variable to the quality of wealth imputation, we conduct two complementary analyses using the QRF model on the SCF data: a leave-one-out analysis and a progressive inclusion analysis. These analyses use all seven predictor variables from the main experimental setup. The results help evaluate which shared variables between the SCF and CPS are most informative for imputing net worth.
 
@@ -12,7 +12,7 @@ We measure the impact of each predictor by excluding it from the QRF model and o
     \label{tab:leave_one_out}
     \begin{tabular}{lrrr}
         \toprule
-        Predictor Removed & Avg Quantile Loss & Loss Increase & Relative Impact \\
+        Predictor removed & Avg quantile loss & Loss increase & Relative impact \\
         \midrule
         interest\_dividend\_income & 3,240,984 & 1,668,592 & 106.1\% \\
         employment\_income & 2,011,280 & 438,888 & 27.9\% \\
@@ -39,7 +39,7 @@ We complement the leave-one-out results by adding predictors one at a time, foll
     \label{tab:progressive_inclusion}
     \begin{tabular}{clrr}
         \toprule
-        Step & Predictor Added & Avg Quantile Loss & Marginal Improvement \\
+        Step & Predictor added & Avg quantile loss & Marginal improvement \\
         \midrule
         1 & interest\_dividend\_income & 5,041,057 & --- \\
         2 & age & 2,755,527 & 2,285,529 \\
