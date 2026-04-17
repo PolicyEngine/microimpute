@@ -403,6 +403,51 @@ def test_autoimpute_invalid_model_specification() -> None:
         )
 
 
+def test_autoimpute_does_not_mutate_caller_receiver() -> None:
+    """Regression test for #13: autoimpute must not mutate the caller's
+    receiver_data. Previously the final ``receiver_data[var] = ...``
+    assignment could write back to the caller's frame depending on
+    pandas copy/view semantics during preprocessing, silently adding
+    new columns to the user's DataFrame.
+    """
+    from microimpute.models import OLS
+
+    np.random.seed(0)
+    donor = pd.DataFrame(
+        {
+            "x1": np.random.randn(80),
+            "x2": np.random.randn(80),
+            "y": np.random.randn(80),
+        }
+    )
+    receiver = pd.DataFrame(
+        {
+            "x1": np.random.randn(30),
+            "x2": np.random.randn(30),
+        }
+    )
+    snapshot = receiver.copy()
+
+    result = autoimpute(
+        donor_data=donor,
+        receiver_data=receiver,
+        predictors=["x1", "x2"],
+        imputed_variables=["y"],
+        models=[OLS],
+        log_level="WARNING",
+    )
+
+    # Caller's frame must be untouched.
+    assert "y" not in receiver.columns, (
+        "autoimpute silently added the imputed column to the caller's "
+        "receiver_data DataFrame"
+    )
+    pd.testing.assert_frame_equal(receiver, snapshot)
+
+    # The returned frame carries the imputed values.
+    assert "y" in result.receiver_data.columns
+
+
 # === Performance Tests ===
 
 

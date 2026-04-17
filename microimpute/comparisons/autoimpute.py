@@ -441,6 +441,16 @@ def autoimpute(
             main_progress = tqdm(total=5, desc="AutoImputation progress")
             main_progress.set_description("Input validation")
 
+        # Defensive copy so that the caller's receiver_data is never
+        # mutated. Previously the final assignment
+        # ``receiver_data[var] = median_imputations[var]`` would write
+        # back through any local binding, and whether the user's frame
+        # was affected depended on whether the intermediate ``drop`` call
+        # returned a copy or a view (#13). Copying up-front makes this
+        # explicit and eliminates the side effect regardless of later
+        # pandas internals.
+        receiver_data = receiver_data.copy()
+
         # Use provided quantiles or defaults
         quantiles = imputation_quantiles if imputation_quantiles else QUANTILES
 
