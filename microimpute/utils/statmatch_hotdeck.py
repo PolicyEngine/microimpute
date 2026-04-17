@@ -106,12 +106,26 @@ def nnd_hotdeck_using_rpy2(
             r_match = ro.StrVector(matching_variables)
             r_z = ro.StrVector(z_variables)
 
-        if matching_kwargs:
+        # Extract optional donor sample weights (threaded from Imputer.fit
+        # when weight_col was supplied). StatMatch accepts these via the
+        # ``weight.don`` R argument; we pop it from matching_kwargs so that
+        # other kwargs pass through unchanged.
+        r_kwargs = dict(matching_kwargs)
+        donor_sample_weight = r_kwargs.pop("donor_sample_weight", None)
+        if donor_sample_weight is not None:
+            with localconverter(
+                default_converter + pandas2ri.converter + numpy2ri.converter
+            ):
+                r_kwargs["weight_don"] = ro.FloatVector(
+                    np.asarray(donor_sample_weight, dtype=float)
+                )
+
+        if r_kwargs:
             out_NND = StatMatch.NND_hotdeck(
                 data_rec=r_receiver,
                 data_don=r_donor,
                 match_vars=r_match,
-                **matching_kwargs,
+                **r_kwargs,
             )
         else:
             out_NND = StatMatch.NND_hotdeck(

@@ -57,6 +57,7 @@ class _RandomForestClassifierModel:
         y: pd.Series,
         var_type: str,
         categories: List = None,
+        sample_weight: Optional[np.ndarray] = None,
         **rf_kwargs: Any,
     ) -> None:
         """Fit classifier for categorical/boolean target.
@@ -95,7 +96,10 @@ class _RandomForestClassifierModel:
         }
 
         self.classifier = RandomForestClassifier(**classifier_params)
-        self.classifier.fit(X, y_encoded)
+        fit_kwargs = {}
+        if sample_weight is not None:
+            fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
+        self.classifier.fit(X, y_encoded, **fit_kwargs)
 
     def predict(self, X: pd.DataFrame, return_probs: bool = False) -> pd.Series:
         """Predict classes or probabilities."""
@@ -151,24 +155,44 @@ class _QRFModel:
         # calls consume state progressively and return different draws.
         self._rng = np.random.default_rng(self.seed)
 
-    def fit(self, X: pd.DataFrame, y: pd.Series, **qrf_kwargs: Any) -> None:
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        sample_weight: Optional[np.ndarray] = None,
+        **qrf_kwargs: Any,
+    ) -> None:
         """Fit the QRF model.
 
         Note: Assumes X is already preprocessed with categorical encoding
         handled by the base Imputer class.
+
+        Args:
+            X: Predictor DataFrame (preprocessed).
+            y: Target Series.
+            sample_weight: Optional per-row sample weights, passed directly to
+                the underlying ``RandomForestQuantileRegressor.fit`` so each
+                row contributes to the weighted-survey estimator rather than
+                being treated as a bootstrap-resample probability.
         """
         self.output_column = y.name
 
-        # Remove random_state from kwargs if present, since we set it explicitly
+        # Remove random_state / sample_weight from kwargs if present, since
+        # we set them explicitly below.
         qrf_kwargs_filtered = {
-            k: v for k, v in qrf_kwargs.items() if k != "random_state"
+            k: v
+            for k, v in qrf_kwargs.items()
+            if k not in ("random_state", "sample_weight")
         }
 
         # Create and fit model
         self.qrf = RandomForestQuantileRegressor(
             random_state=self.seed, **qrf_kwargs_filtered
         )
-        self.qrf.fit(X, y.values.ravel())
+        fit_kwargs = {}
+        if sample_weight is not None:
+            fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
+        self.qrf.fit(X, y.values.ravel(), **fit_kwargs)
 
     def predict(
         self,
@@ -665,6 +689,11 @@ class QRF(Imputer):
         categorical_targets = getattr(self, "categorical_targets", {})
         boolean_targets = getattr(self, "boolean_targets", {})
 
+        # sample_weight is threaded via kwargs from the base Imputer.fit,
+        # bypassing the nested qrf/rfc structure so both classifier and
+        # regressor paths see the same per-row weights.
+        sample_weight = kwargs.pop("sample_weight", None)
+
         # Extract appropriate parameters based on model type
         # Handle nested structure from hyperparameter tuning
         if isinstance(model, _RandomForestClassifierModel):
@@ -684,10 +713,17 @@ class QRF(Imputer):
                     y,
                     var_type=categorical_targets[variable]["type"],
                     categories=categorical_targets[variable].get("categories"),
+                    sample_weight=sample_weight,
                     **model_params,
                 )
             elif variable in boolean_targets:
-                model.fit(X, y, var_type="boolean", **model_params)
+                model.fit(
+                    X,
+                    y,
+                    var_type="boolean",
+                    sample_weight=sample_weight,
+                    **model_params,
+                )
         else:
             # Use QRF params if they exist in a nested structure
             if "qrf" in kwargs:
@@ -700,7 +736,7 @@ class QRF(Imputer):
                 model_params = kwargs
 
             # Regular QRF fit
-            model.fit(X, y, **model_params)
+            model.fit(X, y, sample_weight=sample_weight, **model_params)
 
     def _get_memory_usage_info(self) -> str:
         """Get formatted memory usage information."""
@@ -722,6 +758,7 @@ class QRF(Imputer):
         numeric_targets: Optional[List[str]] = None,
         constant_targets: Optional[Dict[str, Dict]] = None,
         tune_hyperparameters: bool = False,
+        sample_weight: Optional[np.ndarray] = None,
         **qrf_kwargs: Any,
     ) -> QRFResults:
         """Fit the QRF model to the training data.
@@ -730,6 +767,9 @@ class QRF(Imputer):
             X_train: DataFrame containing the training data.
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
+            sample_weight: Optional per-row sample weights threaded through
+                to ``RandomForestQuantileRegressor.fit`` /
+                ``RandomForestClassifier.fit``.
             **qrf_kwargs: Additional keyword arguments to pass to QRF.
 
         Returns:
@@ -748,10 +788,15 @@ class QRF(Imputer):
                     f"Subsampling training data from "
                     f"{len(X_train)} to {self.max_train_samples} rows"
                 )
-                X_train = X_train.sample(
-                    n=self.max_train_samples,
-                    random_state=self.seed,
-                ).reset_index(drop=True)
+                # Sample by positional index so sample_weight stays aligned
+                # with X_train after reset_index.
+                rng = np.random.default_rng(self.seed)
+                sel = rng.choice(
+                    len(X_train), size=self.max_train_samples, replace=False
+                )
+                if sample_weight is not None:
+                    sample_weight = np.asarray(sample_weight, dtype=float)[sel]
+                X_train = X_train.iloc[sel].reset_index(drop=True)
 
             # Store target type information early for hyperparameter tuning
             self.categorical_targets = categorical_targets or {}
@@ -794,6 +839,7 @@ class QRF(Imputer):
                                 batch_variables,
                                 qrf_kwargs,
                                 constant_targets,
+                                sample_weight=sample_weight,
                             )
 
                             # Memory cleanup after each batch
@@ -852,6 +898,7 @@ class QRF(Imputer):
                                 X_train[encoded_predictors],
                                 X_train[variable],
                                 variable,
+                                sample_weight=sample_weight,
                                 **qrf_kwargs,
                             )
 
@@ -949,6 +996,7 @@ class QRF(Imputer):
                             batch_variables,
                             qrf_kwargs,
                             constant_targets,
+                            sample_weight=sample_weight,
                         )
 
                         # Memory cleanup after each batch
@@ -1008,6 +1056,7 @@ class QRF(Imputer):
                                 X_train[encoded_predictors],
                                 X_train[variable],
                                 variable,
+                                sample_weight=sample_weight,
                                 **qrf_kwargs,
                             )
 
@@ -1085,6 +1134,7 @@ class QRF(Imputer):
         batch_variables: List[str],
         qrf_kwargs: Dict[str, Any],
         constant_targets: Optional[Dict[str, Dict]] = None,
+        sample_weight: Optional[np.ndarray] = None,
     ) -> None:
         """Fit models for a batch of variables.
 
@@ -1133,6 +1183,7 @@ class QRF(Imputer):
                     X_train[current_predictors],
                     X_train[variable],
                     variable,
+                    sample_weight=sample_weight,
                     **qrf_kwargs,
                 )
 

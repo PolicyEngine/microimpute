@@ -271,9 +271,21 @@ class Imputer(ABC):
             weights = X_train[weight_col]
         elif weight_col is not None and isinstance(weight_col, np.ndarray):
             weights = pd.Series(weight_col, index=X_train.index)
+        elif weight_col is not None and isinstance(weight_col, pd.Series):
+            weights = weight_col.reindex(X_train.index)
 
-        if weights is not None and (weights <= 0).any():
-            raise ValueError("Weights must be positive")
+        if weights is not None:
+            # Check for NaN AND non-positive values together. Previously only
+            # (weights <= 0).any() was checked, which returns False for NaN
+            # weights — those then propagated into .sample() as NaN
+            # probabilities or corrupted sample_weight passed to learners.
+            weights_arr = np.asarray(weights, dtype=float)
+            invalid_mask = np.isnan(weights_arr) | (weights_arr <= 0)
+            if invalid_mask.any():
+                raise ValueError(
+                    "Weights must be positive and finite; found "
+                    f"{int(invalid_mask.sum())} non-positive or NaN weight(s)"
+                )
 
         # Identify target types BEFORE preprocessing
         self.identify_target_types(X_train, imputed_variables, not_numeric_categorical)
@@ -284,20 +296,27 @@ class Imputer(ABC):
             )
         )
 
-        if weights is not None:
-            weights_normalized = weights / weights.sum()
-            X_train = X_train.sample(
-                n=len(X_train),
-                replace=True,
-                weights=weights_normalized,
-                random_state=self.seed,
-            ).reset_index(drop=True)
-
         # Save predictors and imputed variables
         self.predictors = predictors
         self.imputed_variables = imputed_variables
         self.imputed_vars_dummy_info = imputed_vars_dummy_info
         self.original_predictors = original_predictors
+
+        # Pass sample_weight through to the subclass so it can use each
+        # learner's native weighted-fit API (QRF, OLS→WLS, logistic, RFC all
+        # support sample_weight). This replaces the previous bootstrap
+        # resample, which silently discarded weights for the underlying
+        # estimator and inflated variance / shrank effective sample size.
+        sample_weight = None
+        if weights is not None:
+            sample_weight = np.asarray(weights_arr, dtype=float)
+            # Reindex if preprocess_data_types changed the row ordering
+            # (it currently does not, but guard against future drift).
+            if len(sample_weight) != len(X_train):
+                raise RuntimeError(
+                    "Internal error: sample_weight length no longer matches "
+                    "X_train after preprocessing"
+                )
 
         # Defer actual training to subclass with all parameters
         fitted_model = self._fit(
@@ -309,6 +328,7 @@ class Imputer(ABC):
             boolean_targets=self.boolean_targets,
             numeric_targets=self.numeric_targets,
             constant_targets=self.constant_targets,
+            sample_weight=sample_weight,
             **kwargs,
         )
         return fitted_model

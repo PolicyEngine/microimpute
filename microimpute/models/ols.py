@@ -31,6 +31,7 @@ class _LogisticRegressionModel:
         y: pd.Series,
         var_type: str,
         categories: List = None,
+        sample_weight: Optional[np.ndarray] = None,
         **lr_kwargs: Any,
     ) -> None:
         """Fit logistic regression for categorical/boolean target.
@@ -71,7 +72,10 @@ class _LogisticRegressionModel:
         }
 
         self.classifier = LogisticRegression(**classifier_params)
-        self.classifier.fit(X, y_encoded)
+        fit_kwargs = {}
+        if sample_weight is not None:
+            fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
+        self.classifier.fit(X, y_encoded, **fit_kwargs)
 
     def predict(
         self,
@@ -137,11 +141,26 @@ class _OLSModel:
         self.model = None
         self.output_column = None
 
-    def fit(self, X: pd.DataFrame, y: pd.Series, **kwargs) -> None:
-        """Fit OLS model."""
+    def fit(
+        self,
+        X: pd.DataFrame,
+        y: pd.Series,
+        sample_weight: Optional[np.ndarray] = None,
+        **kwargs,
+    ) -> None:
+        """Fit OLS (or WLS when sample_weight is provided).
+
+        When ``sample_weight`` is provided, uses ``statsmodels.api.WLS`` to
+        perform a genuine weighted least-squares fit rather than ignoring
+        the weights.
+        """
         self.output_column = y.name
         X_with_const = sm.add_constant(X)
-        self.model = sm.OLS(y, X_with_const).fit()
+        if sample_weight is not None:
+            weights = np.asarray(sample_weight, dtype=float)
+            self.model = sm.WLS(y, X_with_const, weights=weights).fit()
+        else:
+            self.model = sm.OLS(y, X_with_const).fit()
         self.scale = self.model.scale
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
@@ -431,6 +450,7 @@ class OLS(Imputer):
         boolean_targets: Optional[Dict[str, Dict]] = None,
         numeric_targets: Optional[List[str]] = None,
         constant_targets: Optional[Dict[str, Dict]] = None,
+        sample_weight: Optional[np.ndarray] = None,
         **kwargs: Any,
     ) -> OLSResults:
         """Fit the OLS model to the training data.
@@ -439,6 +459,9 @@ class OLS(Imputer):
             X_train: DataFrame containing the training data.
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
+            sample_weight: Optional per-row sample weights, threaded through
+                to ``sm.WLS`` (for numeric targets) or
+                ``LogisticRegression.fit`` (for categorical/boolean).
 
         Returns:
             The fitted model instance.
@@ -476,6 +499,7 @@ class OLS(Imputer):
                         Y,
                         var_type=categorical_targets[variable]["type"],
                         categories=categorical_targets[variable].get("categories"),
+                        sample_weight=sample_weight,
                         **kwargs,
                     )
                     self.logger.info(
@@ -484,14 +508,22 @@ class OLS(Imputer):
                 elif variable in (boolean_targets or {}):
                     # Use logistic regression for boolean targets
                     model = _LogisticRegressionModel(seed=self.seed, logger=self.logger)
-                    model.fit(X_train[predictors], Y, var_type="boolean", **kwargs)
+                    model.fit(
+                        X_train[predictors],
+                        Y,
+                        var_type="boolean",
+                        sample_weight=sample_weight,
+                        **kwargs,
+                    )
                     self.logger.info(
                         f"Logistic regression fitted for boolean variable {variable}"
                     )
                 else:
                     # Use OLS for numeric targets
                     model = _OLSModel(seed=self.seed, logger=self.logger)
-                    model.fit(X_train[predictors], Y, **kwargs)
+                    model.fit(
+                        X_train[predictors], Y, sample_weight=sample_weight, **kwargs
+                    )
                     self.logger.info(
                         f"OLS regression fitted for numeric variable {variable}"
                     )

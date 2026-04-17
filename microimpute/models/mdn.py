@@ -926,6 +926,7 @@ class MDN(Imputer):
         numeric_targets: Optional[List[str]] = None,
         constant_targets: Optional[Dict[str, Dict]] = None,
         tune_hyperparameters: bool = False,
+        sample_weight: Optional[np.ndarray] = None,
         **kwargs: Any,
     ) -> Union[MDNResults, Tuple[MDNResults, Dict[str, Any]]]:
         """Fit the MDN model to the training data.
@@ -940,12 +941,22 @@ class MDN(Imputer):
             numeric_targets: List of numeric target names.
             constant_targets: Dict of constant target info.
             tune_hyperparameters: If True, tune hyperparameters before fitting.
+            sample_weight: Optional per-row sample weights. The underlying
+                pytorch_tabular MDN implementation does not accept sample
+                weights; when provided, the model raises
+                ``NotImplementedError`` so callers do not silently get an
+                unweighted fit.
             **kwargs: Additional parameters.
 
         Returns:
             MDNResults instance with fitted models.
             If tune_hyperparameters=True, returns (MDNResults, best_params).
         """
+        if sample_weight is not None:
+            raise NotImplementedError(
+                "MDN does not yet support sample weights. Use QRF, OLS, or "
+                "Matching for weighted imputation."
+            )
         try:
             best_params = None
 
