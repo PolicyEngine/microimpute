@@ -224,7 +224,7 @@ class OLSResults(ImputerResults):
             mean_preds = np.asarray(prediction.predicted_mean)
             se = np.sqrt(np.maximum(pred_var, 0.0))
             imputed_values = self._predict_quantile(
-                mean_preds=pd.Series(mean_preds, index=X_test.index),
+                mean_preds=pd.Series(mean_preds, index=X_test.index, name=variable),
                 se=se,
                 mean_quantile=quantile,
                 random_sample=random_sample,
@@ -369,7 +369,7 @@ class OLSResults(ImputerResults):
         mean_quantile: float,
         random_sample: bool,
         count_samples: int = 10,
-    ) -> np.ndarray:
+    ) -> pd.Series:
         """Predict values at a specified quantile.
 
         Args:
@@ -384,7 +384,12 @@ class OLSResults(ImputerResults):
                 random_sample is True.
 
         Returns:
-            Array of predicted values at the specified quantile.
+            Series of predicted values at the specified quantile, indexed to
+            match ``mean_preds``. Returning a Series (rather than a bare
+            ndarray) preserves the test-row index so downstream
+            ``DataFrame[col] = series`` assignments align correctly when a
+            numeric column is set before a categorical column whose
+            predictions come back indexed.
 
         Raises:
             RuntimeError: If prediction fails.
@@ -419,11 +424,13 @@ class OLSResults(ImputerResults):
 
                 # Adjust each mean prediction by the sampled quantile
                 # times its per-row SE (or scalar SE if se is a float).
-                return mean_preds.values + selected_quantiles * np.asarray(se)
+                values = mean_preds.values + selected_quantiles * np.asarray(se)
             else:
                 self.logger.info(f"Predicting at specified quantile {q_clipped}")
                 specified_quantile = norm.ppf(q_clipped)
-                return mean_preds.values + specified_quantile * np.asarray(se)
+                values = mean_preds.values + specified_quantile * np.asarray(se)
+
+            return pd.Series(values, index=mean_preds.index, name=mean_preds.name)
 
         except Exception as e:
             if isinstance(e, ValueError):
