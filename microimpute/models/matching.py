@@ -449,6 +449,7 @@ class Matching(Imputer):
         numeric_targets: Optional[List[str]] = None,
         constant_targets: Optional[Dict[str, Dict]] = None,
         tune_hyperparameters: bool = False,
+        sample_weight: Optional[np.ndarray] = None,
         **matching_kwargs: Any,
     ) -> MatchingResults:
         """Fit the matching model by storing the donor data and variable names.
@@ -457,6 +458,11 @@ class Matching(Imputer):
             X_train: DataFrame containing the donor data.
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
+            sample_weight: Optional per-row sample weights for the donor
+                dataset. When provided, weights are passed to R StatMatch's
+                ``NND.hotdeck`` via ``weight.don`` so that donor records are
+                matched in proportion to their survey weights rather than
+                uniformly.
             matching_kwargs: Additional keyword arguments for hyperparameter
                 tuning of the matching function.
 
@@ -468,6 +474,13 @@ class Matching(Imputer):
         """
         try:
             self.donor_data = X_train.copy()
+            if sample_weight is not None:
+                # Attach donor weights to the matching hyperparameters so
+                # they're forwarded into the StatMatch R call (weight.don).
+                matching_kwargs = {
+                    **matching_kwargs,
+                    "donor_sample_weight": np.asarray(sample_weight, dtype=float),
+                }
 
             if tune_hyperparameters:
                 self.logger.info("Tuning hyperparameters for the matching model")

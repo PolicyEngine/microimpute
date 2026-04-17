@@ -282,6 +282,7 @@ class QuantReg(Imputer):
         numeric_targets: Optional[List[str]] = None,
         constant_targets: Optional[Dict[str, Dict]] = None,
         quantiles: Optional[List[float]] = None,
+        sample_weight: Optional[np.ndarray] = None,
     ) -> QuantRegResults:
         """Fit the Quantile Regression model to the training data.
 
@@ -290,14 +291,24 @@ class QuantReg(Imputer):
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
             quantiles: List of quantiles to fit models for.
+            sample_weight: Optional per-row sample weights. statsmodels'
+                ``QuantReg`` does not support weights directly; when weights
+                are provided the model raises ``NotImplementedError`` so
+                callers do not silently get an unweighted fit.
 
         Returns:
             The fitted model instance.
 
         Raises:
             ValueError: If any quantile is outside the [0, 1] range.
+            NotImplementedError: If sample_weight is provided.
             RuntimeError: If model fitting fails.
         """
+        if sample_weight is not None:
+            raise NotImplementedError(
+                "QuantReg does not support sample weights. Use QRF or OLS "
+                "for weighted imputation."
+            )
         # Check for unsupported categorical targets
         if categorical_targets:
             unsupported = list(categorical_targets.keys())

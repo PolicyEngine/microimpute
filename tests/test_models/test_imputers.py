@@ -522,16 +522,31 @@ def test_weighted_training(
 
     model = model_class()
 
-    if model_class.__name__ == "QuantReg":
-        fitted = model.fit(
-            X_train,
-            predictors,
-            imputed_variables,
-            weight_col="wgt",
-            quantiles=QUANTILES,
-        )
-    else:
-        fitted = model.fit(X_train, predictors, imputed_variables, weight_col="wgt")
+    # QuantReg and MDN don't support sample weights — they should raise
+    # NotImplementedError rather than silently dropping weights.
+    if model_class.__name__ in ("QuantReg", "MDN"):
+        with pytest.raises(
+            (NotImplementedError, RuntimeError),
+            match="does not.*support.*weights|does not support sample weights",
+        ):
+            if model_class.__name__ == "QuantReg":
+                model.fit(
+                    X_train,
+                    predictors,
+                    imputed_variables,
+                    weight_col="wgt",
+                    quantiles=QUANTILES,
+                )
+            else:
+                model.fit(
+                    X_train,
+                    predictors,
+                    imputed_variables,
+                    weight_col="wgt",
+                )
+        return
+
+    fitted = model.fit(X_train, predictors, imputed_variables, weight_col="wgt")
 
     assert fitted is not None
 
@@ -543,6 +558,74 @@ def test_weighted_training(
     assert isinstance(predictions, dict)
     assert 0.5 in predictions
     assert not predictions[0.5].isna().any().any()
+
+
+def test_imputer_rejects_nan_weights(diabetes_data: pd.DataFrame) -> None:
+    """Regression test for the NaN-weight silent-corruption bug (#4): the
+    imputer must raise a clear error when weights contain NaN values,
+    rather than letting NaN propagate through .sample() or sample_weight.
+    """
+    X_train, _ = preprocess_data(diabetes_data)
+    X_train["wgt"] = 1.0
+    X_train.loc[X_train.index[0], "wgt"] = float("nan")
+
+    model = OLS()
+    with pytest.raises(ValueError, match="positive and finite|NaN"):
+        model.fit(X_train, ["age", "sex"], ["bmi"], weight_col="wgt")
+
+
+def test_imputer_rejects_zero_weights(diabetes_data: pd.DataFrame) -> None:
+    """Regression test for the non-positive-weight bug (#4): weights of 0
+    or negative values must raise a clear error."""
+    X_train, _ = preprocess_data(diabetes_data)
+    X_train["wgt"] = 1.0
+    X_train.loc[X_train.index[0], "wgt"] = 0.0
+
+    model = OLS()
+    with pytest.raises(ValueError, match="positive and finite|positive"):
+        model.fit(X_train, ["age", "sex"], ["bmi"], weight_col="wgt")
+
+
+def test_weighted_fit_differs_from_unweighted(
+    diabetes_data: pd.DataFrame,
+) -> None:
+    """Regression test for the weight-discard bug (#4): a truly weighted fit
+    must produce different parameter estimates than an unweighted fit on
+    an asymmetric dataset. Previously weights were used as bootstrap
+    resample probabilities and not passed to the underlying estimator, so
+    parameter estimates converged to the unweighted solution in
+    expectation."""
+    np.random.seed(0)
+    n = 300
+
+    # Asymmetric weights: first half gets weight 1, second half gets weight
+    # 50. An unweighted OLS fit ignores this; a true WLS fit does not.
+    x = np.linspace(-2, 2, n)
+    # Introduce a slope shift in the second half so the WLS coefficient
+    # should skew toward it.
+    y = np.where(np.arange(n) < n // 2, 1.0 * x, 5.0 * x) + np.random.randn(n) * 0.2
+    weights = np.where(np.arange(n) < n // 2, 1.0, 50.0)
+
+    data = pd.DataFrame({"x": x, "y": y, "wgt": weights})
+
+    unweighted_ols = OLS()
+    unweighted_fit = unweighted_ols.fit(data, ["x"], ["y"])
+    unweighted_pred = unweighted_fit.predict(data[["x"]].head(20), quantiles=[0.5])[
+        0.5
+    ]["y"].values
+
+    weighted_ols = OLS()
+    weighted_fit = weighted_ols.fit(data, ["x"], ["y"], weight_col="wgt")
+    weighted_pred = weighted_fit.predict(data[["x"]].head(20), quantiles=[0.5])[0.5][
+        "y"
+    ].values
+
+    # Weighted predictions should differ substantially from unweighted
+    # ones when a large weight block has a different slope.
+    assert not np.allclose(unweighted_pred, weighted_pred, atol=0.05), (
+        "Weighted OLS fit should differ from unweighted fit on asymmetric "
+        "data; previously weights were silently discarded"
+    )
 
 
 # === Quantile-Specific Tests ===
@@ -644,9 +727,18 @@ def test_missing_predictors_in_test(model_class: Type[Imputer]) -> None:
 # === Reproducibility Tests ===
 
 
+_REPRODUCIBILITY_MODELS = [OLS, QuantReg, QRF]
+try:
+    from microimpute.models.matching import Matching as _Matching_for_repro
+
+    _REPRODUCIBILITY_MODELS.append(_Matching_for_repro)
+except ImportError:
+    pass
+
+
 @pytest.mark.parametrize(
     "model_class",
-    [OLS, QuantReg, QRF, Matching],
+    _REPRODUCIBILITY_MODELS,
     ids=lambda cls: cls.__name__,
 )
 def test_reproducibility(model_class: Type[Imputer], simple_data: pd.DataFrame) -> None:
