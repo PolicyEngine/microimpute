@@ -181,22 +181,35 @@ class QuantRegResults(ImputerResults):
                             imputed_df[variable] = predictions
                         random_q_imputations[q] = imputed_df
 
-                    # Create a final dataframe to hold the random quantile imputed values
-                    result_df = pd.DataFrame(
-                        index=random_q_imputations[quantiles[0]].index,
-                        columns=self.imputed_variables,
-                    )
-
-                    # Sample one quantile per row
+                    # Vectorised per-row random quantile selection. The
+                    # previous implementation allocated an object-dtype
+                    # DataFrame via pd.DataFrame(index=..., columns=...)
+                    # and assigned per-row via result_df.loc[idx, var],
+                    # which is O(rows * vars) in Python-level attribute
+                    # lookups and silently demotes numeric predictions to
+                    # object dtype — a major contributor to issue #96
+                    # (OOM with many variables).
                     rng = np.random.default_rng(self.seed)
-                    for idx in result_df.index:
-                        sampled_q = rng.choice(quantiles)
+                    index = random_q_imputations[quantiles[0]].index
+                    n_rows = len(index)
+                    quantiles_arr = np.asarray(quantiles)
+                    # Sampled quantile index per row.
+                    sampled_idx = rng.integers(0, len(quantiles_arr), size=n_rows)
 
-                        # For all variables, use the sampled quantile for this row
-                        for variable in self.imputed_variables:
-                            result_df.loc[idx, variable] = random_q_imputations[
-                                sampled_q
-                            ].loc[idx, variable]
+                    result_df = pd.DataFrame(index=index)
+                    for variable in self.imputed_variables:
+                        # Stack predictions for this variable across all
+                        # quantiles into an (n_rows, n_quantiles) array,
+                        # then select per-row with np.take_along_axis so
+                        # each row uses its own sampled quantile.
+                        stacked = np.column_stack(
+                            [
+                                np.asarray(random_q_imputations[q][variable].values)
+                                for q in quantiles
+                            ]
+                        )
+                        row_idx = np.arange(n_rows)
+                        result_df[variable] = stacked[row_idx, sampled_idx]
 
                     # Add to imputations dictionary using the mean quantile as key
                     imputations[mean_quantile] = result_df
@@ -364,11 +377,14 @@ class QuantReg(Imputer):
                         self.models[variable][q] = sm.QuantReg(Y, X_with_const).fit(q=q)
                     self.logger.info(f"Model for q={q} fitted successfully")
             else:
-                random_generator = np.random.default_rng(self.seed)
+                # Default to fitting a single median model when no
+                # quantiles were supplied. The previous implementation
+                # created ``random_generator = np.random.default_rng(seed)``
+                # and logged "random quantile" — but the generator was
+                # never used and q was hardcoded to 0.5. That was dead
+                # code and misleading logging.
                 q = 0.5
-                self.logger.info(
-                    f"Fitting quantile regression for random quantile {q:.4f}"
-                )
+                self.logger.info(f"Fitting quantile regression for q={q}")
                 for variable in imputed_variables:
                     self.logger.info(f"Imputing variable {variable}")
                     # Handle constant targets
