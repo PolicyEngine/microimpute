@@ -179,6 +179,105 @@ def test_qrf_beta_distribution_sampling():
         assert median[0.5]["y"].iloc[i] <= extreme_high[0.99]["y"].iloc[i]
 
 
+def test_qrf_repeated_predict_calls_produce_different_draws(
+    simple_data: pd.DataFrame,
+) -> None:
+    """Regression test for the seed-reset bug (#1): two sequential predict()
+    calls on the same X must draw different stochastic quantiles."""
+    train_data = simple_data[:80]
+    test_data = simple_data[80:][["x1", "x2"]]
+
+    model = QRF()
+    fitted = model.fit(
+        train_data,
+        predictors=["x1", "x2"],
+        imputed_variables=["y"],
+        n_estimators=50,
+    )
+
+    preds1 = fitted.predict(test_data)
+    preds2 = fitted.predict(test_data)
+
+    # Predictions must differ across calls (stochastic imputation), not be
+    # bit-identical as they were when the RNG was re-seeded every call.
+    assert not np.allclose(preds1["y"].values, preds2["y"].values), (
+        "Repeated predict() calls must produce different draws"
+    )
+
+
+def test_qrf_stochastic_median_is_unbiased() -> None:
+    """Regression test for the quantile-grid bias bug (#2): the mean of many
+    stochastic median predictions must approximate the true median (q=0.5)
+    query, not a systematically lower value."""
+    rng = np.random.default_rng(0)
+    n = 400
+    x = rng.normal(size=n)
+    # Symmetric noise -> true median ~ 3*x.
+    y = 3.0 * x + rng.normal(size=n)
+    data = pd.DataFrame({"x": x, "y": y})
+
+    model = QRF()
+    fitted = model.fit(
+        data,
+        predictors=["x"],
+        imputed_variables=["y"],
+        n_estimators=200,
+        min_samples_leaf=5,
+    )
+
+    x_grid = pd.DataFrame({"x": np.linspace(-1.5, 1.5, 50)})
+
+    # Deterministic median via exact-quantile path (should not be biased).
+    exact_median = fitted.predict(x_grid, quantiles=[0.5])[0.5]["y"].values
+
+    # Average stochastic predictions across many calls; each call uses a
+    # fresh draw from Beta(1,1) = Uniform(0,1), so the mean of their
+    # selected quantiles is ≈ 0.5 and the average prediction should match
+    # the exact median.
+    n_draws = 60
+    stochastic_means = np.zeros(len(x_grid))
+    for _ in range(n_draws):
+        stochastic_means += fitted.predict(x_grid)["y"].values
+    stochastic_means /= n_draws
+
+    # With n_draws averaging, the gap should be small relative to y's scale.
+    scale = np.std(y)
+    assert np.abs(stochastic_means - exact_median).mean() < 0.25 * scale, (
+        "Stochastic median prediction is biased vs deterministic median"
+    )
+
+
+def test_qrf_multi_quantile_per_row_monotonicity() -> None:
+    """Regression test for #3: when the user passes explicit
+    ``quantiles=[q_low, q_mid, q_high]``, each row must satisfy
+    q_low <= q_mid <= q_high (no per-row random quantile draw)."""
+    rng = np.random.default_rng(1)
+    n = 200
+    x = rng.normal(size=n)
+    y = 2.0 * x + rng.normal(size=n)
+    data = pd.DataFrame({"x": x, "y": y})
+
+    model = QRF()
+    fitted = model.fit(
+        data,
+        predictors=["x"],
+        imputed_variables=["y"],
+        n_estimators=100,
+        min_samples_leaf=5,
+    )
+
+    x_test = pd.DataFrame({"x": rng.normal(size=50)})
+    preds = fitted.predict(x_test, quantiles=[0.1, 0.5, 0.9])
+
+    q_low = preds[0.1]["y"].values
+    q_mid = preds[0.5]["y"].values
+    q_high = preds[0.9]["y"].values
+
+    # All rows must have non-crossing quantiles.
+    assert np.all(q_low <= q_mid + 1e-9), "q=0.1 prediction must be <= q=0.5"
+    assert np.all(q_mid <= q_high + 1e-9), "q=0.5 prediction must be <= q=0.9"
+
+
 # === Categorical Variable Tests ===
 
 

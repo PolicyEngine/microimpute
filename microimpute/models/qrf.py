@@ -147,6 +147,9 @@ class _QRFModel:
         self.logger = logger
         self.qrf = None
         self.output_column = None
+        # Create the RNG once at construction so that repeated predict()
+        # calls consume state progressively and return different draws.
+        self._rng = np.random.default_rng(self.seed)
 
     def fit(self, X: pd.DataFrame, y: pd.Series, **qrf_kwargs: Any) -> None:
         """Fit the QRF model.
@@ -172,28 +175,69 @@ class _QRFModel:
         X: pd.DataFrame,
         mean_quantile: float = 0.5,
         count_samples: int = 10,
+        exact_quantile: Optional[float] = None,
     ) -> pd.Series:
         """Predict using the fitted model with beta distribution sampling.
 
         Note: Assumes X is already preprocessed with categorical encoding
         handled by the base ImputerResults class.
+
+        Args:
+            X: Predictor matrix (already preprocessed).
+            mean_quantile: Mean quantile for beta-distribution sampling. Only
+                used when ``exact_quantile`` is None.
+            count_samples: Number of samples for the legacy quantile-grid code
+                path (kept for backward compatibility but no longer used by the
+                unbiased implementation).
+            exact_quantile: If provided, query the underlying QRF at exactly
+                this quantile (no beta sampling). This guarantees monotonicity
+                across quantiles for a given row and is used when the caller
+                supplies an explicit ``quantiles`` list.
         """
-        # Generate quantile grid
-        eps = 1.0 / (count_samples + 1)
-        quantile_grid = np.linspace(eps, 1.0 - eps, count_samples)
-        pred = self.qrf.predict(X, quantiles=list(quantile_grid))
+        # Deterministic path: user asked for a specific quantile — query the
+        # QRF directly so that for any row i,
+        # prediction(q_low) <= prediction(q_mid) <= prediction(q_high).
+        if exact_quantile is not None:
+            pred = self.qrf.predict(X, quantiles=[float(exact_quantile)])
+            pred = np.asarray(pred).reshape(len(X), -1)[:, 0]
+            return pd.Series(pred, index=X.index, name=self.output_column)
 
-        # Sample from beta distribution
-        random_generator = np.random.default_rng(self.seed)
+        # Stochastic path: draw one continuous quantile per row from a Beta
+        # distribution centred at ``mean_quantile`` (Beta(a,1) with
+        # a = mean_quantile/(1 - mean_quantile); for mean_quantile=0.5 this
+        # reduces to Uniform(0,1), so Beta(1,1) gives E[q]=0.5 and an
+        # unbiased empirical median in the limit). The old implementation
+        # converted a continuous beta draw into an integer index via
+        # ``np.clip(beta(a,1)*10).astype(int)``, which *floored* (not
+        # rounded) the index and used a grid of [0.091..0.909] — this
+        # systematically biased the median low and truncated the tails.
         a = mean_quantile / (1 - mean_quantile)
-        input_quantiles = random_generator.beta(a, 1, size=len(X)) * count_samples
-        input_quantiles = np.clip(input_quantiles.astype(int), 0, count_samples - 1)
+        # Use the instance RNG so repeated predict() calls on the same X
+        # produce independent draws (previously each call reset the RNG
+        # from ``self.seed``, collapsing variance to zero).
+        continuous_quantiles = self._rng.beta(a, 1, size=len(X))
 
-        # Extract predictions
-        if len(pred.shape) == 2:
-            predictions = pred[np.arange(len(pred)), input_quantiles]
+        # Bucket continuous quantiles onto a fine symmetric grid covering the
+        # full open interval (0, 1). Using round() (not floor) keeps the
+        # mapping centred on the intended quantile, so the empirical mean of
+        # mapped quantiles ≈ ``mean_quantile``. We avoid exact 0 and 1 because
+        # QRF cannot extrapolate beyond observed extremes.
+        grid_size = max(int(count_samples), 101)
+        eps = 1.0 / (grid_size + 1)
+        quantile_grid = np.linspace(eps, 1.0 - eps, grid_size)
+        # Round (not floor) onto the grid to eliminate the low-side bias.
+        grid_indices = np.clip(
+            np.rint(continuous_quantiles * (grid_size - 1)).astype(int),
+            0,
+            grid_size - 1,
+        )
+
+        pred = self.qrf.predict(X, quantiles=list(quantile_grid))
+        pred = np.asarray(pred)
+        if pred.ndim == 2:
+            predictions = pred[np.arange(len(X)), grid_indices]
         else:
-            predictions = pred[np.arange(len(pred)), :, input_quantiles]
+            predictions = pred[np.arange(len(X)), :, grid_indices]
 
         return pd.Series(predictions, index=X.index, name=self.output_column)
 
@@ -413,11 +457,24 @@ class QRFResults(ImputerResults):
                             return_probs=False,
                         )
                     else:
-                        # Regression for numeric targets
-                        imputed_values = model.predict(
-                            X_test_augmented[encoded_predictors],
-                            mean_quantile=q,
-                        )
+                        # Regression for numeric targets.
+                        # If the caller passed an explicit ``quantiles`` list
+                        # (the user wants to inspect specific quantiles, e.g.
+                        # for prediction intervals), we query the QRF at
+                        # exactly ``q`` per row — NO beta sampling. This
+                        # guarantees row-level monotonicity across quantiles.
+                        # Otherwise, sample stochastically around ``q`` (the
+                        # beta-mean default for imputation variance).
+                        if quantiles:
+                            imputed_values = model.predict(
+                                X_test_augmented[encoded_predictors],
+                                exact_quantile=q,
+                            )
+                        else:
+                            imputed_values = model.predict(
+                                X_test_augmented[encoded_predictors],
+                                mean_quantile=q,
+                            )
 
                     imputed_df[variable] = imputed_values
 
