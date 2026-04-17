@@ -58,17 +58,29 @@ class _LogisticRegressionModel:
                 )
                 y_encoded = y_encoded.fillna(0)  # Default to first category
 
-        # Extract relevant LR parameters from kwargs
-        # Use l1_ratio instead of penalty (deprecated in sklearn 1.8)
+        # Extract relevant LR parameters from kwargs.
+        # sklearn's LogisticRegression ignores l1_ratio unless
+        # penalty="elasticnet" (and solver="saga"). Previously we passed
+        # l1_ratio through with the default penalty="l2", so tuning
+        # l1_ratio had no effect — silent misconfiguration.
+        l1_ratio = lr_kwargs.get("l1_ratio", None)
         classifier_params = {
-            "l1_ratio": lr_kwargs.get("l1_ratio", 0),
             "C": lr_kwargs.get("C", 1.0),
             "max_iter": lr_kwargs.get("max_iter", 1000),
-            "solver": lr_kwargs.get(
-                "solver", "lbfgs" if len(self.categories) <= 2 else "saga"
-            ),
             "random_state": self.seed,
         }
+        if l1_ratio is not None and l1_ratio != 0:
+            # Caller explicitly supplied a non-zero l1_ratio: wire up the
+            # elasticnet penalty and saga solver so it actually applies.
+            classifier_params["penalty"] = "elasticnet"
+            classifier_params["l1_ratio"] = float(l1_ratio)
+            classifier_params["solver"] = lr_kwargs.get("solver", "saga")
+        else:
+            # No elasticnet requested — use the default L2 penalty and a
+            # solver that supports it.
+            classifier_params["solver"] = lr_kwargs.get(
+                "solver", "lbfgs" if len(self.categories) <= 2 else "saga"
+            )
 
         self.classifier = LogisticRegression(**classifier_params)
         self.classifier.fit(X, y_encoded)
@@ -197,12 +209,22 @@ class OLSResults(ImputerResults):
                 X_test[self.predictors], return_probs=False, quantile=quantile
             )
         else:
-            # Regression for numeric targets
+            # Regression for numeric targets.
+            # Use the full prediction SE (leverage + residual) rather than
+            # just sqrt(model.scale). Previously se = sqrt(scale) used only
+            # the residual std and under-dispersed imputations for test
+            # rows far from the training centroid; at extreme quantiles
+            # (0.01, 0.99) the under-dispersion is material.
             X_test_with_const = sm.add_constant(X_test[self.predictors])
-            mean_preds = model.predict(X_test_with_const)
-            se = np.sqrt(model.scale)
+            prediction = model.model.get_prediction(X_test_with_const)
+            # var_pred_mean is the leverage term (x' (X'X)^-1 x) * scale;
+            # adding model.scale (residual variance) gives the prediction
+            # variance for a new observation.
+            pred_var = np.asarray(prediction.var_pred_mean) + model.scale
+            mean_preds = np.asarray(prediction.predicted_mean)
+            se = np.sqrt(np.maximum(pred_var, 0.0))
             imputed_values = self._predict_quantile(
-                mean_preds=mean_preds,
+                mean_preds=pd.Series(mean_preds, index=X_test.index),
                 se=se,
                 mean_quantile=quantile,
                 random_sample=random_sample,
@@ -343,7 +365,7 @@ class OLSResults(ImputerResults):
     def _predict_quantile(
         self,
         mean_preds: pd.Series,
-        se: float,
+        se: Any,
         mean_quantile: float,
         random_sample: bool,
         count_samples: int = 10,
@@ -352,7 +374,9 @@ class OLSResults(ImputerResults):
 
         Args:
             mean_preds: Mean predictions from the model.
-            se: Standard error of the predictions.
+            se: Standard error of the predictions. May be a scalar (legacy,
+                residual std) or a per-row array (prediction SE including
+                leverage).
             mean_quantile: Quantile to predict (the quantile affects the center
                 of the beta distribution from which to sample when imputing each data point).
             random_sample: If True, use random quantile sampling for prediction.
@@ -365,15 +389,21 @@ class OLSResults(ImputerResults):
         Raises:
             RuntimeError: If prediction fails.
         """
+        # Clip q away from 0 and 1 to avoid ±inf from norm.ppf (and the
+        # degenerate a=0/a=inf case in the beta-alpha formula).
+        # Previously mean_quantile could be 0.0 or 1.0 with no guard.
+        q_eps = 1e-6
+        q_clipped = float(np.clip(mean_quantile, q_eps, 1.0 - q_eps))
         try:
-            if random_sample == True:
+            if random_sample:
                 self.logger.info(
-                    f"Predicting at random quantiles sampled from a beta distribution with mean quantile {mean_quantile}"
+                    f"Predicting at random quantiles sampled from a beta distribution with mean quantile {q_clipped}"
                 )
                 random_generator = np.random.default_rng(self.seed)
 
-                # Calculate alpha parameter for beta distribution
-                a = mean_quantile / (1 - mean_quantile)
+                # Calculate alpha parameter for beta distribution (q is
+                # safely in (0,1) after clipping).
+                a = q_clipped / (1 - q_clipped)
 
                 # Generate count_samples beta distributed values with parameter a
                 beta_samples = random_generator.beta(a, 1, size=count_samples)
@@ -387,12 +417,13 @@ class OLSResults(ImputerResults):
                 )
                 selected_quantiles = normal_quantiles[sampled_indices]
 
-                # Adjust each mean prediction by corresponding sampled quantile times standard error
-                return mean_preds + selected_quantiles * se
+                # Adjust each mean prediction by the sampled quantile
+                # times its per-row SE (or scalar SE if se is a float).
+                return mean_preds.values + selected_quantiles * np.asarray(se)
             else:
-                self.logger.info(f"Predicting at specified quantile {mean_quantile}")
-                specified_quantile = norm.ppf(mean_quantile)
-                return mean_preds + specified_quantile * se
+                self.logger.info(f"Predicting at specified quantile {q_clipped}")
+                specified_quantile = norm.ppf(q_clipped)
+                return mean_preds.values + specified_quantile * np.asarray(se)
 
         except Exception as e:
             if isinstance(e, ValueError):

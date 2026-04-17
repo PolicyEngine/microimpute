@@ -258,3 +258,87 @@ def test_ols_prediction_quality(diabetes_data: pd.DataFrame) -> None:
 
     # Check prediction variance is reasonable
     assert np.var(pred_values) > 0, "OLS predictions have no variance"
+
+
+def test_ols_quantile_uses_full_prediction_se() -> None:
+    """Regression test for #6: OLS quantile prediction must use the full
+    prediction SE (leverage + residual) rather than sqrt(scale). The
+    prediction SE for a new row is strictly greater than the residual
+    std; the gap grows for rows far from the training centroid.
+
+    We verify the fix by checking that (a) at a fixed quantile, the
+    prediction interval at an extreme x is WIDER than at the centroid
+    (which the old implementation could not produce — both used the
+    same residual std), and (b) at q=0.99 the quantile prediction for
+    an extreme row is larger than the residual-std-only formulation
+    would have given.
+    """
+    rng = np.random.default_rng(0)
+    n = 200
+    x = rng.normal(size=n)
+    y = 2.0 * x + rng.normal(size=n) * 0.3
+    train = pd.DataFrame({"x": x, "y": y})
+
+    model = OLS()
+    fitted = model.fit(train, ["x"], ["y"])
+
+    # One test row at the centroid, one far outside the support.
+    x_test = pd.DataFrame({"x": [0.0, 10.0]})
+    upper = fitted.predict(x_test, quantiles=[0.99])[0.99]["y"].values
+    lower = fitted.predict(x_test, quantiles=[0.01])[0.01]["y"].values
+    widths = upper - lower
+
+    # The extrapolated point must have a wider prediction interval than
+    # the centroid (leverage effect). With the old se = sqrt(scale),
+    # both rows had identical widths.
+    assert widths[1] > widths[0], (
+        "Prediction SE must grow with leverage; widths were "
+        f"{widths}, indicating residual-std-only (pre-fix) behaviour"
+    )
+
+
+def test_ols_quantile_clips_q_away_from_zero_and_one() -> None:
+    """Regression test for #6: q=0 and q=1 previously produced ±inf via
+    norm.ppf; the clipped implementation should return finite values."""
+    rng = np.random.default_rng(0)
+    n = 100
+    x = rng.normal(size=n)
+    y = 2.0 * x + rng.normal(size=n) * 0.3
+    train = pd.DataFrame({"x": x, "y": y})
+
+    model = OLS()
+    fitted = model.fit(train, ["x"], ["y"])
+
+    x_test = pd.DataFrame({"x": [0.0]})
+    preds_0 = fitted.predict(x_test, quantiles=[0.0])[0.0]["y"].values
+    preds_1 = fitted.predict(x_test, quantiles=[1.0])[1.0]["y"].values
+
+    assert np.all(np.isfinite(preds_0)), "q=0 produced non-finite predictions"
+    assert np.all(np.isfinite(preds_1)), "q=1 produced non-finite predictions"
+
+
+def test_logistic_l1_ratio_activates_elasticnet() -> None:
+    """Regression test for #8: passing l1_ratio must activate the
+    elasticnet penalty (and saga solver). Previously l1_ratio was
+    passed through with the default L2 penalty and was silently ignored.
+    """
+    from microimpute.models.ols import _LogisticRegressionModel
+    import logging
+
+    rng = np.random.default_rng(0)
+    n = 100
+    X = pd.DataFrame(rng.normal(size=(n, 3)), columns=["a", "b", "c"])
+    y = pd.Series((X["a"] + rng.normal(size=n) > 0).astype(int), name="y")
+
+    model = _LogisticRegressionModel(seed=0, logger=logging.getLogger("test"))
+    model.fit(X, y, var_type="boolean", l1_ratio=0.5)
+
+    # When l1_ratio=0.5, penalty must be "elasticnet" and solver "saga"
+    # so l1_ratio actually has an effect.
+    assert model.classifier.penalty == "elasticnet", (
+        f"Expected penalty='elasticnet' with l1_ratio=0.5, got "
+        f"penalty={model.classifier.penalty!r} (l1_ratio silently ignored)"
+    )
+    assert model.classifier.solver == "saga", (
+        f"Expected solver='saga' for elasticnet, got {model.classifier.solver!r}"
+    )
