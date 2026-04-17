@@ -568,12 +568,24 @@ def kl_divergence(
     p_donor = np.array([donor_counts.get(cat, 0.0) for cat in all_categories])
     q_receiver = np.array([receiver_counts.get(cat, 0.0) for cat in all_categories])
 
-    # Add small epsilon to avoid log(0) and division by zero
+    # Apply the epsilon floor to BOTH distributions symmetrically and
+    # renormalise, so KL(p || q) behaves consistently regardless of which
+    # side has a missing category (#12). Previously only ``q_receiver``
+    # was clipped, which meant a category present in q but absent in p
+    # contributed ``rel_entr(0, q) = 0`` (a free pass), while the reverse
+    # contributed ``p * log(p / eps)`` (a large finite value depending
+    # entirely on ``epsilon``) — asymmetric and arbitrary.
     epsilon = 1e-10
+    p_donor = np.maximum(p_donor, epsilon)
     q_receiver = np.maximum(q_receiver, epsilon)
+    # Renormalise so both are still valid probability vectors after the
+    # epsilon floor. Without this, the floored mass is "extra" and
+    # inflates rel_entr on categories with mass near zero.
+    p_donor = p_donor / p_donor.sum()
+    q_receiver = q_receiver / q_receiver.sum()
 
-    # Calculate KL divergence using scipy.special.kl_div
-    # kl_div(p, q) computes p * log(p/q) element-wise
+    # Calculate KL divergence using scipy.special.rel_entr
+    # rel_entr(p, q) computes p * log(p/q) element-wise
     kl_values = rel_entr(p_donor, q_receiver)
 
     # Sum over all categories to get total KL divergence
