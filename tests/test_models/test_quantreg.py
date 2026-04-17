@@ -322,3 +322,39 @@ def test_quantreg_prediction_quality(diabetes_data: pd.DataFrame) -> None:
 
     # Check that predictions have reasonable variance
     assert np.var(pred_values) > 0, "QuantReg predictions have no variance"
+
+
+def test_quantreg_random_quantile_sample_returns_numeric_dtype() -> None:
+    """Regression test for #11: the per-row random-quantile path previously
+    allocated an object-dtype DataFrame and wrote numeric predictions
+    into it via .loc, silently demoting the result to object. After
+    vectorisation the output must be a numeric dtype."""
+    import numpy as np
+    import pandas as pd
+
+    rng = np.random.default_rng(0)
+    n = 100
+    data = pd.DataFrame(
+        {
+            "x": rng.normal(size=n),
+            "y": rng.normal(size=n) + rng.normal(size=n),
+        }
+    )
+
+    model = QuantReg()
+    fitted = model.fit(data, ["x"], ["y"], quantiles=[0.1, 0.5, 0.9])
+
+    test = pd.DataFrame({"x": rng.normal(size=20)})
+    preds = fitted.predict(test, random_quantile_sample=True)
+
+    # With random_quantile_sample=True and no quantiles at predict time,
+    # the implementation keys the result by the mean of the fitted
+    # quantiles.
+    mean_q = np.mean([0.1, 0.5, 0.9])
+    assert mean_q in preds
+    out = preds[mean_q]
+    assert pd.api.types.is_numeric_dtype(out["y"]), (
+        f"Vectorised random-quantile path must return a numeric dtype; "
+        f"got {out['y'].dtype}"
+    )
+    assert np.all(np.isfinite(out["y"].values))
