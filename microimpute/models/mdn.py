@@ -122,17 +122,23 @@ def _suppress_pytorch_logging() -> None:
 
 
 def _generate_data_hash(X: pd.DataFrame, y: pd.Series) -> str:
-    """Generate a hash from the training data for cache identification.
+    """Generate a content-sensitive hash from the training data for cache
+    identification.
 
-    Creates a reproducible hash based on the data shape, column names,
-    and a sample of the data values.
+    Creates an order-sensitive hash based on data shape, column names, and
+    the SHA-256 digest of the per-row hash bytes of X and y. Previously
+    this summed the per-row uint64 hashes from
+    ``hash_pandas_object``, which lost row ordering (permutations hashed
+    identically) and was collision-prone across semantically different
+    datasets of matching shape — a cache hit on a collision would load a
+    stale model for a new dataset (silent correctness bug).
 
     Args:
         X: Feature DataFrame.
         y: Target Series.
 
     Returns:
-        A short hash string identifying the dataset.
+        A 16-character hex string identifying the dataset.
     """
     # Include shape, column names, and data statistics for identification
     hash_components = [
@@ -142,12 +148,18 @@ def _generate_data_hash(X: pd.DataFrame, y: pd.Series) -> str:
         str(len(y)),
     ]
 
-    # Add hash of actual data values for uniqueness
-    # Use pandas hash_pandas_object for consistent hashing
+    # Order-sensitive content hash: SHA-256 over the raw bytes of per-row
+    # hashes. Any change in row values OR row ordering produces a
+    # different digest, eliminating the sum-of-hashes collision trap.
     try:
-        data_hash = pd.util.hash_pandas_object(X).sum()
-        y_hash = pd.util.hash_pandas_object(y).sum()
-        hash_components.extend([str(data_hash), str(y_hash)])
+        x_row_hashes = pd.util.hash_pandas_object(X, index=True).values
+        y_row_hashes = pd.util.hash_pandas_object(y, index=True).values
+        hash_components.extend(
+            [
+                hashlib.sha256(x_row_hashes.tobytes()).hexdigest(),
+                hashlib.sha256(y_row_hashes.tobytes()).hexdigest(),
+            ]
+        )
     except Exception:
         # Fallback to basic stats if hashing fails
         hash_components.extend(
@@ -158,7 +170,9 @@ def _generate_data_hash(X: pd.DataFrame, y: pd.Series) -> str:
         )
 
     combined = "_".join(hash_components)
-    return hashlib.md5(combined.encode()).hexdigest()[:12]
+    # SHA-256 truncated to 16 hex chars (64 bits) — collision-resistant
+    # for any realistic cache size while keeping filesystem paths short.
+    return hashlib.sha256(combined.encode()).hexdigest()[:16]
 
 
 def _get_package_versions_hash() -> str:
