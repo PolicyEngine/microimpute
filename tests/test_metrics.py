@@ -1006,6 +1006,30 @@ def test_kl_divergence_partial_overlap() -> None:
     )
 
 
+def test_kl_divergence_symmetric_epsilon_handling() -> None:
+    """Regression test for #12: the epsilon floor must be applied to BOTH
+    distributions so KL handles missing categories consistently on either
+    side. Previously only q_receiver was clipped, so a category present
+    in p but absent in q contributed ``p * log(p/eps)`` (a large finite
+    value), while the reverse contributed ``rel_entr(0, q) = 0`` — a
+    free pass. We verify by checking that a category absent in the
+    donor also contributes to the divergence (non-zero result), not
+    zero.
+    """
+    # Donor has no category "C"; receiver does. Previously this was
+    # a free pass (category absent in p -> rel_entr(0, q) = 0). With
+    # the symmetric epsilon floor both sides get a small floor, so the
+    # divergence reflects the mismatch.
+    donor = np.array(["A", "A", "B", "B"])
+    receiver = np.array(["A", "B", "C", "C"])
+    kl = kl_divergence(donor, receiver)
+
+    # The result must be strictly positive (the distributions differ)
+    # and finite (no ±inf from unclipped zeros).
+    assert kl > 0, "KL must be positive when distributions differ"
+    assert np.isfinite(kl), "KL must be finite with symmetric epsilon floor"
+
+
 def test_kl_divergence_different_categories() -> None:
     """Test KL divergence when distributions have different category sets."""
     donor = np.array(["A", "B", "A", "B"])
