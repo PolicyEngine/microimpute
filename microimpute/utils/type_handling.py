@@ -6,7 +6,7 @@ numeric categorical, or purely numeric.
 """
 
 import logging
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -17,16 +17,26 @@ class VariableTypeDetector:
 
     @staticmethod
     def is_boolean_variable(series: pd.Series) -> bool:
-        """Check if a series represents boolean data."""
+        """Check if a series represents boolean data.
+
+        A float series that happens to contain only {0.0, 1.0} is NOT
+        treated as boolean (#9); it could be a probability, a rescaled
+        indicator, or simply an accident of a small sample. Routing a
+        float column through a classifier would silently flip the model
+        type and destroy regression behaviour. Only genuine boolean
+        dtypes and integer columns with values in {0, 1} are classified
+        as boolean.
+        """
         if pd.api.types.is_bool_dtype(series):
             return True
 
         unique_vals = set(series.dropna().unique())
         if pd.api.types.is_integer_dtype(series) and unique_vals <= {0, 1}:
             return True
-        if pd.api.types.is_float_dtype(series) and unique_vals <= {0.0, 1.0}:
-            return True
 
+        # Deliberately NOT recognising floats with values {0.0, 1.0} as
+        # booleans — see docstring. Callers who really want a float
+        # 0/1 column treated as a boolean should cast it explicitly.
         return False
 
     @staticmethod
@@ -111,6 +121,11 @@ class DummyVariableProcessor:
         self.logger = logger
         self.dummy_mapping = {}  # Maps original column to dummy columns
         self.imputed_var_dummy_mapping = {}  # Pre-computed dummy info for imputed vars
+        # Full training-time level set per categorical predictor column.
+        # Used by apply_dummy_encoding_to_test to detect categories that
+        # appear only at test time (which otherwise silently collapse to
+        # the dropped reference level).
+        self.predictor_training_levels: Dict[str, set] = {}
 
     def preprocess_predictors(
         self,
@@ -214,6 +229,12 @@ class DummyVariableProcessor:
                     col for col in dummy_df.columns if col.startswith(f"{orig_col}_")
                 ]
                 self.dummy_mapping[orig_col] = dummy_cols
+                # Record ALL training levels (including the dropped
+                # reference) so apply_dummy_encoding_to_test can detect
+                # genuinely unseen test-time categories.
+                self.predictor_training_levels[orig_col] = set(
+                    map(str, data[orig_col].dropna().unique())
+                )
 
                 # Update predictor list
                 updated_predictors.remove(orig_col)
@@ -337,7 +358,17 @@ class DummyVariableProcessor:
         data: pd.DataFrame,
         predictors: List[str],
     ) -> Tuple[pd.DataFrame, List[str]]:
-        """Apply same dummy encoding to test data based on training mapping."""
+        """Apply same dummy encoding to test data based on training mapping.
+
+        Categories that appear in ``data`` but were not in the training set
+        are mapped to all-zero dummies (indistinguishable from the reference
+        level dropped by ``drop_first=True`` at training time). Previously
+        this happened silently; now we emit a ``UserWarning`` so callers
+        are aware that those rows will receive the reference level's
+        prediction (#10).
+        """
+        import warnings
+
         detector = VariableTypeDetector()
         data = data.copy()
         updated_predictors = predictors.copy()
@@ -345,6 +376,31 @@ class DummyVariableProcessor:
         # Apply dummy encoding based on stored mapping
         for orig_col, dummy_cols in self.dummy_mapping.items():
             if orig_col in predictors and orig_col in data.columns:
+                # Detect categories in the test data that weren't seen at
+                # training time. We stored the full training level set
+                # (including the dropped reference) in
+                # ``predictor_training_levels`` precisely so this check
+                # doesn't confuse reference-level rows with unknown
+                # categories.
+                training_levels = self.predictor_training_levels.get(orig_col)
+                if training_levels is not None:
+                    test_levels = set(map(str, data[orig_col].dropna().unique()))
+                    unseen = test_levels - training_levels
+                    if unseen:
+                        warnings.warn(
+                            f"Predictor '{orig_col}' contains "
+                            f"{len(unseen)} category/categories that "
+                            "were not present at training time. These "
+                            "rows will receive the reference "
+                            "category's prediction (all-zero dummies):"
+                            f" {sorted(unseen)}. If this is not "
+                            "intended, retrain on a superset of "
+                            "categories or filter these rows before "
+                            "predicting.",
+                            UserWarning,
+                            stacklevel=2,
+                        )
+
                 # Create dummies for this column
                 dummy_df = pd.get_dummies(
                     data[[orig_col]],
