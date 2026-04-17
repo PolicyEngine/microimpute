@@ -144,31 +144,64 @@ def nnd_hotdeck_using_rpy2(
                 log.error("mtc_array is empty!")
                 raise ValueError("No matching indices returned from NND_hotdeck")
 
-            # If the mtc.ids array has 2 values per recipient (recipient_idx, donor_idx pairs)
+            # If the mtc.ids array has 2 values per recipient
+            # (recipient_idx, donor_idx pairs).
             if len(mtc_array) == 2 * len(receiver):
                 donor_indices = mtc_array.reshape(-1, 2)[:, 1]
-                # Make sure these indices are within the valid range (1 to donor dataset size)
-                donor_indices_valid = np.remainder(donor_indices - 1, len(donor)) + 1
+                # StatMatch uses 1-based indexing; valid donor indices are
+                # in [1, len(donor)]. Previously we silently
+                # modulo-wrapped out-of-range indices, masking real
+                # StatMatch/R indexing bugs and silently assigning a
+                # wrong donor. Raise loudly so the caller notices.
+                out_of_range = (donor_indices < 1) | (donor_indices > len(donor))
+                if out_of_range.any():
+                    n_bad = int(out_of_range.sum())
+                    raise ValueError(
+                        f"StatMatch returned {n_bad} donor index/indices "
+                        f"out of range [1, {len(donor)}]; this indicates "
+                        "a bug in the StatMatch R call, not a recoverable "
+                        "condition. Check input data for NaNs, infinite "
+                        "values, or inconsistent dtypes between donor and "
+                        "recipient."
+                    )
+                donor_indices_valid = donor_indices
+            elif len(mtc_array) == len(receiver):
+                # Flat 1-D array of donor indices, one per recipient.
+                out_of_range = (mtc_array < 1) | (mtc_array > len(donor))
+                if out_of_range.any():
+                    n_bad = int(out_of_range.sum())
+                    raise ValueError(
+                        f"StatMatch returned {n_bad} donor index/indices "
+                        f"out of range [1, {len(donor)}]"
+                    )
+                donor_indices_valid = mtc_array
+            elif len(mtc_array) > len(receiver):
+                # More indices than recipients is unexpected; refuse to
+                # silently truncate (previously we kept just the first
+                # len(receiver) items, which could drop a valid pairing).
+                raise ValueError(
+                    f"StatMatch returned {len(mtc_array)} match indices "
+                    f"for {len(receiver)} recipients; expected exactly "
+                    f"{len(receiver)} (1-D) or {2 * len(receiver)} "
+                    "(paired). Refusing to silently truncate."
+                )
             else:
-                if len(mtc_array) >= len(receiver):
-                    # Use the indices directly (up to the length of receiver)
-                    donor_indices_valid = mtc_array[: len(receiver)]
-                else:
-                    # If we have too few indices, check if array is empty first
-                    if len(mtc_array) == 0:
-                        log.error("Empty mtc_array!")
-                        raise ValueError("No matching indices available")
-                    log.warning(
-                        f"Too few matching indices: {len(mtc_array)} < {len(receiver)}"
-                    )
-                    # Use the first index if available, otherwise default to 1
-                    fill_value = mtc_array[-1] if len(mtc_array) > 0 else 1
-                    donor_indices_valid = np.concatenate(
-                        [
-                            mtc_array,
-                            np.repeat(fill_value, len(receiver) - len(mtc_array)),
-                        ]
-                    )
+                # Fewer matches than recipients. Previously the last
+                # match was repeated for every missing recipient,
+                # producing severe homogeneity bias in the imputed
+                # column — entirely invisible to callers. Raise loudly
+                # instead; the caller can implement a proper fallback
+                # (e.g. random-donor sample with a warning) if
+                # appropriate for their data.
+                raise ValueError(
+                    f"StatMatch returned only {len(mtc_array)} match "
+                    f"indices for {len(receiver)} recipients. "
+                    "Previously the last match was repeated to fill "
+                    "the gap, producing severe homogeneity bias. This "
+                    "is now rejected; investigate why StatMatch "
+                    "under-matched (empty mtc.ids, dtype mismatch, "
+                    "NaN predictors, etc.)."
+                )
             # Create the final mtc.ids matrix required by create_fused
             mtc_matrix = np.column_stack((recipient_indices, donor_indices_valid))
             # Convert to R matrix
