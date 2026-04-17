@@ -460,7 +460,8 @@ def test_generate_cache_key():
 
 
 def test_generate_data_hash():
-    """Test data hash generation."""
+    """Basic smoke test for data hash generation (extended coverage lives
+    in test_mdn_cache_key.py so it can run without torch)."""
     np.random.seed(42)
 
     # Create test data
