@@ -158,9 +158,7 @@ class TestRegimeDetection:
         assert (y < 0).sum() < 10, "fixture precondition"
 
         data = _deterministic_frame(n, y)
-        imputer = ZeroInflatedImputer(
-            base_imputer_class=QRF, min_class_count=10
-        )
+        imputer = ZeroInflatedImputer(base_imputer_class=QRF, min_class_count=10)
         imputer.fit(data, predictors=["age", "income_bin"], imputed_variables=["y"])
         assert imputer.get_regime("y") == "ZI_POSITIVE"
 
@@ -168,9 +166,7 @@ class TestRegimeDetection:
 class TestPredictionsRespectRegime:
     """Predicted values must lie in the regime's support."""
 
-    def _fit_predict(
-        self, y: np.ndarray, n_pred: int = 200
-    ) -> pd.Series:
+    def _fit_predict(self, y: np.ndarray, n_pred: int = 200) -> pd.Series:
         from microimpute.models.zero_inflated import ZeroInflatedImputer
 
         data = _deterministic_frame(len(y), y, seed=1)
@@ -307,6 +303,7 @@ class TestBaseImputerParity:
         # The wrapper adds a little randomness via its own rng, so we
         # don't require element-wise equality — just broadly similar
         # means.
-        assert abs(bare_preds.mean() - wrapped_preds.mean()) / max(
-            bare_preds.mean(), 1.0
-        ) < 0.25
+        assert (
+            abs(bare_preds.mean() - wrapped_preds.mean()) / max(bare_preds.mean(), 1.0)
+            < 0.25
+        )

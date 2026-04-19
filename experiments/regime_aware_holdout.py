@@ -135,9 +135,9 @@ def split_train_test(
     rng = np.random.default_rng(seed + 1)
     idx = rng.permutation(len(df))
     cut = int(len(df) * (1.0 - test_fraction))
-    return df.iloc[idx[:cut]].reset_index(drop=True), df.iloc[
-        idx[cut:]
-    ].reset_index(drop=True)
+    return df.iloc[idx[:cut]].reset_index(drop=True), df.iloc[idx[cut:]].reset_index(
+        drop=True
+    )
 
 
 # -------------------------------------------------------------------
@@ -150,9 +150,7 @@ def fit_tripartite(train: pd.DataFrame):
         base_imputer_class=QRF,
         base_imputer_kwargs={},
     )
-    result = imputer.fit(
-        train, predictors=["x1", "x2"], imputed_variables=["y"]
-    )
+    result = imputer.fit(train, predictors=["x1", "x2"], imputed_variables=["y"])
     return result, imputer.get_regime("y")
 
 
@@ -202,9 +200,7 @@ def fit_positive_only(train: pd.DataFrame):
 
 def fit_no_gate(train: pd.DataFrame):
     qrf = QRF(log_level="ERROR")
-    return qrf.fit(
-        train, predictors=["x1", "x2"], imputed_variables=["y"]
-    )
+    return qrf.fit(train, predictors=["x1", "x2"], imputed_variables=["y"])
 
 
 # -------------------------------------------------------------------
@@ -322,7 +318,9 @@ def run_experiment(config: DGPConfig) -> Dict[str, Any]:
     d_result = fit_no_gate(train)
     d_pred = predict_no_gate(d_result, test)
 
-    def _score(name: str, pred: np.ndarray, extra: Dict[str, Any] = None) -> Dict[str, Any]:
+    def _score(
+        name: str, pred: np.ndarray, extra: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
         metrics = {
             "approach": name,
             "pinball_loss_q50": pinball_loss(pred, test_y, 0.5),
@@ -381,7 +379,9 @@ def _aggregate(runs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         for key in metric_keys:
             values = np.array([r[key] for r in rows], dtype=float)
             summary[f"{key}_mean"] = float(values.mean())
-            summary[f"{key}_std"] = float(values.std(ddof=1)) if len(values) > 1 else 0.0
+            summary[f"{key}_std"] = (
+                float(values.std(ddof=1)) if len(values) > 1 else 0.0
+            )
         # Carry forward the detected regime if all seeds agree.
         regimes = {r.get("detected_regime") for r in rows}
         if regimes and None not in regimes and len(regimes) == 1:
@@ -405,8 +405,7 @@ def main(argv: List[str] | None = None) -> int:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).parent
-        / "regime_aware_holdout_results.json",
+        default=Path(__file__).parent / "regime_aware_holdout_results.json",
     )
     args = parser.parse_args(argv)
 

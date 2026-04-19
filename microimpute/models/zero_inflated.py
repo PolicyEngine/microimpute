@@ -88,12 +88,8 @@ def _make_classifier(kind: str, seed: int):
     if kind == "rf":
         from sklearn.ensemble import RandomForestClassifier
 
-        return RandomForestClassifier(
-            n_estimators=50, random_state=seed, n_jobs=-1
-        )
-    raise ValueError(
-        f"Unknown classifier_type {kind!r}; expected 'hist_gb' or 'rf'."
-    )
+        return RandomForestClassifier(n_estimators=50, random_state=seed, n_jobs=-1)
+    raise ValueError(f"Unknown classifier_type {kind!r}; expected 'hist_gb' or 'rf'.")
 
 
 def _detect_regime(
@@ -211,9 +207,7 @@ class ZeroInflatedImputer(Imputer):
     def get_regime(self, variable: str) -> str:
         """Return the detected regime label for a fitted variable."""
         if variable not in self._regimes:
-            raise KeyError(
-                f"Variable {variable!r} not fitted; call fit() first."
-            )
+            raise KeyError(f"Variable {variable!r} not fitted; call fit() first.")
         return self._regimes[variable]
 
     def fit(
@@ -260,9 +254,7 @@ class ZeroInflatedImputer(Imputer):
             for v in imputed_variables
             if v in self.constant_targets
             and np.issubdtype(
-                pd.Series(
-                    [self.constant_targets[v]["value"]]
-                ).dtype,
+                pd.Series([self.constant_targets[v]["value"]]).dtype,
                 np.number,
             )
         ]
