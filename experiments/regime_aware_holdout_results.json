@@ -1,0 +1,451 @@
+{
+  "dgp_config_template": {
+    "n": 10000,
+    "gap_floor": 2.5,
+    "sigma": 0.6,
+    "seeds": [
+      42,
+      43,
+      44,
+      45,
+      46
+    ]
+  },
+  "dgp_summary_on_holdout_per_seed": [
+    {
+      "n_train": 8000,
+      "n_test": 2000,
+      "test_frac_zero": 0.1465,
+      "test_frac_pos": 0.425,
+      "test_frac_neg": 0.4285,
+      "seed": 42
+    },
+    {
+      "n_train": 8000,
+      "n_test": 2000,
+      "test_frac_zero": 0.155,
+      "test_frac_pos": 0.4125,
+      "test_frac_neg": 0.4325,
+      "seed": 43
+    },
+    {
+      "n_train": 8000,
+      "n_test": 2000,
+      "test_frac_zero": 0.18,
+      "test_frac_pos": 0.4115,
+      "test_frac_neg": 0.4085,
+      "seed": 44
+    },
+    {
+      "n_train": 8000,
+      "n_test": 2000,
+      "test_frac_zero": 0.15,
+      "test_frac_pos": 0.4145,
+      "test_frac_neg": 0.4355,
+      "seed": 45
+    },
+    {
+      "n_train": 8000,
+      "n_test": 2000,
+      "test_frac_zero": 0.157,
+      "test_frac_pos": 0.4125,
+      "test_frac_neg": 0.4305,
+      "seed": 46
+    }
+  ],
+  "aggregated_by_approach": [
+    {
+      "approach": "A_tripartite",
+      "n_seeds": 5,
+      "pinball_loss_q50_mean": 9.504563871730959,
+      "pinball_loss_q50_std": 0.13297349009556256,
+      "zero_rate_mae_mean": 0.007800000000000001,
+      "zero_rate_mae_std": 0.013349157276772192,
+      "sign_match_rate_mean": 0.5318999999999999,
+      "sign_match_rate_std": 0.01223417344980853,
+      "ks_distance_mean": 0.0328,
+      "ks_distance_std": 0.006230971031869753,
+      "interior_band_violation_rate_mean": 0.0,
+      "interior_band_violation_rate_std": 0.0,
+      "pred_frac_zero_mean": 0.15009999999999998,
+      "pred_frac_zero_std": 0.005738031021177915,
+      "pred_frac_pos_mean": 0.4288,
+      "pred_frac_pos_std": 0.01118369348650079,
+      "pred_frac_neg_mean": 0.42110000000000003,
+      "pred_frac_neg_std": 0.012466956324620708,
+      "detected_regime": "THREE_SIGN"
+    },
+    {
+      "approach": "B_binary_nonzero_mixed_qrf",
+      "n_seeds": 5,
+      "pinball_loss_q50_mean": 9.457650761916245,
+      "pinball_loss_q50_std": 0.17153724206196144,
+      "zero_rate_mae_mean": 0.006900000000000001,
+      "zero_rate_mae_std": 0.008883974335847663,
+      "sign_match_rate_mean": 0.5318,
+      "sign_match_rate_std": 0.00450832563153993,
+      "ks_distance_mean": 0.0263,
+      "ks_distance_std": 0.008051397394241573,
+      "interior_band_violation_rate_mean": 0.005699999999999999,
+      "interior_band_violation_rate_std": 0.0016046806535881212,
+      "pred_frac_zero_mean": 0.15219999999999997,
+      "pred_frac_zero_std": 0.007102816342831911,
+      "pred_frac_pos_mean": 0.4183,
+      "pred_frac_pos_std": 0.006270964838045265,
+      "pred_frac_neg_mean": 0.4295,
+      "pred_frac_neg_std": 0.008329165624478848
+    },
+    {
+      "approach": "C_positive_only_qrf_bug",
+      "n_seeds": 5,
+      "pinball_loss_q50_mean": 9.429197111055897,
+      "pinball_loss_q50_std": 0.14365662135694904,
+      "zero_rate_mae_mean": 0.42210000000000003,
+      "zero_rate_mae_std": 0.019695811737524334,
+      "sign_match_rate_mean": 0.33910000000000007,
+      "sign_match_rate_std": 0.01307860848867339,
+      "ks_distance_mean": 0.4271,
+      "ks_distance_std": 0.010714476188783108,
+      "interior_band_violation_rate_mean": 0.0,
+      "interior_band_violation_rate_std": 0.0,
+      "pred_frac_zero_mean": 0.5798,
+      "pred_frac_zero_std": 0.00725947656515264,
+      "pred_frac_pos_mean": 0.4202,
+      "pred_frac_pos_std": 0.007259476565152621,
+      "pred_frac_neg_mean": 0.0,
+      "pred_frac_neg_std": 0.0
+    },
+    {
+      "approach": "D_no_gate_bare_qrf",
+      "n_seeds": 5,
+      "pinball_loss_q50_mean": 9.425760374755473,
+      "pinball_loss_q50_std": 0.17881434068382207,
+      "zero_rate_mae_mean": 0.014100000000000001,
+      "zero_rate_mae_std": 0.011690808355284929,
+      "sign_match_rate_mean": 0.529,
+      "sign_match_rate_std": 0.013355710389193072,
+      "ks_distance_mean": 0.0259,
+      "ks_distance_std": 0.005594640292279745,
+      "interior_band_violation_rate_mean": 0.013699999999999999,
+      "interior_band_violation_rate_std": 0.0029706901555025898,
+      "pred_frac_zero_mean": 0.1478,
+      "pred_frac_zero_std": 0.010545141061171253,
+      "pred_frac_pos_mean": 0.426,
+      "pred_frac_pos_std": 0.013024016277631117,
+      "pred_frac_neg_mean": 0.42619999999999997,
+      "pred_frac_neg_std": 0.009984988733093302
+    }
+  ],
+  "per_run_raw": [
+    {
+      "dgp_config": {
+        "n": 10000,
+        "gap_floor": 2.5,
+        "sigma": 0.6,
+        "seed": 42
+      },
+      "dgp_summary_on_holdout": {
+        "n_train": 8000,
+        "n_test": 2000,
+        "test_frac_zero": 0.1465,
+        "test_frac_pos": 0.425,
+        "test_frac_neg": 0.4285
+      },
+      "approaches": [
+        {
+          "approach": "A_tripartite",
+          "pinball_loss_q50": 9.394688284129616,
+          "zero_rate_mae": 0.004500000000000004,
+          "sign_match_rate": 0.5405,
+          "ks_distance": 0.0325,
+          "interior_band_violation_rate": 0.0,
+          "pred_frac_zero": 0.142,
+          "pred_frac_pos": 0.417,
+          "pred_frac_neg": 0.441,
+          "detected_regime": "THREE_SIGN"
+        },
+        {
+          "approach": "B_binary_nonzero_mixed_qrf",
+          "pinball_loss_q50": 9.430705168980548,
+          "zero_rate_mae": 0.0010000000000000009,
+          "sign_match_rate": 0.5345,
+          "ks_distance": 0.015,
+          "interior_band_violation_rate": 0.007,
+          "pred_frac_zero": 0.1455,
+          "pred_frac_pos": 0.42,
+          "pred_frac_neg": 0.4345
+        },
+        {
+          "approach": "C_positive_only_qrf_bug",
+          "pinball_loss_q50": 9.345162909308307,
+          "zero_rate_mae": 0.44300000000000006,
+          "sign_match_rate": 0.3335,
+          "ks_distance": 0.4285,
+          "interior_band_violation_rate": 0.0,
+          "pred_frac_zero": 0.5895,
+          "pred_frac_pos": 0.4105,
+          "pred_frac_neg": 0.0
+        },
+        {
+          "approach": "D_no_gate_bare_qrf",
+          "pinball_loss_q50": 9.156142354206747,
+          "zero_rate_mae": 0.010000000000000009,
+          "sign_match_rate": 0.5465,
+          "ks_distance": 0.0165,
+          "interior_band_violation_rate": 0.0155,
+          "pred_frac_zero": 0.1565,
+          "pred_frac_pos": 0.418,
+          "pred_frac_neg": 0.4255
+        }
+      ]
+    },
+    {
+      "dgp_config": {
+        "n": 10000,
+        "gap_floor": 2.5,
+        "sigma": 0.6,
+        "seed": 43
+      },
+      "dgp_summary_on_holdout": {
+        "n_train": 8000,
+        "n_test": 2000,
+        "test_frac_zero": 0.155,
+        "test_frac_pos": 0.4125,
+        "test_frac_neg": 0.4325
+      },
+      "approaches": [
+        {
+          "approach": "A_tripartite",
+          "pinball_loss_q50": 9.524598386229703,
+          "zero_rate_mae": 0.0020000000000000018,
+          "sign_match_rate": 0.538,
+          "ks_distance": 0.026,
+          "interior_band_violation_rate": 0.0,
+          "pred_frac_zero": 0.153,
+          "pred_frac_pos": 0.4275,
+          "pred_frac_neg": 0.4195,
+          "detected_regime": "THREE_SIGN"
+        },
+        {
+          "approach": "B_binary_nonzero_mixed_qrf",
+          "pinball_loss_q50": 9.656069408067603,
+          "zero_rate_mae": 0.0020000000000000018,
+          "sign_match_rate": 0.524,
+          "ks_distance": 0.0315,
+          "interior_band_violation_rate": 0.0065,
+          "pred_frac_zero": 0.153,
+          "pred_frac_pos": 0.4215,
+          "pred_frac_neg": 0.4255
+        },
+        {
+          "approach": "C_positive_only_qrf_bug",
+          "pinball_loss_q50": 9.671978780602487,
+          "zero_rate_mae": 0.4285,
+          "sign_match_rate": 0.329,
+          "ks_distance": 0.4325,
+          "interior_band_violation_rate": 0.0,
+          "pred_frac_zero": 0.5835,
+          "pred_frac_pos": 0.4165,
+          "pred_frac_neg": 0.0
+        },
+        {
+          "approach": "D_no_gate_bare_qrf",
+          "pinball_loss_q50": 9.5327772177011,
+          "zero_rate_mae": 0.022499999999999992,
+          "sign_match_rate": 0.5305,
+          "ks_distance": 0.0305,
+          "interior_band_violation_rate": 0.016,
+          "pred_frac_zero": 0.1325,
+          "pred_frac_pos": 0.443,
+          "pred_frac_neg": 0.4245
+        }
+      ]
+    },
+    {
+      "dgp_config": {
+        "n": 10000,
+        "gap_floor": 2.5,
+        "sigma": 0.6,
+        "seed": 44
+      },
+      "dgp_summary_on_holdout": {
+        "n_train": 8000,
+        "n_test": 2000,
+        "test_frac_zero": 0.18,
+        "test_frac_pos": 0.4115,
+        "test_frac_neg": 0.4085
+      },
+      "approaches": [
+        {
+          "approach": "A_tripartite",
+          "pinball_loss_q50": 9.61320677611318,
+          "zero_rate_mae": 0.0315,
+          "sign_match_rate": 0.514,
+          "ks_distance": 0.036,
+          "interior_band_violation_rate": 0.0,
+          "pred_frac_zero": 0.1485,
+          "pred_frac_pos": 0.4395,
+          "pred_frac_neg": 0.412,
+          "detected_regime": "THREE_SIGN"
+        },
+        {
+          "approach": "B_binary_nonzero_mixed_qrf",
+          "pinball_loss_q50": 9.310594037138305,
+          "zero_rate_mae": 0.022499999999999992,
+          "sign_match_rate": 0.532,
+          "ks_distance": 0.0325,
+          "interior_band_violation_rate": 0.003,
+          "pred_frac_zero": 0.1575,
+          "pred_frac_pos": 0.425,
+          "pred_frac_neg": 0.4175
+        },
+        {
+          "approach": "C_positive_only_qrf_bug",
+          "pinball_loss_q50": 9.310577225932665,
+          "zero_rate_mae": 0.38999999999999996,
+          "sign_match_rate": 0.362,
+          "ks_distance": 0.4085,
+          "interior_band_violation_rate": 0.0,
+          "pred_frac_zero": 0.57,
+          "pred_frac_pos": 0.43,
+          "pred_frac_neg": 0.0
+        },
+        {
+          "approach": "D_no_gate_bare_qrf",
+          "pinball_loss_q50": 9.632142894165515,
+          "zero_rate_mae": 0.0295,
+          "sign_match_rate": 0.513,
+          "ks_distance": 0.0255,
+          "interior_band_violation_rate": 0.0155,
+          "pred_frac_zero": 0.1505,
+          "pred_frac_pos": 0.437,
+          "pred_frac_neg": 0.4125
+        }
+      ]
+    },
+    {
+      "dgp_config": {
+        "n": 10000,
+        "gap_floor": 2.5,
+        "sigma": 0.6,
+        "seed": 45
+      },
+      "dgp_summary_on_holdout": {
+        "n_train": 8000,
+        "n_test": 2000,
+        "test_frac_zero": 0.15,
+        "test_frac_pos": 0.4145,
+        "test_frac_neg": 0.4355
+      },
+      "approaches": [
+        {
+          "approach": "A_tripartite",
+          "pinball_loss_q50": 9.343054878316657,
+          "zero_rate_mae": 0.0005000000000000004,
+          "sign_match_rate": 0.5425,
+          "ks_distance": 0.0415,
+          "interior_band_violation_rate": 0.0,
+          "pred_frac_zero": 0.1495,
+          "pred_frac_pos": 0.441,
+          "pred_frac_neg": 0.4095,
+          "detected_regime": "THREE_SIGN"
+        },
+        {
+          "approach": "B_binary_nonzero_mixed_qrf",
+          "pinball_loss_q50": 9.61229630411126,
+          "zero_rate_mae": 0.005500000000000005,
+          "sign_match_rate": 0.5335,
+          "ks_distance": 0.0205,
+          "interior_band_violation_rate": 0.0055,
+          "pred_frac_zero": 0.1445,
+          "pred_frac_pos": 0.4165,
+          "pred_frac_neg": 0.439
+        },
+        {
+          "approach": "C_positive_only_qrf_bug",
+          "pinball_loss_q50": 9.438016054311909,
+          "zero_rate_mae": 0.4285,
+          "sign_match_rate": 0.335,
+          "ks_distance": 0.4355,
+          "interior_band_violation_rate": 0.0,
+          "pred_frac_zero": 0.5785,
+          "pred_frac_pos": 0.4215,
+          "pred_frac_neg": 0.0
+        },
+        {
+          "approach": "D_no_gate_bare_qrf",
+          "pinball_loss_q50": 9.393878587927006,
+          "zero_rate_mae": 0.008000000000000007,
+          "sign_match_rate": 0.536,
+          "ks_distance": 0.0295,
+          "interior_band_violation_rate": 0.0125,
+          "pred_frac_zero": 0.142,
+          "pred_frac_pos": 0.4175,
+          "pred_frac_neg": 0.4405
+        }
+      ]
+    },
+    {
+      "dgp_config": {
+        "n": 10000,
+        "gap_floor": 2.5,
+        "sigma": 0.6,
+        "seed": 46
+      },
+      "dgp_summary_on_holdout": {
+        "n_train": 8000,
+        "n_test": 2000,
+        "test_frac_zero": 0.157,
+        "test_frac_pos": 0.4125,
+        "test_frac_neg": 0.4305
+      },
+      "approaches": [
+        {
+          "approach": "A_tripartite",
+          "pinball_loss_q50": 9.647271033865634,
+          "zero_rate_mae": 0.0005000000000000004,
+          "sign_match_rate": 0.5245,
+          "ks_distance": 0.028,
+          "interior_band_violation_rate": 0.0,
+          "pred_frac_zero": 0.1575,
+          "pred_frac_pos": 0.419,
+          "pred_frac_neg": 0.4235,
+          "detected_regime": "THREE_SIGN"
+        },
+        {
+          "approach": "B_binary_nonzero_mixed_qrf",
+          "pinball_loss_q50": 9.278588891283503,
+          "zero_rate_mae": 0.003500000000000003,
+          "sign_match_rate": 0.535,
+          "ks_distance": 0.032,
+          "interior_band_violation_rate": 0.0065,
+          "pred_frac_zero": 0.1605,
+          "pred_frac_pos": 0.4085,
+          "pred_frac_neg": 0.431
+        },
+        {
+          "approach": "C_positive_only_qrf_bug",
+          "pinball_loss_q50": 9.380250585124125,
+          "zero_rate_mae": 0.4205,
+          "sign_match_rate": 0.336,
+          "ks_distance": 0.4305,
+          "interior_band_violation_rate": 0.0,
+          "pred_frac_zero": 0.5775,
+          "pred_frac_pos": 0.4225,
+          "pred_frac_neg": 0.0
+        },
+        {
+          "approach": "D_no_gate_bare_qrf",
+          "pinball_loss_q50": 9.413860819777009,
+          "zero_rate_mae": 0.0005000000000000004,
+          "sign_match_rate": 0.519,
+          "ks_distance": 0.0275,
+          "interior_band_violation_rate": 0.009,
+          "pred_frac_zero": 0.1575,
+          "pred_frac_pos": 0.4145,
+          "pred_frac_neg": 0.428
+        }
+      ]
+    }
+  ]
+}
