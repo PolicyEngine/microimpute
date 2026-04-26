@@ -109,8 +109,8 @@ jobs:
           name: microimputation-results-${{ github.sha }}
           path: microimputation-dashboard/public/microimputation_results.csv
       - name: Upload coverage to Codecov
-        uses: codecov/codecov-action@v5
+        uses: codecov/codecov-action@v6
         with:
-          file: ./coverage.xml
+          files: ./coverage.xml
           fail_ci_if_error: false
           verbose: true
