@@ -1,3 +1,14 @@
+## [2.0.4] - 2026-04-28
+
+### Changed
+
+- Updated dashboard fonts from Roboto Serif to Inter/JetBrains Mono, added data preview on file upload, added reusable ChartLegend component, and improved chart styling across all visualization components. Updated paper formatting to Times New Roman 11pt with 1.5in margins, added Acknowledgements and Disclosures section with keywords, and refreshed figures and results with latest cross-validation run. Migrated versioning workflow from expired PAT to GitHub App token. Update versioning path to include CHANGELOG.
+
+### Fixed
+
+- Fixed towncrier fragment validation and package versioning workflow triggers, and dashboard CSV compatibility with `metric_std` columns, benchmark-loss error bars, and donor/receiver distribution rows.
+
+
 ## [2.0.3] - 2026-04-17
 
 ### Fixed

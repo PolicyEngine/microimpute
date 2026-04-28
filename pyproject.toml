@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "microimpute"
-version = "2.0.3"
+version = "2.0.4"
 description = "Benchmarking imputation methods for microdata"
 readme = "README.md"
 authors = [
