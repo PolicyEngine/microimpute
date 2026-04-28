@@ -299,6 +299,33 @@ class TestFormatCSVBasic:
 class TestFormatCSVBenchmarkLoss:
     """Tests for benchmark_loss type formatting."""
 
+    def test_benchmark_loss_from_cv_results_wrapper(self, sample_autoimpute_result):
+        """Test benchmark loss formatting from {'cv_results': ...} wrappers."""
+        result = format_csv(
+            autoimpute_result={"cv_results": sample_autoimpute_result},
+        )
+
+        benchmark_rows = result[result["type"] == "benchmark_loss"]
+        assert len(benchmark_rows) > 0
+        assert {"OLS", "QRF"}.issubset(set(benchmark_rows["method"]))
+
+    def test_benchmark_loss_from_autoimpute_result_object(
+        self, sample_autoimpute_result
+    ):
+        """Test benchmark loss formatting from objects exposing cv_results."""
+
+        class ResultLike:
+            pass
+
+        result_like = ResultLike()
+        result_like.cv_results = sample_autoimpute_result
+
+        result = format_csv(autoimpute_result=result_like)
+
+        benchmark_rows = result[result["type"] == "benchmark_loss"]
+        assert len(benchmark_rows) > 0
+        assert {"OLS", "QRF"}.issubset(set(benchmark_rows["method"]))
+
     def test_benchmark_loss_from_autoimpute(self, sample_autoimpute_result):
         """Test benchmark loss formatting from autoimpute results."""
         with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".csv") as f:
@@ -942,6 +969,31 @@ class TestDistributionBins:
                 receiver_data=receiver_data,
                 imputed_variables=imputed_variables,
             )
+
+    def test_numeric_categorical_distribution_uses_categorical_rows(self):
+        """Test numeric categorical variables produce categorical distributions."""
+        donor_data = pd.DataFrame(
+            {
+                "rating": [1, 1, 2, 2, 3, 3],
+                "flag": [0, 1, 1, 0, 1, 0],
+            }
+        )
+        receiver_data = pd.DataFrame(
+            {
+                "rating": [1, 2, 2, 3],
+                "flag": [1, 1, 0, 0],
+            }
+        )
+
+        result = format_csv(
+            donor_data=donor_data,
+            receiver_data=receiver_data,
+            imputed_variables=["rating", "flag"],
+        )
+
+        dist_bins = result[result["type"] == "distribution_bins"]
+        assert set(dist_bins["variable"]) == {"rating", "flag"}
+        assert set(dist_bins["metric_name"]) == {"categorical_distribution"}
 
 
 class TestEdgeCases:

@@ -8,6 +8,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  ErrorBar,
   Tooltip,
   Legend,
   ResponsiveContainer,
@@ -20,6 +21,12 @@ interface PerVariableChartsProps {
   data: ImputationDataPoint[];
   variable: string;
   metricType: 'quantile_loss' | 'log_loss';
+}
+
+const ERROR_BAR_STROKE = '#374151';
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 export default function PerVariableCharts({
@@ -56,7 +63,7 @@ export default function PerVariableCharts({
         typeof d.quantile === 'number' && d.quantile >= 0 && d.quantile <= 1
     );
 
-    const quantileMap = new Map<number, Record<string, string | number | null>>();
+    const quantileMap = new Map<number, Record<string, string | number | null | undefined>>();
 
     numericData.forEach((d) => {
       const quantile = Number(d.quantile);
@@ -65,6 +72,9 @@ export default function PerVariableCharts({
       }
       const entry = quantileMap.get(quantile)!;
       entry[d.method] = d.metric_value;
+      if (isFiniteNumber(d.metric_std)) {
+        entry[`${d.method}__std`] = d.metric_std;
+      }
     });
 
     return Array.from(quantileMap.values()).sort(
@@ -72,30 +82,50 @@ export default function PerVariableCharts({
     );
   }, [variableData, metricType]);
 
+  const hasQuantileErrorBarsByMethod = useMemo(() => {
+    const result = new Map<string, boolean>();
+    methods.forEach((method) => {
+      result.set(
+        method,
+        quantileChartData.some((row) => isFiniteNumber(row[`${method}__std`]))
+      );
+    });
+    return result;
+  }, [methods, quantileChartData]);
+
   // For categorical variables (log_loss), show simple bar comparison
   const logLossChartData = useMemo(() => {
     if (metricType !== 'log_loss') return [];
 
-    const methodMap = new Map<string, { sum: number; count: number }>();
+    const methodMap = new Map<string, { sum: number; count: number; stdSum: number; stdCount: number }>();
 
     variableData.forEach((d) => {
       if (d.metric_value !== null) {
         if (!methodMap.has(d.method)) {
-          methodMap.set(d.method, { sum: 0, count: 0 });
+          methodMap.set(d.method, { sum: 0, count: 0, stdSum: 0, stdCount: 0 });
         }
         const entry = methodMap.get(d.method)!;
         entry.sum += d.metric_value;
         entry.count += 1;
+        if (isFiniteNumber(d.metric_std)) {
+          entry.stdSum += d.metric_std;
+          entry.stdCount += 1;
+        }
       }
     });
 
     return Array.from(methodMap.entries()).map(
-      ([method, { sum, count }]) => ({
+      ([method, { sum, count, stdSum, stdCount }]) => ({
         method,
         value: sum / count,
+        std: stdCount > 0 ? stdSum / stdCount : undefined,
       })
     );
   }, [variableData, metricType]);
+
+  const hasLogLossErrorBars = useMemo(() => {
+    return logLossChartData.some((row) => isFiniteNumber(row.std));
+  }, [logLossChartData]);
 
   if (variableData.length === 0) {
     return (
@@ -156,7 +186,15 @@ export default function PerVariableCharts({
                     dataKey={method}
                     fill={getMethodColor(method, globalIndex >= 0 ? globalIndex : 0)}
                     name={method}
-                  />
+                  >
+                    {hasQuantileErrorBarsByMethod.get(method) && (
+                      <ErrorBar
+                        dataKey={`${method}__std`}
+                        width={4}
+                        stroke={ERROR_BAR_STROKE}
+                      />
+                    )}
+                  </Bar>
                 );
               })}
             </BarChart>
@@ -197,6 +235,13 @@ export default function PerVariableCharts({
                 formatter={(value: number) => [value.toFixed(6), 'Log Loss']}
               />
               <Bar dataKey="value">
+                {hasLogLossErrorBars && (
+                  <ErrorBar
+                    dataKey="std"
+                    width={4}
+                    stroke={ERROR_BAR_STROKE}
+                  />
+                )}
                 {logLossChartData.map((entry) => {
                   const globalIndex = allMethods.indexOf(entry.method);
                   return (

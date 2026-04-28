@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ImputationDataPoint } from '@/types/imputation';
 import {
   BarChart,
@@ -108,7 +108,7 @@ export default function DistributionOverlay({
         } else if (d.metric_name === 'categorical_distribution') {
           // Categorical variable
           (distributions[variable].data as CategoryData[]).push({
-            category: info.category,
+            category: String(info.category),
             donorProportion: info.donor_proportion,
             receiverProportion: info.receiver_proportion,
           });
@@ -134,6 +134,12 @@ export default function DistributionOverlay({
   const [selectedVariable, setSelectedVariable] = useState<string>(
     variables[0] || ''
   );
+
+  useEffect(() => {
+    if (variables.length > 0 && !variables.includes(selectedVariable)) {
+      setSelectedVariable(variables[0]);
+    }
+  }, [selectedVariable, variables]);
 
   if (variables.length === 0) {
     return null;
@@ -274,7 +280,7 @@ export default function DistributionOverlay({
               contentStyle={{ color: '#000000' }}
               labelStyle={{ color: '#000000' }}
             />
-            <Legend content={<ChartLegend className="pt-400" />} />
+            <Legend content={<ChartLegend className="pt-4" />} />
             <Bar
               dataKey="Donor"
               fill="#3b82f6"

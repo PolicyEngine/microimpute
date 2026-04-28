@@ -6,9 +6,10 @@ export interface ImputationDataPoint {
   quantile: string | number; // numeric (0.05, 0.1, etc.), "mean", or "N/A"
   metric_name: string; // e.g., "quantile_loss", "log_loss"
   metric_value: number | null; // numeric value of the metric
+  metric_std?: number | null; // optional standard deviation for repeated CV metrics
   split: string; // e.g., "train", "test", "full"
   additional_info: string; // JSON-formatted string with metadata
-  [key: string]: any; // Allow additional fields
+  [key: string]: unknown; // Allow additional fields
 }
 
 export interface ImputationMetrics {

@@ -46,7 +46,7 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
         if (info.bin_end !== undefined) {
           ranges[variable].max = Math.max(ranges[variable].max, info.bin_end);
         }
-      } catch (e) {
+      } catch {
         // Ignore parsing errors
       }
     });
@@ -93,8 +93,9 @@ export default function ImputationResults({ data }: ImputationResultsProps) {
 
   const hasWasserstein = wassersteinData.length > 0;
   const hasKLDivergence = klDivergenceData.length > 0;
+  const hasDistributionBins = data.some(d => d.type === 'distribution_bins');
 
-  if (!hasWasserstein && !hasKLDivergence) {
+  if (!hasWasserstein && !hasKLDivergence && !hasDistributionBins) {
     return null;
   }
 
