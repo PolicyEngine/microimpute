@@ -3,10 +3,16 @@ Utility function to format various imputation outputs into a unified CSV format 
 """
 
 import json
+import logging
 from typing import Any, Dict, List, Optional, Union
 
 import numpy as np
 import pandas as pd
+
+from microimpute.utils.type_handling import VariableTypeDetector
+
+
+log = logging.getLogger(__name__)
 
 
 def _compute_histogram_data(
@@ -118,7 +124,7 @@ def _compute_categorical_distribution(
             pd.Series(receiver_props) / receiver_values.count() * 100
         ).tolist()
     else:
-        categories = sorted(all_categories)
+        categories = sorted(all_categories, key=lambda value: str(value))
         donor_props = [
             (donor_counts.get(cat, 0) / donor_values.count() * 100)
             for cat in categories
@@ -264,9 +270,38 @@ def _validate_imputed_variables(
         )
 
 
+def _is_categorical_distribution_variable(
+    series: pd.Series,
+    variable_name: str,
+) -> bool:
+    """Return whether a variable should use categorical distribution rows."""
+    detector = VariableTypeDetector()
+    var_type, _ = detector.categorize_variable(series, variable_name, log)
+    return var_type in ["bool", "categorical", "numeric_categorical"]
+
+
+def _extract_cv_results(autoimpute_result: Any) -> Optional[Dict[str, Dict[str, Any]]]:
+    """Normalize supported autoimpute result shapes to a cv_results dict."""
+    if autoimpute_result is None:
+        return None
+
+    if hasattr(autoimpute_result, "cv_results"):
+        cv_results = getattr(autoimpute_result, "cv_results")
+        return cv_results if isinstance(cv_results, dict) else None
+
+    if not isinstance(autoimpute_result, dict):
+        return None
+
+    wrapped_cv_results = autoimpute_result.get("cv_results")
+    if isinstance(wrapped_cv_results, dict):
+        return wrapped_cv_results
+
+    return autoimpute_result
+
+
 def format_csv(
     output_path: Optional[str] = None,
-    autoimpute_result: Optional[Dict] = None,
+    autoimpute_result: Optional[Any] = None,
     comparison_metrics_df: Optional[pd.DataFrame] = None,
     distribution_comparison_df: Optional[pd.DataFrame] = None,
     predictor_correlations: Optional[Dict[str, pd.DataFrame]] = None,
@@ -288,7 +323,8 @@ def format_csv(
 
     autoimpute_result : Dict, optional
         Result from autoimpute containing cv_results with benchmark losses.
-        Expected structure: {method: {'quantile_loss': {...}, 'log_loss': {...}}}
+        Supports an AutoImputeResult object, a {'cv_results': ...} wrapper,
+        or the direct structure {method: {'quantile_loss': {...}, 'log_loss': {...}}}.
 
     comparison_metrics_df : pd.DataFrame, optional
         DataFrame from compare_metrics() with columns:
@@ -331,7 +367,8 @@ def format_csv(
     -------
     pd.DataFrame
         Unified long-format DataFrame with columns:
-        ['type', 'method', 'variable', 'quantile', 'metric_name', 'metric_value', 'split', 'additional_info']
+        ['type', 'method', 'variable', 'quantile', 'metric_name', 'metric_value',
+         'metric_std', 'split', 'additional_info']
 
     Raises
     ------
@@ -342,12 +379,13 @@ def format_csv(
     rows = []
 
     # 1. Process autoimpute benchmark losses from cv_results
-    if autoimpute_result and isinstance(autoimpute_result, dict):
-        first_value = next(iter(autoimpute_result.values()), None)
+    cv_results = _extract_cv_results(autoimpute_result)
+    if cv_results:
+        first_value = next(iter(cv_results.values()), None)
         if isinstance(first_value, dict) and (
             "quantile_loss" in first_value or "log_loss" in first_value
         ):
-            for method, cv_result in autoimpute_result.items():
+            for method, cv_result in cv_results.items():
                 # Append "_best_method" if this is the best method
                 method_label = (
                     f"{method}_best_method" if method == best_method_name else method
@@ -647,9 +685,7 @@ def format_csv(
         # Generate histogram data for each imputed variable
         for var in imputed_variables:
             # Check if variable is categorical or numerical
-            if pd.api.types.is_string_dtype(donor_data[var]) or isinstance(
-                donor_data[var].dtype, pd.CategoricalDtype
-            ):
+            if _is_categorical_distribution_variable(donor_data[var], var):
                 # Categorical variable
                 hist_data = _compute_categorical_distribution(
                     donor_data[var], receiver_data[var], var
@@ -700,7 +736,7 @@ def format_csv(
         else:
             try:
                 return float(q)
-            except:
+            except (TypeError, ValueError):
                 return q
 
     df["quantile"] = df["quantile"].apply(convert_quantile)

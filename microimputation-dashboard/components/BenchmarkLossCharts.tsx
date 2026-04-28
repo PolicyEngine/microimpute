@@ -8,6 +8,7 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  ErrorBar,
   Tooltip,
   Legend,
   ResponsiveContainer,
@@ -18,6 +19,12 @@ import ChartLegend from './ChartLegend';
 
 interface BenchmarkLossChartsProps {
   data: ImputationDataPoint[];
+}
+
+const ERROR_BAR_STROKE = '#374151';
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
 }
 
 export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) {
@@ -63,7 +70,7 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
     if (quantileLossData.length === 0) return [];
 
     // Group by quantile
-    const quantileMap = new Map<number, Record<string, string | number | null>>();
+    const quantileMap = new Map<number, Record<string, string | number | null | undefined>>();
 
     quantileLossData.forEach(d => {
       const quantile = Number(d.quantile);
@@ -72,6 +79,9 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
       }
       const entry = quantileMap.get(quantile)!;
       entry[d.method] = d.metric_value;
+      if (isFiniteNumber(d.metric_std)) {
+        entry[`${d.method}__std`] = d.metric_std;
+      }
     });
 
     return Array.from(quantileMap.values()).sort(
@@ -79,29 +89,49 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
     );
   }, [quantileLossData]);
 
+  const hasQuantileErrorBarsByMethod = useMemo(() => {
+    const result = new Map<string, boolean>();
+    methods.forEach(method => {
+      result.set(
+        method,
+        quantileChartData.some(row => isFiniteNumber(row[`${method}__std`]))
+      );
+    });
+    return result;
+  }, [methods, quantileChartData]);
+
   // Transform log loss data for bar chart
   const logLossChartData = useMemo(() => {
     if (logLossData.length === 0) return [];
 
     // Average log loss per method
-    const methodMap = new Map<string, { sum: number; count: number }>();
+    const methodMap = new Map<string, { sum: number; count: number; stdSum: number; stdCount: number }>();
 
     logLossData.forEach(d => {
       if (d.metric_value !== null) {
         if (!methodMap.has(d.method)) {
-          methodMap.set(d.method, { sum: 0, count: 0 });
+          methodMap.set(d.method, { sum: 0, count: 0, stdSum: 0, stdCount: 0 });
         }
         const entry = methodMap.get(d.method)!;
         entry.sum += d.metric_value;
         entry.count += 1;
+        if (isFiniteNumber(d.metric_std)) {
+          entry.stdSum += d.metric_std;
+          entry.stdCount += 1;
+        }
       }
     });
 
-    return Array.from(methodMap.entries()).map(([method, { sum, count }]) => ({
+    return Array.from(methodMap.entries()).map(([method, { sum, count, stdSum, stdCount }]) => ({
       method,
       value: sum / count,
+      std: stdCount > 0 ? stdSum / stdCount : undefined,
     }));
   }, [logLossData]);
+
+  const hasLogLossErrorBars = useMemo(() => {
+    return logLossChartData.some(row => isFiniteNumber(row.std));
+  }, [logLossChartData]);
 
   // Determine best performing model
   const bestModel = useMemo(() => {
@@ -253,13 +283,24 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
     if (!selectedMethod) return { quantile: [], logLoss: [] };
 
     // Quantile loss train vs test
-    const quantileTrainTest: Array<{ quantile: string; train: number | null; test: number | null }> = [];
+    const quantileTrainTest: Array<{
+      quantile: string;
+      train: number | null;
+      test: number | null;
+      trainStd?: number;
+      testStd?: number;
+    }> = [];
     const quantileData = benchmarkData.filter(
       d => d.method === selectedMethod && d.metric_name === 'quantile_loss'
     );
 
     if (quantileData.length > 0) {
-      const quantileMap = new Map<string, { train: number | null; test: number | null }>();
+      const quantileMap = new Map<string, {
+        train: number | null;
+        test: number | null;
+        trainStd?: number;
+        testStd?: number;
+      }>();
 
       quantileData.forEach(d => {
         const q = typeof d.quantile === 'number' ? d.quantile.toFixed(2) : String(d.quantile || '');
@@ -270,8 +311,14 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
           quantileMap.set(q, { train: null, test: null });
         }
         const entry = quantileMap.get(q)!;
-        if (d.split === 'train') entry.train = d.metric_value;
-        if (d.split === 'test') entry.test = d.metric_value;
+        if (d.split === 'train') {
+          entry.train = d.metric_value;
+          if (isFiniteNumber(d.metric_std)) entry.trainStd = d.metric_std;
+        }
+        if (d.split === 'test') {
+          entry.test = d.metric_value;
+          if (isFiniteNumber(d.metric_std)) entry.testStd = d.metric_std;
+        }
       });
 
       quantileMap.forEach((value, quantile) => {
@@ -282,7 +329,13 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
     }
 
     // Log loss train vs test (average across variables)
-    const logLossTrainTest: Array<{ category: string; train: number; test: number }> = [];
+    const logLossTrainTest: Array<{
+      category: string;
+      train: number;
+      test: number;
+      trainStd?: number;
+      testStd?: number;
+    }> = [];
     const logData = benchmarkData.filter(
       d => d.method === selectedMethod && d.metric_name === 'log_loss' && d.metric_value !== null
     );
@@ -290,20 +343,32 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
     if (logData.length > 0) {
       const trainVals: number[] = [];
       const testVals: number[] = [];
+      const trainStdVals: number[] = [];
+      const testStdVals: number[] = [];
 
       logData.forEach(d => {
-        if (d.split === 'train') trainVals.push(d.metric_value!);
-        if (d.split === 'test') testVals.push(d.metric_value!);
+        if (d.split === 'train') {
+          trainVals.push(d.metric_value!);
+          if (isFiniteNumber(d.metric_std)) trainStdVals.push(d.metric_std);
+        }
+        if (d.split === 'test') {
+          testVals.push(d.metric_value!);
+          if (isFiniteNumber(d.metric_std)) testStdVals.push(d.metric_std);
+        }
       });
 
       if (trainVals.length > 0 || testVals.length > 0) {
         const trainAvg = trainVals.length > 0 ? trainVals.reduce((a, b) => a + b, 0) / trainVals.length : 0;
         const testAvg = testVals.length > 0 ? testVals.reduce((a, b) => a + b, 0) / testVals.length : 0;
+        const trainStdAvg = trainStdVals.length > 0 ? trainStdVals.reduce((a, b) => a + b, 0) / trainStdVals.length : undefined;
+        const testStdAvg = testStdVals.length > 0 ? testStdVals.reduce((a, b) => a + b, 0) / testStdVals.length : undefined;
 
         logLossTrainTest.push({
           category: 'Average',
           train: trainAvg,
           test: testAvg,
+          trainStd: trainStdAvg,
+          testStd: testStdAvg,
         });
       }
     }
@@ -316,6 +381,10 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
 
   const hasQuantileTrainTest = trainTestData.quantile.length > 0;
   const hasLogLossTrainTest = trainTestData.logLoss.length > 0;
+  const hasQuantileTrainErrorBars = trainTestData.quantile.some(row => isFiniteNumber(row.trainStd));
+  const hasQuantileTestErrorBars = trainTestData.quantile.some(row => isFiniteNumber(row.testStd));
+  const hasLogLossTrainErrorBars = trainTestData.logLoss.some(row => isFiniteNumber(row.trainStd));
+  const hasLogLossTestErrorBars = trainTestData.logLoss.some(row => isFiniteNumber(row.testStd));
 
   // Filter methods that have train/test data
   const methodsWithData = useMemo(() => {
@@ -446,7 +515,15 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                     dataKey={method}
                     fill={getMethodColor(method, index)}
                     name={method}
-                  />
+                  >
+                    {hasQuantileErrorBarsByMethod.get(method) && (
+                      <ErrorBar
+                        dataKey={`${method}__std`}
+                        width={4}
+                        stroke={ERROR_BAR_STROKE}
+                      />
+                    )}
+                  </Bar>
                 ))}
               </BarChart>
             </ResponsiveContainer>
@@ -496,6 +573,13 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                   formatter={(value: number) => [value.toFixed(6), 'Log loss']}
                 />
                 <Bar dataKey="value">
+                  {hasLogLossErrorBars && (
+                    <ErrorBar
+                      dataKey="std"
+                      width={4}
+                      stroke={ERROR_BAR_STROKE}
+                    />
+                  )}
                   {logLossChartData.map((entry) => {
                     const globalIndex = methods.indexOf(entry.method);
                     return (
@@ -580,8 +664,24 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                         formatter={(value: number) => value.toFixed(6)}
                       />
                       <Legend content={<ChartLegend />} />
-                      <Bar dataKey="train" fill="#3b82f6" fillOpacity={0.7} name="Train" />
-                      <Bar dataKey="test" fill="#ef4444" fillOpacity={0.7} name="Test" />
+                      <Bar dataKey="train" fill="#3b82f6" fillOpacity={0.7} name="Train">
+                        {hasQuantileTrainErrorBars && (
+                          <ErrorBar
+                            dataKey="trainStd"
+                            width={4}
+                            stroke={ERROR_BAR_STROKE}
+                          />
+                        )}
+                      </Bar>
+                      <Bar dataKey="test" fill="#ef4444" fillOpacity={0.7} name="Test">
+                        {hasQuantileTestErrorBars && (
+                          <ErrorBar
+                            dataKey="testStd"
+                            width={4}
+                            stroke={ERROR_BAR_STROKE}
+                          />
+                        )}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
@@ -618,8 +718,24 @@ export default function BenchmarkLossCharts({ data }: BenchmarkLossChartsProps) 
                         formatter={(value: number) => value.toFixed(6)}
                       />
                       <Legend content={<ChartLegend />} />
-                      <Bar dataKey="train" fill="#3b82f6" fillOpacity={0.7} name="Train" />
-                      <Bar dataKey="test" fill="#ef4444" fillOpacity={0.7} name="Test" />
+                      <Bar dataKey="train" fill="#3b82f6" fillOpacity={0.7} name="Train">
+                        {hasLogLossTrainErrorBars && (
+                          <ErrorBar
+                            dataKey="trainStd"
+                            width={4}
+                            stroke={ERROR_BAR_STROKE}
+                          />
+                        )}
+                      </Bar>
+                      <Bar dataKey="test" fill="#ef4444" fillOpacity={0.7} name="Test">
+                        {hasLogLossTestErrorBars && (
+                          <ErrorBar
+                            dataKey="testStd"
+                            width={4}
+                            stroke={ERROR_BAR_STROKE}
+                          />
+                        )}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>

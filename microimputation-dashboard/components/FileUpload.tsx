@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Upload, File as FileIcon, Link, Database, GitBranch } from 'lucide-react';
 import JSZip from 'jszip';
+import Papa from 'papaparse';
 import { DeeplinkParams, GitHubArtifactInfo } from '@/utils/deeplinks';
 import { parseImputationCSV, getImputationMetrics } from '@/utils/csvParser';
 import { ImputationDataPoint } from '@/types/imputation';
@@ -41,6 +42,9 @@ interface GitHubArtifact {
   created_at: string;
 }
 
+// Known imputation methods supported by microimpute.
+const KNOWN_METHODS = ['QRF', 'QuantReg', 'OLS', 'Matching', 'MDN'];
+
 export default function FileUpload({
   onFileLoad,
   onViewDashboard,
@@ -72,9 +76,6 @@ export default function FileUpload({
   const [availableArtifacts, setAvailableArtifacts] = useState<GitHubArtifact[]>([]);
   const [selectedArtifact, setSelectedArtifact] = useState('');
   const [isLoadingGithubData, setIsLoadingGithubData] = useState(false);
-
-  // Known imputation methods supported by microimpute
-  const KNOWN_METHODS = ['QRF', 'QuantReg', 'OLS', 'Matching', 'MDN'];
 
   // Generate a preview summary from raw CSV content
   const generatePreview = useCallback((csvContent: string) => {
@@ -177,7 +178,7 @@ export default function FileUpload({
     } finally {
       setIsLoading(false);
     }
-  }, [onFileLoad, onDeeplinkLoadComplete, loadArtifactFromDeeplink]);
+  }, [onFileLoad, onDeeplinkLoadComplete, loadArtifactFromDeeplink, generatePreview]);
 
   // Handle deeplink loading on mount
   useEffect(() => {
@@ -195,7 +196,7 @@ export default function FileUpload({
 
   function validateCSVFormat(content: string): void {
     // Expected column names for microimputation dashboard
-    const EXPECTED_COLUMNS = [
+    const REQUIRED_COLUMNS = [
       'type',
       'method',
       'variable',
@@ -205,35 +206,69 @@ export default function FileUpload({
       'split',
       'additional_info'
     ];
+    const OPTIONAL_COLUMNS = ['metric_std'];
+    const NEW_FORMAT_COLUMNS = [
+      'type',
+      'method',
+      'variable',
+      'quantile',
+      'metric_name',
+      'metric_value',
+      'metric_std',
+      'split',
+      'additional_info'
+    ];
 
-    const lines = content.trim().split('\n');
+    const parsed = Papa.parse<string[]>(content.trim(), {
+      header: false,
+      skipEmptyLines: true,
+    });
+
+    if (parsed.errors.length > 0) {
+      const firstError = parsed.errors[0];
+      throw new Error(
+        `Invalid CSV format: ${firstError.message} on row ${firstError.row ?? 'unknown'}.`
+      );
+    }
+
+    const rows = parsed.data.filter(row => row.length > 0);
+
+    if (rows.length < 2) {
+      throw new Error('The file must contain at least a header row and one data row.');
+    }
 
     // Parse header
-    const header = lines[0].split(',').map(col => col.trim());
+    const header = rows[0].map(col => col.trim());
 
     // Check if all expected columns are present
-    const missingColumns = EXPECTED_COLUMNS.filter(col => !header.includes(col));
+    const missingColumns = REQUIRED_COLUMNS.filter(col => !header.includes(col));
     if (missingColumns.length > 0) {
       throw new Error(
-        `Invalid CSV format\nMissing required columns: ${missingColumns.join(', ')}\nExpected columns: ${EXPECTED_COLUMNS.join(', ')}`
+        `Invalid CSV format\nMissing required columns: ${missingColumns.join(', ')}\nExpected columns: ${NEW_FORMAT_COLUMNS.join(', ')}`
       );
     }
 
     // Check for extra columns
-    const extraColumns = header.filter(col => !EXPECTED_COLUMNS.includes(col));
+    const allowedColumns = [...REQUIRED_COLUMNS, ...OPTIONAL_COLUMNS];
+    const extraColumns = header.filter(col => !allowedColumns.includes(col));
     if (extraColumns.length > 0) {
       throw new Error(
         `Invalid CSV format: Unexpected columns found: ${extraColumns.join(', ')}. ` +
-        `Expected columns: ${EXPECTED_COLUMNS.join(', ')}`
+        `Expected columns: ${NEW_FORMAT_COLUMNS.join(', ')}`
       );
     }
 
     // Check column order matches expected
-    const columnOrderMismatch = EXPECTED_COLUMNS.some((col, idx) => header[idx] !== col);
+    const expectedOrder = header.includes('metric_std')
+      ? NEW_FORMAT_COLUMNS
+      : REQUIRED_COLUMNS;
+    const columnOrderMismatch =
+      header.length !== expectedOrder.length ||
+      expectedOrder.some((col, idx) => header[idx] !== col);
     if (columnOrderMismatch) {
       throw new Error(
         `Invalid CSV format: Columns are not in the expected order. ` +
-        `Expected order: ${EXPECTED_COLUMNS.join(', ')}`
+        `Expected order: ${NEW_FORMAT_COLUMNS.join(', ')}`
       );
     }
 
@@ -242,33 +277,21 @@ export default function FileUpload({
 
     // Validate JSON format in additional_info column for a sample of rows
     // We'll check the first 10 data rows to avoid processing large files
-    const maxRowsToCheck = Math.min(10, lines.length - 1);
+    const maxRowsToCheck = Math.min(10, rows.length - 1);
 
     for (let i = 1; i <= maxRowsToCheck; i++) {
-      const line = lines[i];
-      if (!line.trim()) continue; // Skip empty lines
+      const columns = rows[i];
 
-      // Parse CSV row (basic parsing - doesn't handle quoted commas)
-      const columns = line.split(',');
-
-      if (columns.length !== EXPECTED_COLUMNS.length) {
+      if (columns.length !== expectedOrder.length) {
         throw new Error(
           `Invalid CSV format: Row ${i + 1} has ${columns.length} columns, ` +
-          `but ${EXPECTED_COLUMNS.length} columns are expected.`
+          `but ${expectedOrder.length} columns are expected.`
         );
       }
 
-      let additionalInfo = columns[additionalInfoIndex]?.trim();
+      const additionalInfo = columns[additionalInfoIndex]?.trim();
 
       if (additionalInfo) {
-        // Handle CSV quote escaping: pandas doubles quotes when writing to CSV
-        // e.g., {"key": "value"} becomes "{""key"": ""value""}" in the CSV
-        // Remove outer quotes if present and unescape inner quotes
-        if (additionalInfo.startsWith('"') && additionalInfo.endsWith('"')) {
-          additionalInfo = additionalInfo.slice(1, -1); // Remove outer quotes
-          additionalInfo = additionalInfo.replace(/""/g, '"'); // Unescape doubled quotes
-        }
-
         try {
           JSON.parse(additionalInfo);
         } catch {

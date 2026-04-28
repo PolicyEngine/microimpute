@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ImputationDataPoint } from '@/types/imputation';
 import { GitHubArtifactInfo, createShareableUrl } from '@/utils/deeplinks';
 import BenchmarkLossCharts from './BenchmarkLossCharts';
@@ -83,9 +83,11 @@ export default function VisualizationDashboard({
 
     // Check for actual distribution distance data (wasserstein or kl_divergence)
     const distributionData = data.filter(d => d.type === 'distribution_distance');
+    const distributionBinsData = data.filter(d => d.type === 'distribution_bins');
     const hasWasserstein = distributionData.some(d => d.metric_name === 'wasserstein_distance' && d.metric_value !== null);
     const hasKLDivergence = distributionData.some(d => d.metric_name === 'kl_divergence' && d.metric_value !== null);
     const hasDistributionDistance = hasWasserstein || hasKLDivergence;
+    const hasDistributionBins = distributionBinsData.length > 0;
 
     // Check for predictor correlation data
     const correlationData = data.filter(d => d.type === 'predictor_correlation');
@@ -101,6 +103,11 @@ export default function VisualizationDashboard({
     const imputedVars = new Set<string>();
     distributionData.forEach(d => {
       if (d.variable && d.metric_value !== null) {
+        imputedVars.add(d.variable);
+      }
+    });
+    distributionBinsData.forEach(d => {
+      if (d.variable) {
         imputedVars.add(d.variable);
       }
     });
@@ -313,6 +320,7 @@ export default function VisualizationDashboard({
     return {
       hasBenchmarkLoss,
       hasDistributionDistance,
+      hasDistributionBins,
       hasPredictorCorrelation,
       hasPredictorOrdering,
       numericalVars,
@@ -345,7 +353,7 @@ export default function VisualizationDashboard({
       tabsList.push({ id: 'overview', label: 'Model benchmarking', description: 'Compare quantile loss and log loss across imputation methods' });
     }
 
-    if (dataAnalysis.hasDistributionDistance) {
+    if (dataAnalysis.hasDistributionDistance || dataAnalysis.hasDistributionBins) {
       tabsList.push({
         id: 'imputation',
         label: 'Imputation results',
@@ -390,7 +398,13 @@ export default function VisualizationDashboard({
     return tabsList;
   }, [dataAnalysis]);
 
-  if (!dataAnalysis.hasBenchmarkLoss) {
+  useEffect(() => {
+    if (tabs.length > 0 && !tabs.some(tab => tab.id === activeTab)) {
+      setActiveTab(tabs[0].id);
+    }
+  }, [activeTab, tabs]);
+
+  if (tabs.length === 0) {
     return (
       <div className="space-y-6">
         {/* Header */}
@@ -425,7 +439,7 @@ export default function VisualizationDashboard({
           <div className="text-center">
             <p className="text-xl text-gray-600 mb-2">No visualization data found</p>
             <p className="text-gray-500">
-              Upload a CSV file with benchmark_loss data to see visualizations.
+              Upload a CSV file with benchmark_loss, distribution_distance, distribution_bins, or predictor data to see visualizations.
             </p>
           </div>
         </div>

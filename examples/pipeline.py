@@ -99,7 +99,7 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
     print(f"Receiver data shape: {receiver_data_without_targets.shape}")
     print(f"Predictors: {predictors}")
     print(f"Variables to impute: {imputed_variables}")
-    print(f"Risk factor distribution in donor data:")
+    print("Risk factor distribution in donor data:")
     print(donor_data["risk_factor"].value_counts())
     print()
 
@@ -225,13 +225,10 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
     print("STEP 7: Formatting results for dashboard visualization...")
     print("-" * 80)
 
-    # Convert autoimpute_results to dictionary format expected by format_csv
-    autoimpute_dict = {"cv_results": autoimpute_results.cv_results}
-
     # Format all results
     formatted_df = format_csv(
         output_path=output_path,
-        autoimpute_result=autoimpute_dict,
+        autoimpute_result=autoimpute_results,
         comparison_metrics_df=None,  # cv_results already contain this info
         distribution_comparison_df=distribution_comparison_df,
         predictor_correlations=predictor_correlations,
@@ -259,8 +256,8 @@ def run_full_pipeline(output_path="microimpute_results.csv"):
     print(f"  - Best imputation method: {best_method_name}")
     print(f"  - Number of predictors analyzed: {len(predictors)}")
     print(f"  - Number of imputed variables: {len(imputed_variables)}")
-    print(f"    - Numerical variables: s1, s4")
-    print(f"    - Categorical variables: risk_factor")
+    print("    - Numerical variables: s1, s4")
+    print("    - Categorical variables: risk_factor")
     print()
     print("Output CSV contains:")
     for result_type in formatted_df["type"].unique():

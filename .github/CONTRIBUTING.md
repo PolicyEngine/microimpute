@@ -4,4 +4,11 @@ Please make sure that introduced changes are consistent with the testing api and
 
 ## Updating the versioning
 
-Please add to `changelog.yaml` and then run `make changelog` before committing the results ONCE in this PR.
+Add a towncrier fragment under `changelog.d/` with the format
+`<short-description>.<type>.md`, where `<type>` is one of `added`,
+`changed`, `fixed`, `removed`, or `breaking`.
+
+Do not edit `CHANGELOG.md` directly in feature PRs. After the PR is merged,
+the versioning workflow runs `make changelog`, deletes the consumed fragments,
+updates `CHANGELOG.md`, bumps `pyproject.toml`, and commits the result as
+`Update package version`.
