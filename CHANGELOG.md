@@ -1,3 +1,10 @@
+## [2.1.1] - 2026-05-21
+
+### Fixed
+
+- Updated locked dependencies for Python 3.14 development environments.
+
+
 ## [2.1.0] - 2026-05-21
 
 ### Added
