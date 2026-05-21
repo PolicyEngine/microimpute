@@ -1048,7 +1048,7 @@ wheels = [
 
 [[package]]
 name = "microimpute"
-version = "2.0.5"
+version = "2.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "joblib" },

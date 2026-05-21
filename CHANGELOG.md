@@ -1,3 +1,10 @@
+## [2.1.0] - 2026-05-21
+
+### Added
+
+- Added common and target-specific row filters for QRF training.
+
+
 ## [2.0.4] - 2026-04-28
 
 ### Changed
