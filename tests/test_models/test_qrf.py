@@ -205,6 +205,94 @@ def test_qrf_repeated_predict_calls_produce_different_draws(
     )
 
 
+def test_qrf_target_filters_fit_each_target_on_eligible_rows() -> None:
+    """Target-specific masks should let each target ignore its own bad rows."""
+    train = pd.DataFrame(
+        {
+            "x": [0.0, 1.0, 2.0, 3.0],
+            "y1": [10.0, 20.0, np.nan, np.nan],
+            "y2": [np.nan, np.nan, 30.0, 40.0],
+            "y1_observed": [True, True, False, False],
+            "y2_observed": [False, False, True, True],
+        }
+    )
+
+    fitted = QRF().fit(
+        train,
+        predictors=["x"],
+        imputed_variables=["y1", "y2"],
+        target_filters={
+            "y1": "y1_observed",
+            "y2": "y2_observed",
+        },
+        not_numeric_categorical=["x"],
+        n_estimators=10,
+    )
+
+    predictions = fitted.predict(pd.DataFrame({"x": [1.5, 2.5]}), quantiles=[0.5])
+
+    assert set(predictions[0.5].columns) == {"y1", "y2"}
+    assert not predictions[0.5].isna().any().any()
+
+
+def test_qrf_row_filter_applies_common_training_mask() -> None:
+    train = pd.DataFrame(
+        {
+            "x": [0.0, 1.0, 2.0],
+            "y": [10.0, 20.0, np.nan],
+            "training_row": [True, True, False],
+        }
+    )
+
+    fitted = QRF().fit(
+        train,
+        predictors=["x"],
+        imputed_variables=["y"],
+        row_filter="training_row",
+        not_numeric_categorical=["x"],
+        n_estimators=10,
+    )
+
+    predictions = fitted.predict(pd.DataFrame({"x": [1.5]}), quantiles=[0.5])
+
+    assert not predictions[0.5].isna().any().any()
+
+
+def test_qrf_target_filters_reject_unknown_targets(simple_data: pd.DataFrame) -> None:
+    with pytest.raises(ValueError, match="target_filters contains variables"):
+        QRF().fit(
+            simple_data,
+            predictors=["x1", "x2"],
+            imputed_variables=["y"],
+            target_filters={"missing": [True] * len(simple_data)},
+        )
+
+
+def test_qrf_target_filters_apply_before_max_train_samples() -> None:
+    train = pd.DataFrame(
+        {
+            "x": np.arange(50, dtype=float),
+            "y": np.nan,
+            "y_observed": False,
+        }
+    )
+    train.loc[[45, 46, 47], "y"] = [100.0, 110.0, 120.0]
+    train.loc[[45, 46, 47], "y_observed"] = True
+
+    fitted = QRF(max_train_samples=5).fit(
+        train,
+        predictors=["x"],
+        imputed_variables=["y"],
+        target_filters={"y": "y_observed"},
+        not_numeric_categorical=["x"],
+        n_estimators=10,
+    )
+
+    predictions = fitted.predict(pd.DataFrame({"x": [46.0]}), quantiles=[0.5])
+
+    assert not predictions[0.5]["y"].isna().any()
+
+
 def test_qrf_stochastic_median_is_unbiased() -> None:
     """Regression test for the quantile-grid bias bug (#2): the mean of many
     stochastic median predictions must approximate the true median (q=0.5)

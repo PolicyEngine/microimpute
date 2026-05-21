@@ -567,6 +567,8 @@ class QRF(Imputer):
     The underlying QRF implementation is from the quantile_forest package.
     """
 
+    supports_target_filters = True
+
     def __init__(
         self,
         log_level: Optional[str] = "WARNING",
@@ -738,6 +740,65 @@ class QRF(Imputer):
             # Regular QRF fit
             model.fit(X, y, sample_weight=sample_weight, **model_params)
 
+    def _target_fit_data(
+        self,
+        X_train: pd.DataFrame,
+        variable: str,
+        target_fit_masks: Optional[Dict[str, pd.Series]],
+        sample_weight: Optional[np.ndarray],
+    ) -> Tuple[pd.DataFrame, Optional[np.ndarray]]:
+        """Return training rows and weights for one target variable."""
+        if not target_fit_masks or variable not in target_fit_masks:
+            return X_train, sample_weight
+
+        mask = (
+            target_fit_masks[variable].reindex(X_train.index).fillna(False).astype(bool)
+        )
+        if not mask.any():
+            raise ValueError(f"No training rows selected for target '{variable}'")
+
+        target_train = X_train.loc[mask]
+        target_sample_weight = None
+        if sample_weight is not None:
+            target_sample_weight = np.asarray(sample_weight, dtype=float)[
+                mask.to_numpy()
+            ]
+
+        selected_rows = len(target_train)
+        if (
+            self.max_train_samples is not None
+            and len(target_train) > self.max_train_samples
+        ):
+            try:
+                variable_offset = (self.imputed_variables or []).index(variable)
+            except ValueError:
+                variable_offset = 0
+            seed = None if self.seed is None else self.seed + variable_offset
+            rng = np.random.default_rng(seed)
+            sel = rng.choice(
+                len(target_train), size=self.max_train_samples, replace=False
+            )
+            target_train = target_train.iloc[sel]
+            if target_sample_weight is not None:
+                target_sample_weight = target_sample_weight[sel]
+            self.logger.info(
+                "Subsampling target '%s' training data from %d to %d rows",
+                variable,
+                selected_rows,
+                self.max_train_samples,
+            )
+
+        dropped = len(X_train) - selected_rows
+        if dropped:
+            self.logger.info(
+                "Target filter for '%s' selected %d/%d training rows",
+                variable,
+                selected_rows,
+                len(X_train),
+            )
+
+        return target_train, target_sample_weight
+
     def _get_memory_usage_info(self) -> str:
         """Get formatted memory usage information."""
         if PSUTIL_AVAILABLE:
@@ -759,6 +820,7 @@ class QRF(Imputer):
         constant_targets: Optional[Dict[str, Dict]] = None,
         tune_hyperparameters: bool = False,
         sample_weight: Optional[np.ndarray] = None,
+        target_fit_masks: Optional[Dict[str, pd.Series]] = None,
         **qrf_kwargs: Any,
     ) -> QRFResults:
         """Fit the QRF model to the training data.
@@ -779,10 +841,17 @@ class QRF(Imputer):
             RuntimeError: If model fitting fails.
         """
         try:
+            target_fit_masks = target_fit_masks or {}
+            if tune_hyperparameters and target_fit_masks:
+                raise NotImplementedError(
+                    "QRF target_filters are not supported with tune_hyperparameters"
+                )
+
             # Subsample training data if max_train_samples is set
             if (
                 self.max_train_samples is not None
                 and len(X_train) > self.max_train_samples
+                and not target_fit_masks
             ):
                 self.logger.info(
                     f"Subsampling training data from "
@@ -893,12 +962,18 @@ class QRF(Imputer):
 
                             # Create appropriate model based on variable type
                             model = self._create_model_for_variable(variable)
+                            target_train, target_sample_weight = self._target_fit_data(
+                                X_train,
+                                variable,
+                                target_fit_masks,
+                                sample_weight,
+                            )
                             self._fit_model(
                                 model,
-                                X_train[encoded_predictors],
-                                X_train[variable],
+                                target_train[encoded_predictors],
+                                target_train[variable],
                                 variable,
-                                sample_weight=sample_weight,
+                                sample_weight=target_sample_weight,
                                 **qrf_kwargs,
                             )
 
@@ -997,6 +1072,7 @@ class QRF(Imputer):
                             qrf_kwargs,
                             constant_targets,
                             sample_weight=sample_weight,
+                            target_fit_masks=target_fit_masks,
                         )
 
                         # Memory cleanup after each batch
@@ -1051,12 +1127,18 @@ class QRF(Imputer):
                         model = self._create_model_for_variable(variable)
 
                         try:
+                            target_train, target_sample_weight = self._target_fit_data(
+                                X_train,
+                                variable,
+                                target_fit_masks,
+                                sample_weight,
+                            )
                             self._fit_model(
                                 model,
-                                X_train[encoded_predictors],
-                                X_train[variable],
+                                target_train[encoded_predictors],
+                                target_train[variable],
                                 variable,
-                                sample_weight=sample_weight,
+                                sample_weight=target_sample_weight,
                                 **qrf_kwargs,
                             )
 
@@ -1135,6 +1217,7 @@ class QRF(Imputer):
         qrf_kwargs: Dict[str, Any],
         constant_targets: Optional[Dict[str, Dict]] = None,
         sample_weight: Optional[np.ndarray] = None,
+        target_fit_masks: Optional[Dict[str, pd.Series]] = None,
     ) -> None:
         """Fit models for a batch of variables.
 
@@ -1165,12 +1248,16 @@ class QRF(Imputer):
             current_predictors = _get_sequential_predictors(
                 predictors, imputed_variables, i
             )
+            dummy_processor = getattr(self, "dummy_processor", None)
+            encoded_predictors = self._get_encoded_predictors(
+                current_predictors, dummy_processor
+            )
 
             # Log detailed pre-imputation information
             self.logger.info(
                 f"[{i + 1}/{len(imputed_variables)}] Starting imputation for '{variable}'"
             )
-            self.logger.info(f"  Features: {len(current_predictors)} predictors")
+            self.logger.info(f"  Features: {len(encoded_predictors)} predictors")
             self.logger.info(f"  Memory usage: {self._get_memory_usage_info()}")
 
             # Create and fit model
@@ -1178,12 +1265,18 @@ class QRF(Imputer):
             model = self._create_model_for_variable(variable)
 
             try:
+                target_train, target_sample_weight = self._target_fit_data(
+                    X_train,
+                    variable,
+                    target_fit_masks,
+                    sample_weight,
+                )
                 self._fit_model(
                     model,
-                    X_train[current_predictors],
-                    X_train[variable],
+                    target_train[encoded_predictors],
+                    target_train[variable],
                     variable,
-                    sample_weight=sample_weight,
+                    sample_weight=target_sample_weight,
                     **qrf_kwargs,
                 )
 
