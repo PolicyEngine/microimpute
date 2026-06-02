@@ -1,3 +1,14 @@
+## [3.0.0] - 2026-06-02
+
+### Breaking changes
+
+- Removed caller-supplied rare-class thresholds from `ZeroInflatedImputer`; regime detection is now based solely on observed negative, zero, and positive support in the training data.
+
+### Fixed
+
+- Capped `scikit-learn` below 1.9 while `quantile-forest` depends on the pre-1.9 sklearn tree extension API.
+
+
 ## [2.1.1] - 2026-05-21
 
 ### Fixed
