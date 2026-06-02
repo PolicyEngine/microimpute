@@ -1,0 +1,1 @@
+Removed caller-supplied rare-class thresholds from `ZeroInflatedImputer`; regime detection is now based solely on observed negative, zero, and positive support in the training data.

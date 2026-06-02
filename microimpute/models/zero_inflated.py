@@ -35,28 +35,23 @@ two recurring bugs in downstream ecosystems:
 The wrapper is generic over the base imputer — ``QRF`` is the obvious
 default, but ``MDN``, ``OLS``, or ``Matching`` all compose the same way.
 
-Regime detection is parameterized by ``min_class_count`` and
-``min_class_fraction``: a class with fewer observations than both
-thresholds collapses into the closest adjacent regime. This avoids
-fitting a full three-sign split on a variable whose negative tail is
-five outlier rows — the cost-benefit flips toward the simpler
-architecture.
+Regime detection is based only on observed support. If the training data
+contains negative, zero, and positive values, the imputer uses the
+three-sign architecture. Callers do not provide sign/regime metadata.
 """
 
 from __future__ import annotations
 
-import logging
-from typing import Any, Dict, List, Optional, Tuple, Type, Union
+from typing import Any, Dict, List, Optional, Type, Union
 
 import numpy as np
 import pandas as pd
-from pydantic import SkipValidation, validate_call
+from pydantic import validate_call
 
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
 from microimpute.models.imputer import (
     Imputer,
     ImputerResults,
-    _ConstantValueModel,
 )
 from microimpute.models.qrf import QRF
 
@@ -95,19 +90,14 @@ def _make_classifier(kind: str, seed: int):
 def _detect_regime(
     y: np.ndarray,
     *,
-    min_class_count: int,
-    min_class_fraction: float,
     zero_atol: float,
 ) -> str:
     """Classify the training distribution into one of seven regimes.
 
-    A class (neg/zero/pos) counts as present iff its count is at least
-    ``min_class_count`` AND its fraction of total rows is at least
-    ``min_class_fraction``. Below both thresholds, the class collapses
-    into its closest adjacent regime (minority negatives merge into
-    zero → ZI_POSITIVE; minority zeros merge into the majority sign;
-    etc.). This keeps the gate architecture stable in the presence of
-    measurement-error outliers.
+    A class (neg/zero/pos) counts as present when it appears at least
+    once in the training data. Sign support is inferred from donor data;
+    callers cannot force a variable to be positive-only, negative-only,
+    or signed.
     """
     n = len(y)
     if n == 0:
@@ -121,22 +111,12 @@ def _detect_regime(
     n_pos = int(is_pos.sum())
     n_neg = int(is_neg.sum())
 
-    # Apply both thresholds.
-    def _meaningful(count: int) -> bool:
-        return count >= min_class_count and (count / n) >= min_class_fraction
-
-    has_zero = _meaningful(n_zero)
-    has_pos = _meaningful(n_pos)
-    has_neg = _meaningful(n_neg)
+    has_zero = n_zero > 0
+    has_pos = n_pos > 0
+    has_neg = n_neg > 0
 
     if not (has_zero or has_pos or has_neg):
-        # All three classes are below threshold. Pick the one with the
-        # largest raw count as a degenerate fallback.
-        counts = {"zero": n_zero, "pos": n_pos, "neg": n_neg}
-        majority = max(counts, key=counts.get)
-        if majority == "zero":
-            return REGIME_DEGENERATE_ZERO
-        return REGIME_POSITIVE_ONLY if majority == "pos" else REGIME_NEGATIVE_ONLY
+        return REGIME_DEGENERATE_ZERO
 
     if has_pos and has_neg and has_zero:
         return REGIME_THREE_SIGN
@@ -161,11 +141,6 @@ class ZeroInflatedImputer(Imputer):
             regression step. Defaults to ``QRF``.
         base_imputer_kwargs: Keyword arguments forwarded to the base
             imputer constructor. ``{}`` by default.
-        min_class_count: Minimum raw count per class (neg/0/pos) for
-            that class to be considered present. Below this, the class
-            collapses into an adjacent regime. Defaults to 10.
-        min_class_fraction: Minimum fraction of total rows per class
-            for that class to be considered present. Defaults to 0.01.
         zero_atol: Absolute tolerance for "equals zero" in the regime
             detector. Defaults to 1e-6, matching the upstream
             ``_MultiSourceBase`` convention.
@@ -179,8 +154,6 @@ class ZeroInflatedImputer(Imputer):
         self,
         base_imputer_class: Optional[Type[Imputer]] = None,
         base_imputer_kwargs: Optional[Dict[str, Any]] = None,
-        min_class_count: int = 10,
-        min_class_fraction: float = 0.01,
         zero_atol: float = 1e-6,
         classifier_type: str = "hist_gb",
         seed: Optional[int] = RANDOM_STATE,
@@ -189,8 +162,6 @@ class ZeroInflatedImputer(Imputer):
         super().__init__(seed=seed, log_level=log_level)
         self.base_imputer_class = base_imputer_class or QRF
         self.base_imputer_kwargs = dict(base_imputer_kwargs or {})
-        self.min_class_count = int(min_class_count)
-        self.min_class_fraction = float(min_class_fraction)
         self.zero_atol = float(zero_atol)
         self.classifier_type = classifier_type
 
@@ -267,8 +238,6 @@ class ZeroInflatedImputer(Imputer):
             y = X_train[var].to_numpy(dtype=float, copy=False)
             regime = _detect_regime(
                 y,
-                min_class_count=self.min_class_count,
-                min_class_fraction=self.min_class_fraction,
                 zero_atol=self.zero_atol,
             )
             self._regimes[var] = regime

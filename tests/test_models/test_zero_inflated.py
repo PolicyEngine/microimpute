@@ -25,17 +25,14 @@ so they run in under a second each — the correctness axes are:
 2. Predictions respect the detected regime (no zero leaks, no
    sign-interpolation between positive and negative regimes).
 3. Fit/predict lifecycle matches the base `Imputer` contract.
-4. Rare-class thresholds: tiny negative tails don't trigger a full
-   three-sign split unless above a configurable minimum.
+4. Pure support detection: any observed negative, zero, or positive
+   support participates in regime selection.
 """
 
 from __future__ import annotations
 
-from typing import Dict, List
-
 import numpy as np
 import pandas as pd
-import pytest
 
 from microimpute.models.qrf import QRF
 
@@ -136,14 +133,12 @@ class TestRegimeDetection:
         imputer.fit(data, predictors=["age", "income_bin"], imputed_variables=["y"])
         assert imputer.get_regime("y") == "DEGENERATE_ZERO"
 
-    def test_rare_negative_tail_stays_zi_positive(self) -> None:
-        """If negative-class count is below min_class_count, treat as ZI_POSITIVE.
+    def test_rare_negative_tail_triggers_three_sign(self) -> None:
+        """Any observed negative support participates in auto detection.
 
         Capital gains example: 97% zero, 2.9% positive, 0.1% negative.
-        The negative mass is real but below the 10-sample threshold on
-        a 500-record fixture. Should NOT trigger three-sign; instead
-        collapses to ZI_POSITIVE with the few negatives discarded from
-        the base imputer's fit (and a warning).
+        The negative mass is real and should trigger THREE_SIGN without
+        caller-supplied support/sign metadata.
         """
         from microimpute.models.zero_inflated import ZeroInflatedImputer
 
@@ -152,15 +147,16 @@ class TestRegimeDetection:
         u = rng.random(n)
         y = np.zeros(n)
         pos_mask = u > 0.971
-        neg_mask = (u > 0.970) & (u <= 0.971)
         y[pos_mask] = rng.exponential(100, size=pos_mask.sum())
-        y[neg_mask] = -rng.exponential(50, size=neg_mask.sum())
-        assert (y < 0).sum() < 10, "fixture precondition"
+        y[0] = -50.0
+        assert (y < 0).sum() == 1, "fixture precondition"
+        assert (y > 0).sum() > 0, "fixture precondition"
+        assert (y == 0).sum() > 0, "fixture precondition"
 
         data = _deterministic_frame(n, y)
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF, min_class_count=10)
+        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
         imputer.fit(data, predictors=["age", "income_bin"], imputed_variables=["y"])
-        assert imputer.get_regime("y") == "ZI_POSITIVE"
+        assert imputer.get_regime("y") == "THREE_SIGN"
 
 
 class TestPredictionsRespectRegime:

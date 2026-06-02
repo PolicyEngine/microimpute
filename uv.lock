@@ -1117,7 +1117,7 @@ requires-dist = [
     { name = "requests", specifier = ">=2.32.0,<3.0.0" },
     { name = "rpy2", marker = "extra == 'matching'", specifier = ">=3.5.0,<4.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },
-    { name = "scikit-learn", specifier = ">=1.7.0,<2.0.0" },
+    { name = "scikit-learn", specifier = ">=1.7.0,<1.9.0" },
     { name = "scipy", specifier = ">=1.16.0,<2.0.0" },
     { name = "statsmodels", specifier = ">=0.14.5,<0.16.0" },
     { name = "torch", marker = "extra == 'mdn'", specifier = ">=2.0.0" },
