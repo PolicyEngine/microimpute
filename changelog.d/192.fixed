@@ -1,0 +1,1 @@
+Capped `scikit-learn` below 1.9 while `quantile-forest` depends on the pre-1.9 sklearn tree extension API.
