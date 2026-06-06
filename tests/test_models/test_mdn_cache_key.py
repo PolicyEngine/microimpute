@@ -44,9 +44,9 @@ def test_generate_data_hash_is_order_sensitive() -> None:
     X_perm = X.iloc[[3, 1, 0, 2]].reset_index(drop=True)
     y_perm = y.iloc[[3, 1, 0, 2]].reset_index(drop=True)
 
-    assert _generate_data_hash(X, y) != _generate_data_hash(X_perm, y_perm), (
-        "Permuted rows must produce a different cache key"
-    )
+    assert _generate_data_hash(X, y) != _generate_data_hash(
+        X_perm, y_perm
+    ), "Permuted rows must produce a different cache key"
 
 
 def test_generate_data_hash_avoids_sum_collision() -> None:
@@ -75,7 +75,9 @@ def test_generate_data_hash_differs_across_random_datasets() -> None:
         X = pd.DataFrame(rng.normal(size=(20, 3)), columns=["a", "b", "c"])
         y = pd.Series(rng.normal(size=20), name="target")
         hashes.add(_generate_data_hash(X, y))
-    assert len(hashes) == 50, "50 random datasets should produce 50 distinct cache keys"
+    assert (
+        len(hashes) == 50
+    ), "50 random datasets should produce 50 distinct cache keys"
 
 
 def test_generate_cache_key_integrates_data_hash() -> None:

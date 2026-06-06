@@ -12,10 +12,8 @@ import pytest
 from sklearn.datasets import make_classification, make_regression
 
 from microimpute.evaluations.predictor_analysis import (
-    compute_predictor_correlations,
-    leave_one_out_analysis,
-    progressive_predictor_inclusion,
-)
+    compute_predictor_correlations, leave_one_out_analysis,
+    progressive_predictor_inclusion)
 from microimpute.models import OLS, QRF, QuantReg
 
 
@@ -67,17 +65,23 @@ def sample_mixed_data():
             "numeric_1": np.random.randn(n_samples),
             "numeric_2": np.random.randn(n_samples) * 2 + 5,
             "numeric_3": np.random.exponential(2, n_samples),
-            "categorical_1": np.random.choice(["cat_A", "cat_B", "cat_C"], n_samples),
+            "categorical_1": np.random.choice(
+                ["cat_A", "cat_B", "cat_C"], n_samples
+            ),
             "categorical_2": np.random.choice(["X", "Y", "Z", "W"], n_samples),
             "binary_1": np.random.choice([True, False], n_samples),
             "binary_2": np.random.choice([0, 1], n_samples),
             "target_numeric": np.random.randn(n_samples) * 3,
-            "target_categorical": np.random.choice(["class_1", "class_2"], n_samples),
+            "target_categorical": np.random.choice(
+                ["class_1", "class_2"], n_samples
+            ),
         }
     )
 
     # Create some correlation
-    data["numeric_2"] = data["numeric_1"] * 0.7 + np.random.randn(n_samples) * 0.5
+    data["numeric_2"] = (
+        data["numeric_1"] * 0.7 + np.random.randn(n_samples) * 0.5
+    )
     data["target_numeric"] = (
         data["numeric_1"] * 0.5
         + data["numeric_2"] * 0.3
@@ -210,7 +214,9 @@ class TestComputePredictorCorrelations:
             len(imputed_variables),
         )
         assert list(results["predictor_target_mi"].index) == predictors
-        assert list(results["predictor_target_mi"].columns) == imputed_variables
+        assert (
+            list(results["predictor_target_mi"].columns) == imputed_variables
+        )
 
         # Check values are in valid range [0, 1] (normalized MI)
         mi_values = results["predictor_target_mi"].values
@@ -218,14 +224,25 @@ class TestComputePredictorCorrelations:
 
         # Check that numeric_1 and numeric_2 have non-zero MI with target_numeric
         # (since we created correlation in the fixture)
-        assert results["predictor_target_mi"].loc["numeric_1", "target_numeric"] > 0
-        assert results["predictor_target_mi"].loc["numeric_2", "target_numeric"] > 0
+        assert (
+            results["predictor_target_mi"].loc["numeric_1", "target_numeric"]
+            > 0
+        )
+        assert (
+            results["predictor_target_mi"].loc["numeric_2", "target_numeric"]
+            > 0
+        )
 
         # Check that binary_1 has non-zero MI with target_numeric
         # (it's part of the target calculation)
-        assert results["predictor_target_mi"].loc["binary_1", "target_numeric"] > 0
+        assert (
+            results["predictor_target_mi"].loc["binary_1", "target_numeric"]
+            > 0
+        )
 
-    def test_predictor_target_mi_only_with_mutual_info_method(self, sample_mixed_data):
+    def test_predictor_target_mi_only_with_mutual_info_method(
+        self, sample_mixed_data
+    ):
         """Test that predictor-target MI is only computed when mutual_info is requested."""
         predictors = ["numeric_1", "numeric_2"]
         imputed_variables = ["target_numeric"]
@@ -395,7 +412,9 @@ class TestProgressivePredictorInclusion:
 
         # Check inclusion order from DataFrame
         assert len(results_df) <= 3
-        assert all(pred in predictors for pred in results_df["predictor_added"])
+        assert all(
+            pred in predictors for pred in results_df["predictor_added"]
+        )
 
         # Check step numbering is correct
         assert list(results_df["step"]) == list(range(1, len(results_df) + 1))
@@ -410,7 +429,9 @@ class TestProgressivePredictorInclusion:
         assert len(results["optimal_subset"]) <= 3
         assert results["optimal_loss"] > 0  # Should be a positive loss value
 
-    def test_progressive_inclusion_all_predictors(self, sample_regression_data):
+    def test_progressive_inclusion_all_predictors(
+        self, sample_regression_data
+    ):
         """Test progressive inclusion using all predictors."""
         predictors = ["feature_1", "feature_2", "feature_3"]
         imputed_variables = ["target"]
@@ -456,7 +477,9 @@ class TestProgressivePredictorInclusion:
         # Check that values are valid
         assert (results_df["avg_quantile_loss"] >= 0).all()
         assert (results_df["avg_log_loss"] >= 0).all()
-        assert results_df["step"].tolist() == list(range(1, len(results_df) + 1))
+        assert results_df["step"].tolist() == list(
+            range(1, len(results_df) + 1)
+        )
 
 
 class TestIntegration:
@@ -472,7 +495,8 @@ class TestIntegration:
             data=sample_mixed_data, predictors=predictors, method="all"
         )
         assert all(
-            key in correlations for key in ["pearson", "spearman", "mutual_info"]
+            key in correlations
+            for key in ["pearson", "spearman", "mutual_info"]
         )
 
         # 2. Leave-one-out analysis

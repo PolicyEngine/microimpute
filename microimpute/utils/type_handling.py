@@ -42,9 +42,9 @@ class VariableTypeDetector:
     @staticmethod
     def is_categorical_variable(series: pd.Series) -> bool:
         """Check if a series represents categorical string/object data."""
-        return pd.api.types.is_string_dtype(series) or pd.api.types.is_object_dtype(
+        return pd.api.types.is_string_dtype(
             series
-        )
+        ) or pd.api.types.is_object_dtype(series)
 
     @staticmethod
     def is_numeric_categorical_variable(
@@ -94,8 +94,9 @@ class VariableTypeDetector:
             return "categorical", series.unique().tolist()
 
         # Check if it would normally be numeric_categorical
-        if not force_numeric and VariableTypeDetector.is_numeric_categorical_variable(
-            series
+        if (
+            not force_numeric
+            and VariableTypeDetector.is_numeric_categorical_variable(series)
         ):
             categories = [float(i) for i in series.unique().tolist()]
             logger.info(
@@ -104,8 +105,9 @@ class VariableTypeDetector:
             return "numeric_categorical", categories
 
         # If force_numeric is True or it's not numeric_categorical, treat as numeric
-        if force_numeric and VariableTypeDetector.is_numeric_categorical_variable(
-            series
+        if (
+            force_numeric
+            and VariableTypeDetector.is_numeric_categorical_variable(series)
         ):
             logger.info(
                 f"Variable '{col_name}' forced to be treated as numeric (override numeric_categorical detection)"
@@ -120,7 +122,9 @@ class DummyVariableProcessor:
     def __init__(self, logger: logging.Logger):
         self.logger = logger
         self.dummy_mapping = {}  # Maps original column to dummy columns
-        self.imputed_var_dummy_mapping = {}  # Pre-computed dummy info for imputed vars
+        self.imputed_var_dummy_mapping = (
+            {}
+        )  # Pre-computed dummy info for imputed vars
         # Full training-time level set per categorical predictor column.
         # Used by apply_dummy_encoding_to_test to detect categories that
         # appear only at test time (which otherwise silently collapse to
@@ -192,7 +196,9 @@ class DummyVariableProcessor:
                     dtype="float64",
                     drop_first=True,
                 )
-                dummy_cols = [c for c in dummy_df.columns if c.startswith(f"{col}_")]
+                dummy_cols = [
+                    c for c in dummy_df.columns if c.startswith(f"{col}_")
+                ]
 
                 # Store pre-computed dummy info
                 self.imputed_var_dummy_mapping[col] = {
@@ -226,7 +232,9 @@ class DummyVariableProcessor:
             # Track mapping for each original column
             for orig_col in categorical_predictors:
                 dummy_cols = [
-                    col for col in dummy_df.columns if col.startswith(f"{orig_col}_")
+                    col
+                    for col in dummy_df.columns
+                    if col.startswith(f"{orig_col}_")
                 ]
                 self.dummy_mapping[orig_col] = dummy_cols
                 # Record ALL training levels (including the dropped
@@ -251,10 +259,14 @@ class DummyVariableProcessor:
         # Convert boolean predictors to float (but keep as single column)
         for col in predictors:
             if col in data.columns:
-                var_type, _ = detector.categorize_variable(data[col], col, self.logger)
+                var_type, _ = detector.categorize_variable(
+                    data[col], col, self.logger
+                )
                 if var_type == "bool":
                     data[col] = data[col].astype("float64")
-                    self.logger.debug(f"Converted boolean predictor '{col}' to float64")
+                    self.logger.debug(
+                        f"Converted boolean predictor '{col}' to float64"
+                    )
 
         return data, updated_predictors
 
@@ -320,7 +332,9 @@ class DummyVariableProcessor:
 
         return data
 
-    def get_sequential_predictor_columns(self, variables: List[str]) -> List[str]:
+    def get_sequential_predictor_columns(
+        self, variables: List[str]
+    ) -> List[str]:
         """
         Get correct column names for sequential predictors.
 
@@ -384,7 +398,9 @@ class DummyVariableProcessor:
                 # categories.
                 training_levels = self.predictor_training_levels.get(orig_col)
                 if training_levels is not None:
-                    test_levels = set(map(str, data[orig_col].dropna().unique()))
+                    test_levels = set(
+                        map(str, data[orig_col].dropna().unique())
+                    )
                     unseen = test_levels - training_levels
                     if unseen:
                         warnings.warn(
@@ -428,7 +444,9 @@ class DummyVariableProcessor:
         # Convert boolean predictors to float
         for col in predictors:
             if col in data.columns:
-                var_type, _ = detector.categorize_variable(data[col], col, self.logger)
+                var_type, _ = detector.categorize_variable(
+                    data[col], col, self.logger
+                )
                 if var_type == "bool":
                     data[col] = data[col].astype("float64")
 

@@ -13,7 +13,5 @@ Key components:
 
 from microimpute.evaluations.cross_validation import cross_validate_model
 from microimpute.evaluations.predictor_analysis import (
-    compute_predictor_correlations,
-    leave_one_out_analysis,
-    progressive_predictor_inclusion,
-)
+    compute_predictor_correlations, leave_one_out_analysis,
+    progressive_predictor_inclusion)

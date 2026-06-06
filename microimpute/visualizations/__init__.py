@@ -13,12 +13,7 @@ Key components:
 
 # Import from comparison_plots module
 from microimpute.visualizations.comparison_plots import (
-    MethodComparisonResults,
-    method_comparison_results,
-)
-
+    MethodComparisonResults, method_comparison_results)
 # Import from performance_plots module
 from microimpute.visualizations.performance_plots import (
-    PerformanceResults,
-    model_performance_results,
-)
+    PerformanceResults, model_performance_results)

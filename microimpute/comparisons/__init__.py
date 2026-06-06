@@ -14,26 +14,16 @@ Key components:
 
 # Import automated imputation utilities
 from microimpute.comparisons.autoimpute import AutoImputeResult, autoimpute
-
 # Import imputation utilities
 from microimpute.comparisons.imputations import get_imputations
-
 # Import loss/metric functions
-from microimpute.comparisons.metrics import (
-    compare_distributions,
-    compare_metrics,
-    compute_loss,
-    get_metric_for_variable_type,
-    kl_divergence,
-    log_loss,
-    quantile_loss,
-    wasserstein_distance,
-)
-
+from microimpute.comparisons.metrics import (compare_distributions,
+                                             compare_metrics, compute_loss,
+                                             get_metric_for_variable_type,
+                                             kl_divergence, log_loss,
+                                             quantile_loss,
+                                             wasserstein_distance)
 # Import validation utilities
 from microimpute.comparisons.validation import (
-    validate_columns_exist,
-    validate_dataframe_compatibility,
-    validate_imputation_inputs,
-    validate_quantiles,
-)
+    validate_columns_exist, validate_dataframe_compatibility,
+    validate_imputation_inputs, validate_quantiles)

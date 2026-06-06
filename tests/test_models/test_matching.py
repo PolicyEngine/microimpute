@@ -103,9 +103,9 @@ def test_matching_quantile_invariance(simple_data: pd.DataFrame) -> None:
         val_01 = predictions[0.1]["y"].iloc[i]
         val_05 = predictions[0.5]["y"].iloc[i]
         val_09 = predictions[0.9]["y"].iloc[i]
-        assert val_01 == val_05 == val_09, (
-            "Matching should return same value for all quantiles"
-        )
+        assert (
+            val_01 == val_05 == val_09
+        ), "Matching should return same value for all quantiles"
 
 
 def test_matching_donor_preservation(simple_data: pd.DataFrame) -> None:
@@ -119,9 +119,9 @@ def test_matching_donor_preservation(simple_data: pd.DataFrame) -> None:
 
     # The predicted value should be from the training set
     predicted_value = predictions[0.5]["y"].iloc[0]
-    assert predicted_value in X_train["y"].values, (
-        "Matched value should be from donor pool"
-    )
+    assert (
+        predicted_value in X_train["y"].values
+    ), "Matched value should be from donor pool"
 
 
 # === Distance Functions Tests ===
@@ -144,7 +144,9 @@ def test_matching_different_distance_functions() -> None:
 
     for dist_fun in distance_functions:
         model = Matching()
-        fitted_model = model.fit(X_train, ["x1", "x2"], ["y"], dist_fun=dist_fun)
+        fitted_model = model.fit(
+            X_train, ["x1", "x2"], ["y"], dist_fun=dist_fun
+        )
 
         predictions = fitted_model.predict(X_test[:5], quantiles=[0.5])
 
@@ -326,7 +328,9 @@ def test_matching_hyperparameter_tuning(diabetes_data: pd.DataFrame) -> None:
     train_idx = np.random.choice(
         len(diabetes_data), int(0.7 * len(diabetes_data)), replace=False
     )
-    valid_idx = np.array([i for i in range(len(diabetes_data)) if i not in train_idx])
+    valid_idx = np.array(
+        [i for i in range(len(diabetes_data)) if i not in train_idx]
+    )
 
     train_data = diabetes_data.iloc[train_idx].reset_index(drop=True)
     valid_data = diabetes_data.iloc[valid_idx].reset_index(drop=True)
@@ -352,15 +356,22 @@ def test_matching_hyperparameter_tuning(diabetes_data: pd.DataFrame) -> None:
     tuned_mse = {}
 
     for var in imputed_variables:
-        default_mse[var] = mean_squared_error(X_valid[var], default_preds[0.5][var])
-        tuned_mse[var] = mean_squared_error(X_valid[var], tuned_preds[0.5][var])
+        default_mse[var] = mean_squared_error(
+            X_valid[var], default_preds[0.5][var]
+        )
+        tuned_mse[var] = mean_squared_error(
+            X_valid[var], tuned_preds[0.5][var]
+        )
 
     # Both should produce valid results
     assert all(mse < np.inf for mse in default_mse.values())
     assert all(mse < np.inf for mse in tuned_mse.values())
 
     # Check hyperparameters if available
-    if hasattr(tuned_fitted, "hyperparameters") and tuned_fitted.hyperparameters:
+    if (
+        hasattr(tuned_fitted, "hyperparameters")
+        and tuned_fitted.hyperparameters
+    ):
         if "dist_fun" in tuned_fitted.hyperparameters:
             assert tuned_fitted.hyperparameters["dist_fun"] in [
                 "Manhattan",
@@ -430,5 +441,7 @@ def test_matching_preserves_relationships() -> None:
     # Each prediction should come from the same donor row
     for i in range(len(pred_y1)):
         # Find which donor row was matched
-        donor_mask = (X_train["y1"] == pred_y1[i]) & (X_train["y2"] == pred_y2[i])
+        donor_mask = (X_train["y1"] == pred_y1[i]) & (
+            X_train["y2"] == pred_y2[i]
+        )
         assert donor_mask.any(), "Predictions should come from same donor row"

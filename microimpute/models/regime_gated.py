@@ -1,4 +1,4 @@
-"""Regime-aware zero-inflation wrapper around base imputers.
+"""Regime-gated imputation wrapper around base imputers.
 
 Tabular microdata variables often fall into distinct *regimes* based on
 which of {negative, zero, positive} values appear in the training data.
@@ -17,7 +17,7 @@ two recurring bugs in downstream ecosystems:
    ``max(train_negatives)`` and ``min(train_positives)``, which is
    not a region any actual record occupies.
 
-``ZeroInflatedImputer`` wraps any base ``Imputer`` and:
+``Imputer`` wraps any base imputer and:
 
 - Detects the regime automatically at fit time from the training
   distribution — no per-variable hand configuration required.
@@ -42,6 +42,7 @@ three-sign architecture. Callers do not provide sign/regime metadata.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Type, Union
 
 import numpy as np
@@ -49,7 +50,7 @@ import pandas as pd
 from pydantic import validate_call
 
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
-from microimpute.models.imputer import Imputer, ImputerResults
+from microimpute.models.imputer import BaseImputer, ImputerResults
 from microimpute.models.qrf import QRF
 
 # Regime labels. Kept as module-level constants so downstream code can
@@ -133,11 +134,85 @@ def _detect_regime(
     return REGIME_DEGENERATE_ZERO
 
 
-class ZeroInflatedImputer(Imputer):
-    """Imputer that wraps a base Imputer with regime-aware zero-gating.
+# Used when sign-regime gating is turned off: a single base imputer over
+# the full training set, no gate.
+REGIME_NO_GATE = "NO_GATE"
+
+
+def _fit_metrics(y: np.ndarray, *, zero_atol: float) -> Dict[str, int]:
+    """Per-variable training-support counts, captured at fit time."""
+    return {
+        "n_train": int(len(y)),
+        "n_negative": int((y < -zero_atol).sum()),
+        "n_zero": int((np.abs(y) <= zero_atol).sum()),
+        "n_positive": int((y > zero_atol).sum()),
+    }
+
+
+@dataclass(frozen=True)
+class VariableLineage:
+    """Provenance for one imputed variable: how it was modelled.
+
+    Attributes:
+        variable: The imputed target name.
+        regime: Detected sign regime (or ``NO_GATE`` when sign-regime
+            gating is disabled).
+        predictors: Predictor columns used, in order — the original
+            predictors followed by the previously-imputed targets this
+            variable was chained on.
+        fit_metrics: Training-support counts (``n_train``, ``n_negative``,
+            ``n_zero``, ``n_positive``).
+        models: The fitted pieces by role (``gate``, ``base``,
+            ``positive_base``, ``negative_base``) for full introspection.
+        feature_importances: Per-role ``{predictor: importance}`` maps
+            where the underlying model exposes them (QRF / RF); ``None``
+            for roles whose model has no importances.
+    """
+
+    variable: str
+    regime: str
+    predictors: List[str]
+    fit_metrics: Dict[str, int]
+    models: Dict[str, Any]
+    feature_importances: Dict[str, Optional[Dict[str, float]]]
+
+
+def _model_feature_importances(
+    model: Any, variable: str, predictors: List[str]
+) -> Optional[Dict[str, float]]:
+    """Best-effort ``{predictor: importance}`` for a fitted piece.
+
+    Handles a QRF base ``ImputerResults`` (per-variable
+    ``RandomForestQuantileRegressor``) and bare sklearn classifiers (the
+    gate). Returns ``None`` when no importances are exposed.
+    """
+    try:
+        importances = None
+        names: List[str] = list(predictors)
+        base_models = getattr(model, "models", None)
+        if isinstance(base_models, dict) and variable in base_models:
+            inner = getattr(base_models[variable], "qrf", None)
+            importances = getattr(inner, "feature_importances_", None)
+            base_predictors = getattr(model, "predictors", None)
+            if base_predictors:
+                names = list(base_predictors)
+        if importances is None:
+            importances = getattr(model, "feature_importances_", None)
+        if importances is None:
+            return None
+        importances = np.asarray(importances, dtype=float).ravel()
+        if len(names) != len(importances):
+            return None
+        return {n: float(v) for n, v in zip(names, importances)}
+    except Exception:
+        return None
+
+
+class Imputer(BaseImputer):
+    """BaseImputer that wraps a base BaseImputer with regime-aware zero-gating.
 
     Args:
-        base_imputer_class: ``Imputer`` subclass to use for the nonzero
+        base_imputer_class: ``BaseImputer`` subclass to use for the nonzero
             regression step. Defaults to ``QRF``.
         base_imputer_kwargs: Keyword arguments forwarded to the base
             imputer constructor. ``{}`` by default.
@@ -152,20 +227,20 @@ class ZeroInflatedImputer(Imputer):
 
     def __init__(
         self,
-        base_imputer_class: Optional[Type[Imputer]] = None,
+        base_imputer_class: Optional[Type[BaseImputer]] = None,
         base_imputer_kwargs: Optional[Dict[str, Any]] = None,
+        signregime: bool = True,
         zero_atol: float = 1e-6,
         classifier_type: str = "hist_gb",
-        sequential: bool = True,
         seed: Optional[int] = RANDOM_STATE,
         log_level: Optional[str] = "WARNING",
     ) -> None:
         super().__init__(seed=seed, log_level=log_level)
         self.base_imputer_class = base_imputer_class or QRF
         self.base_imputer_kwargs = dict(base_imputer_kwargs or {})
+        self.signregime = bool(signregime)
         self.zero_atol = float(zero_atol)
         self.classifier_type = classifier_type
-        self.sequential = bool(sequential)
 
         # Filled in during fit().
         self._regimes: Dict[str, str] = {}
@@ -174,7 +249,7 @@ class ZeroInflatedImputer(Imputer):
     def _fit(self, *args: Any, **kwargs: Any) -> Any:
         """Abstract-method placeholder; this class overrides ``fit`` directly."""
         raise NotImplementedError(
-            "ZeroInflatedImputer overrides `fit` directly; `_fit` is not used."
+            "Imputer overrides `fit` directly; `_fit` is not used."
         )
 
     def get_regime(self, variable: str) -> str:
@@ -202,13 +277,13 @@ class ZeroInflatedImputer(Imputer):
         are handled per-variable: regime detection, then composition
         of gate + base imputer(s) as appropriate.
 
-        Returns a ``ZeroInflatedImputerResults`` that routes
+        Returns a ``RegimeGatedImputerResults`` that routes
         predictions through each target's regime-specific pipeline.
         """
         self._validate_data(X_train, predictors + imputed_variables)
 
         # Classify target variables as numeric / categorical / boolean /
-        # constant using the base Imputer's detector.
+        # constant using the base BaseImputer's detector.
         self.identify_target_types(
             X_train,
             imputed_variables,
@@ -244,16 +319,12 @@ class ZeroInflatedImputer(Imputer):
         # structure. ``imputed_variables`` order is the chain order; a
         # single-target list is unaffected (no priors to chain on).
         for position, var in enumerate(numeric_targets):
-            seq_predictors = (
-                list(predictors) + numeric_targets[:position]
-                if self.sequential
-                else list(predictors)
-            )
+            seq_predictors = list(predictors) + numeric_targets[:position]
             y = X_train[var].to_numpy(dtype=float, copy=False)
-            regime = _detect_regime(
-                y,
-                zero_atol=self.zero_atol,
-            )
+            if self.signregime:
+                regime = _detect_regime(y, zero_atol=self.zero_atol)
+            else:
+                regime = REGIME_NO_GATE
             self._regimes[var] = regime
             bundle = self._fit_single_numeric(
                 X_train=X_train,
@@ -263,6 +334,7 @@ class ZeroInflatedImputer(Imputer):
                 y=y,
             )
             bundle["predictors"] = list(seq_predictors)
+            bundle["fit_metrics"] = _fit_metrics(y, zero_atol=self.zero_atol)
             self._per_variable[var] = bundle
 
         # Non-numeric (categorical / boolean / constant) targets are
@@ -288,7 +360,7 @@ class ZeroInflatedImputer(Imputer):
         else:
             aux_bundle = None
 
-        return ZeroInflatedImputerResults(
+        return RegimeGatedImputerResults(
             predictors=self.predictors,
             imputed_variables=self.imputed_variables,
             seed=self.seed,
@@ -321,7 +393,11 @@ class ZeroInflatedImputer(Imputer):
         if regime == REGIME_DEGENERATE_ZERO:
             return {"kind": "constant", "value": 0.0}
 
-        if regime in (REGIME_POSITIVE_ONLY, REGIME_NEGATIVE_ONLY):
+        if regime in (
+            REGIME_POSITIVE_ONLY,
+            REGIME_NEGATIVE_ONLY,
+            REGIME_NO_GATE,
+        ):
             # No gate; single base imputer on the full training set.
             return {
                 "kind": "single",
@@ -405,7 +481,7 @@ class ZeroInflatedImputer(Imputer):
         predictors: List[str],
         variable: str,
     ) -> ImputerResults:
-        """Fit a single base Imputer on a (possibly filtered) slice."""
+        """Fit a single base BaseImputer on a (possibly filtered) slice."""
         imputer = self.base_imputer_class(
             log_level="ERROR",
             **self.base_imputer_kwargs,
@@ -417,7 +493,7 @@ class ZeroInflatedImputer(Imputer):
         )
 
 
-class ZeroInflatedImputerResults(ImputerResults):
+class RegimeGatedImputerResults(ImputerResults):
     """Fitted regime-aware imputer ready for prediction."""
 
     def __init__(
@@ -475,6 +551,46 @@ class ZeroInflatedImputerResults(ImputerResults):
                 for q in quantiles
             }
         return self._predict_single_draw(X_test, quantile=None, **kwargs)
+
+    def lineage(self) -> Dict[str, VariableLineage]:
+        """Per-variable provenance: regime, the chained predictor set,
+        training-support metrics, the fitted models, and feature
+        importances where the underlying model exposes them.
+
+        Only numeric (regime-gated) targets are included; non-numeric
+        targets are delegated to a single auxiliary base imputer.
+        """
+        out: Dict[str, VariableLineage] = {}
+        for variable in self.imputed_variables:
+            regime = self._regimes.get(variable)
+            if regime is None:
+                continue
+            bundle = self._per_variable[variable]
+            predictors = list(bundle.get("predictors", self.predictors))
+            models: Dict[str, Any] = {}
+            importances: Dict[str, Optional[Dict[str, float]]] = {}
+            for role, key in (
+                ("base", "base"),
+                ("gate", "classifier"),
+                ("positive_base", "positive_base"),
+                ("negative_base", "negative_base"),
+            ):
+                piece = bundle.get(key)
+                if piece is None:
+                    continue
+                models[role] = piece
+                importances[role] = _model_feature_importances(
+                    piece, variable, predictors
+                )
+            out[variable] = VariableLineage(
+                variable=variable,
+                regime=regime,
+                predictors=predictors,
+                fit_metrics=dict(bundle.get("fit_metrics", {})),
+                models=models,
+                feature_importances=importances,
+            )
+        return out
 
     def _predict_single_draw(
         self,
@@ -689,7 +805,7 @@ class ZeroInflatedImputerResults(ImputerResults):
         but the abstract method still must be satisfied.
         """
         raise NotImplementedError(
-            "ZeroInflatedImputerResults overrides `predict` directly; "
+            "RegimeGatedImputerResults overrides `predict` directly; "
             "`_predict` is not used."
         )
 
@@ -697,11 +813,13 @@ class ZeroInflatedImputerResults(ImputerResults):
 __all__ = [
     "REGIME_DEGENERATE_ZERO",
     "REGIME_NEGATIVE_ONLY",
+    "REGIME_NO_GATE",
     "REGIME_POSITIVE_ONLY",
     "REGIME_SIGN_ONLY",
     "REGIME_THREE_SIGN",
     "REGIME_ZI_NEGATIVE",
     "REGIME_ZI_POSITIVE",
-    "ZeroInflatedImputer",
-    "ZeroInflatedImputerResults",
+    "VariableLineage",
+    "Imputer",
+    "RegimeGatedImputerResults",
 ]

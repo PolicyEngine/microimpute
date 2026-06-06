@@ -10,7 +10,7 @@ from scipy.stats import norm
 from sklearn.linear_model import LogisticRegression
 
 from microimpute.config import VALIDATE_CONFIG
-from microimpute.models.imputer import Imputer, ImputerResults
+from microimpute.models.imputer import BaseImputer, ImputerResults
 
 
 class _LogisticRegressionModel:
@@ -86,7 +86,9 @@ class _LogisticRegressionModel:
         self.classifier = LogisticRegression(**classifier_params)
         fit_kwargs = {}
         if sample_weight is not None:
-            fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
+            fit_kwargs["sample_weight"] = np.asarray(
+                sample_weight, dtype=float
+            )
         self.classifier.fit(X, y_encoded, **fit_kwargs)
 
     def predict(
@@ -220,7 +222,9 @@ class OLSResults(ImputerResults):
             # Classification for categorical/boolean targets
             if return_probs and prob_results is not None:
                 # Get probabilities and classes
-                prob_info = model.predict(X_test[self.predictors], return_probs=True)
+                prob_info = model.predict(
+                    X_test[self.predictors], return_probs=True
+                )
                 prob_results[variable] = prob_info
 
             # Get class predictions
@@ -243,7 +247,9 @@ class OLSResults(ImputerResults):
             mean_preds = np.asarray(prediction.predicted_mean)
             se = np.sqrt(np.maximum(pred_var, 0.0))
             imputed_values = self._predict_quantile(
-                mean_preds=pd.Series(mean_preds, index=X_test.index, name=variable),
+                mean_preds=pd.Series(
+                    mean_preds, index=X_test.index, name=variable
+                ),
                 se=se,
                 mean_quantile=quantile,
                 random_sample=random_sample,
@@ -378,7 +384,9 @@ class OLSResults(ImputerResults):
 
         except Exception as e:
             self.logger.error(f"Error during prediction: {str(e)}")
-            raise RuntimeError(f"Failed to predict with OLS model: {str(e)}") from e
+            raise RuntimeError(
+                f"Failed to predict with OLS model: {str(e)}"
+            ) from e
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict_quantile(
@@ -443,13 +451,21 @@ class OLSResults(ImputerResults):
 
                 # Adjust each mean prediction by the sampled quantile
                 # times its per-row SE (or scalar SE if se is a float).
-                values = mean_preds.values + selected_quantiles * np.asarray(se)
+                values = mean_preds.values + selected_quantiles * np.asarray(
+                    se
+                )
             else:
-                self.logger.info(f"Predicting at specified quantile {q_clipped}")
+                self.logger.info(
+                    f"Predicting at specified quantile {q_clipped}"
+                )
                 specified_quantile = norm.ppf(q_clipped)
-                values = mean_preds.values + specified_quantile * np.asarray(se)
+                values = mean_preds.values + specified_quantile * np.asarray(
+                    se
+                )
 
-            return pd.Series(values, index=mean_preds.index, name=mean_preds.name)
+            return pd.Series(
+                values, index=mean_preds.index, name=mean_preds.name
+            )
 
         except Exception as e:
             if isinstance(e, ValueError):
@@ -462,7 +478,7 @@ class OLSResults(ImputerResults):
             ) from e
 
 
-class OLS(Imputer):
+class OLS(BaseImputer):
     """
     Ordinary Least Squares regression model for imputation.
 
@@ -508,7 +524,9 @@ class OLS(Imputer):
             RuntimeError: If model fitting fails.
         """
         try:
-            self.logger.info(f"Fitting OLS model with {len(predictors)} predictors")
+            self.logger.info(
+                f"Fitting OLS model with {len(predictors)} predictors"
+            )
 
             self.models = {}
 
@@ -531,12 +549,16 @@ class OLS(Imputer):
                 # Choose appropriate model based on variable type
                 if variable in (categorical_targets or {}):
                     # Use logistic regression for categorical targets
-                    model = _LogisticRegressionModel(seed=self.seed, logger=self.logger)
+                    model = _LogisticRegressionModel(
+                        seed=self.seed, logger=self.logger
+                    )
                     model.fit(
                         X_train[predictors],
                         Y,
                         var_type=categorical_targets[variable]["type"],
-                        categories=categorical_targets[variable].get("categories"),
+                        categories=categorical_targets[variable].get(
+                            "categories"
+                        ),
                         sample_weight=sample_weight,
                         **kwargs,
                     )
@@ -545,7 +567,9 @@ class OLS(Imputer):
                     )
                 elif variable in (boolean_targets or {}):
                     # Use logistic regression for boolean targets
-                    model = _LogisticRegressionModel(seed=self.seed, logger=self.logger)
+                    model = _LogisticRegressionModel(
+                        seed=self.seed, logger=self.logger
+                    )
                     model.fit(
                         X_train[predictors],
                         Y,
@@ -560,7 +584,10 @@ class OLS(Imputer):
                     # Use OLS for numeric targets
                     model = _OLSModel(seed=self.seed, logger=self.logger)
                     model.fit(
-                        X_train[predictors], Y, sample_weight=sample_weight, **kwargs
+                        X_train[predictors],
+                        Y,
+                        sample_weight=sample_weight,
+                        **kwargs,
                     )
                     self.logger.info(
                         f"OLS regression fitted for numeric variable {variable}"

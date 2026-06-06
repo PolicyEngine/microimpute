@@ -1,8 +1,8 @@
 """
-Comprehensive test module for the Imputer abstract class and its implementations.
+Comprehensive test module for the BaseImputer abstract class and its implementations.
 
 This module tests the compatibility and interchangeability of different
-imputer models through the common Imputer interface, including edge cases
+imputer models through the common BaseImputer interface, including edge cases
 and error handling.
 """
 
@@ -57,7 +57,9 @@ def data_with_edge_cases() -> pd.DataFrame:
             "constant": np.ones(n_samples),  # Constant predictor
             "binary": np.random.choice([0, 1], n_samples),
             "categorical": np.random.choice(["A", "B", "C"], n_samples),
-            "high_correlation": np.random.randn(n_samples),  # Will be made correlated
+            "high_correlation": np.random.randn(
+                n_samples
+            ),  # Will be made correlated
             "target": np.random.randn(n_samples),
         }
     )
@@ -90,22 +92,22 @@ except ImportError:
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_init_signatures(model_class: Type[Imputer]) -> None:
+def test_init_signatures(model_class: Type[BaseImputer]) -> None:
     """Test that all models can be initialized without required arguments."""
     model = model_class()
-    assert model.predictors is None, (
-        f"{model_class.__name__} should initialize predictors as None"
-    )
-    assert model.imputed_variables is None, (
-        f"{model_class.__name__} should initialize imputed_variables as None"
-    )
+    assert (
+        model.predictors is None
+    ), f"{model_class.__name__} should initialize predictors as None"
+    assert (
+        model.imputed_variables is None
+    ), f"{model_class.__name__} should initialize imputed_variables as None"
 
 
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
 def test_fit_predict_interface(
-    model_class: Type[Imputer], diabetes_data: pd.DataFrame
+    model_class: Type[BaseImputer], diabetes_data: pd.DataFrame
 ) -> None:
     """Test the fit and predict methods for each model."""
     quantiles = QUANTILES
@@ -129,9 +131,9 @@ def test_fit_predict_interface(
     predictions = fitted_model.predict(X_test, quantiles)
 
     # Check prediction format
-    assert isinstance(predictions, dict), (
-        f"{model_class.__name__} predict should return a dictionary"
-    )
+    assert isinstance(
+        predictions, dict
+    ), f"{model_class.__name__} predict should return a dictionary"
     assert set(predictions.keys()).issubset(set(quantiles))
 
     # Check prediction shape
@@ -146,7 +148,7 @@ def test_fit_predict_interface(
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_categorical_variables(model_class: Type[Imputer]) -> None:
+def test_categorical_variables(model_class: Type[BaseImputer]) -> None:
     """Test that models handle categorical variables correctly."""
     np.random.seed(42)
     data = pd.DataFrame(
@@ -180,7 +182,7 @@ def test_categorical_variables(model_class: Type[Imputer]) -> None:
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_boolean_variables(model_class: Type[Imputer]) -> None:
+def test_boolean_variables(model_class: Type[BaseImputer]) -> None:
     """Test that models handle boolean variables correctly."""
     np.random.seed(42)
     data = pd.DataFrame(
@@ -214,7 +216,7 @@ def test_boolean_variables(model_class: Type[Imputer]) -> None:
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
 def test_imputation_bool_targets(
-    model_class: Type[Imputer],
+    model_class: Type[BaseImputer],
 ) -> None:
     """Test imputing boolean target variables."""
     diabetes = load_diabetes()
@@ -242,7 +244,7 @@ def test_imputation_bool_targets(
     "model_class", CATEGORICAL_MODELS, ids=lambda cls: cls.__name__
 )
 def test_imputation_categorical_targets(
-    model_class: Type[Imputer],
+    model_class: Type[BaseImputer],
 ) -> None:
     """Test imputing categorical target variables."""
     diabetes = load_diabetes()
@@ -277,7 +279,9 @@ def test_imputation_categorical_targets(
 
         # Check that we still get the categorical predictions
         assert isinstance(predictions_with_probs[0.5], pd.DataFrame)
-        assert pd.api.types.is_string_dtype(predictions_with_probs[0.5]["categorical"])
+        assert pd.api.types.is_string_dtype(
+            predictions_with_probs[0.5]["categorical"]
+        )
 
         # Check probability format
         prob_info = predictions_with_probs["probabilities"]["categorical"]
@@ -310,7 +314,7 @@ def test_imputation_categorical_targets(
     "model_class", CATEGORICAL_MODELS, ids=lambda cls: cls.__name__
 )
 def test_categorical_return_probs_false(
-    model_class: Type[Imputer],
+    model_class: Type[BaseImputer],
 ) -> None:
     """Test that categorical imputation with return_probs=False returns DataFrame."""
     diabetes = load_diabetes()
@@ -358,7 +362,7 @@ def test_categorical_return_probs_false(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
 def test_single_predictor(
-    model_class: Type[Imputer], simple_data: pd.DataFrame
+    model_class: Type[BaseImputer], simple_data: pd.DataFrame
 ) -> None:
     """Test models with only one predictor."""
     X_train, X_test = preprocess_data(simple_data)
@@ -382,7 +386,7 @@ def test_single_predictor(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
 def test_multiple_targets(
-    model_class: Type[Imputer], diabetes_data: pd.DataFrame
+    model_class: Type[BaseImputer], diabetes_data: pd.DataFrame
 ) -> None:
     """Test models with multiple target variables."""
     predictors = ["age", "sex", "bmi", "bp"]
@@ -398,7 +402,9 @@ def test_multiple_targets(
     model = model_class()
 
     if model_class.__name__ == "QuantReg":
-        fitted = model.fit(X_train, predictors, imputed_variables, quantiles=[0.5])
+        fitted = model.fit(
+            X_train, predictors, imputed_variables, quantiles=[0.5]
+        )
     else:
         fitted = model.fit(X_train, predictors, imputed_variables)
 
@@ -414,7 +420,7 @@ def test_multiple_targets(
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_constant_predictor(model_class: Type[Imputer]) -> None:
+def test_constant_predictor(model_class: Type[BaseImputer]) -> None:
     """Test models with a constant predictor (no variance)."""
     np.random.seed(42)
     data = pd.DataFrame(
@@ -446,7 +452,7 @@ def test_constant_predictor(model_class: Type[Imputer]) -> None:
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_constant_target(model_class: Type[Imputer]) -> None:
+def test_constant_target(model_class: Type[BaseImputer]) -> None:
     """Test models with a constant target variable."""
     np.random.seed(42)
 
@@ -473,7 +479,7 @@ def test_constant_target(model_class: Type[Imputer]) -> None:
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_highly_correlated_predictors(model_class: Type[Imputer]) -> None:
+def test_highly_correlated_predictors(model_class: Type[BaseImputer]) -> None:
     """Test models with highly correlated predictors."""
     np.random.seed(42)
     n_samples = 100
@@ -509,7 +515,7 @@ def test_highly_correlated_predictors(model_class: Type[Imputer]) -> None:
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
 def test_weighted_training(
-    model_class: Type[Imputer], diabetes_data: pd.DataFrame
+    model_class: Type[BaseImputer], diabetes_data: pd.DataFrame
 ) -> None:
     """Ensure models can be trained using sampling weights."""
     X_train, _ = preprocess_data(diabetes_data)
@@ -546,7 +552,9 @@ def test_weighted_training(
                 )
         return
 
-    fitted = model.fit(X_train, predictors, imputed_variables, weight_col="wgt")
+    fitted = model.fit(
+        X_train, predictors, imputed_variables, weight_col="wgt"
+    )
 
     assert fitted is not None
 
@@ -603,22 +611,25 @@ def test_weighted_fit_differs_from_unweighted(
     x = np.linspace(-2, 2, n)
     # Introduce a slope shift in the second half so the WLS coefficient
     # should skew toward it.
-    y = np.where(np.arange(n) < n // 2, 1.0 * x, 5.0 * x) + np.random.randn(n) * 0.2
+    y = (
+        np.where(np.arange(n) < n // 2, 1.0 * x, 5.0 * x)
+        + np.random.randn(n) * 0.2
+    )
     weights = np.where(np.arange(n) < n // 2, 1.0, 50.0)
 
     data = pd.DataFrame({"x": x, "y": y, "wgt": weights})
 
     unweighted_ols = OLS()
     unweighted_fit = unweighted_ols.fit(data, ["x"], ["y"])
-    unweighted_pred = unweighted_fit.predict(data[["x"]].head(20), quantiles=[0.5])[
-        0.5
-    ]["y"].values
+    unweighted_pred = unweighted_fit.predict(
+        data[["x"]].head(20), quantiles=[0.5]
+    )[0.5]["y"].values
 
     weighted_ols = OLS()
     weighted_fit = weighted_ols.fit(data, ["x"], ["y"], weight_col="wgt")
-    weighted_pred = weighted_fit.predict(data[["x"]].head(20), quantiles=[0.5])[0.5][
-        "y"
-    ].values
+    weighted_pred = weighted_fit.predict(
+        data[["x"]].head(20), quantiles=[0.5]
+    )[0.5]["y"].values
 
     # Weighted predictions should differ substantially from unweighted
     # ones when a large weight block has a different slope.
@@ -635,7 +646,7 @@ def test_weighted_fit_differs_from_unweighted(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
 def test_extreme_quantiles(
-    model_class: Type[Imputer], simple_data: pd.DataFrame
+    model_class: Type[BaseImputer], simple_data: pd.DataFrame
 ) -> None:
     """Test models with extreme quantile values."""
     X_train, X_test = preprocess_data(simple_data)
@@ -645,7 +656,9 @@ def test_extreme_quantiles(
     model = model_class()
 
     if model_class.__name__ == "QuantReg":
-        fitted = model.fit(X_train, ["x1", "x2"], ["y"], quantiles=extreme_quantiles)
+        fitted = model.fit(
+            X_train, ["x1", "x2"], ["y"], quantiles=extreme_quantiles
+        )
     else:
         fitted = model.fit(X_train, ["x1", "x2"], ["y"])
 
@@ -659,7 +672,9 @@ def test_extreme_quantiles(
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_single_quantile(model_class: Type[Imputer], simple_data: pd.DataFrame) -> None:
+def test_single_quantile(
+    model_class: Type[BaseImputer], simple_data: pd.DataFrame
+) -> None:
     """Test models with a single quantile."""
     X_train, X_test = preprocess_data(simple_data)
 
@@ -683,7 +698,9 @@ def test_single_quantile(model_class: Type[Imputer], simple_data: pd.DataFrame) 
 
 def test_string_column_validation() -> None:
     """Test that the _validate_data method handles string columns appropriately."""
-    data = pd.DataFrame({"numeric_col": [1, 2, 3], "string_col": ["a", "b", "c"]})
+    data = pd.DataFrame(
+        {"numeric_col": [1, 2, 3], "string_col": ["a", "b", "c"]}
+    )
     columns = ["numeric_col", "string_col"]
 
     model = OLS()
@@ -698,7 +715,7 @@ def test_string_column_validation() -> None:
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_missing_predictors_in_test(model_class: Type[Imputer]) -> None:
+def test_missing_predictors_in_test(model_class: Type[BaseImputer]) -> None:
     """Test behavior when test data is missing predictor columns."""
     np.random.seed(42)
     train_data = pd.DataFrame(
@@ -741,7 +758,9 @@ except ImportError:
     _REPRODUCIBILITY_MODELS,
     ids=lambda cls: cls.__name__,
 )
-def test_reproducibility(model_class: Type[Imputer], simple_data: pd.DataFrame) -> None:
+def test_reproducibility(
+    model_class: Type[BaseImputer], simple_data: pd.DataFrame
+) -> None:
     # Note: MDN is excluded because PyTorch MPS (Apple Silicon) doesn't support
     # deterministic operations, making reproducibility tests unreliable.
     """Test that models produce reproducible results."""
@@ -770,14 +789,16 @@ def test_reproducibility(model_class: Type[Imputer], simple_data: pd.DataFrame) 
 @pytest.mark.parametrize(
     "model_class", ALL_IMPUTER_MODELS, ids=lambda cls: cls.__name__
 )
-def test_large_number_of_predictors(model_class: Type[Imputer]) -> None:
+def test_large_number_of_predictors(model_class: Type[BaseImputer]) -> None:
     """Test models with many predictors."""
     np.random.seed(42)
     n_samples = 50
     n_predictors = 20
 
     # Create data with many predictors
-    data_dict = {f"x{i}": np.random.randn(n_samples) for i in range(n_predictors)}
+    data_dict = {
+        f"x{i}": np.random.randn(n_samples) for i in range(n_predictors)
+    }
     data_dict["y"] = np.random.randn(n_samples)
     data = pd.DataFrame(data_dict)
 

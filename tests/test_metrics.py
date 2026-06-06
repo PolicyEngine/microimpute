@@ -6,16 +6,12 @@ import pytest
 
 from microimpute.comparisons import compare_metrics, get_imputations
 from microimpute.comparisons.autoimpute import autoimpute
-from microimpute.comparisons.autoimpute_helpers import (
-    select_best_model_dual_metrics,
-)
-from microimpute.comparisons.metrics import (
-    compare_distributions,
-    compute_loss,
-    get_metric_for_variable_type,
-    kl_divergence,
-    log_loss,
-)
+from microimpute.comparisons.autoimpute_helpers import \
+    select_best_model_dual_metrics
+from microimpute.comparisons.metrics import (compare_distributions,
+                                             compute_loss,
+                                             get_metric_for_variable_type,
+                                             kl_divergence, log_loss)
 from microimpute.config import QUANTILES
 from microimpute.evaluations.cross_validation import cross_validate_model
 from microimpute.models import OLS, QRF, QuantReg
@@ -72,26 +68,38 @@ def test_metric_detection_numerical() -> None:
     """Test that numerical variables are correctly identified."""
     # Continuous numerical data
     numerical_series = pd.Series(np.random.randn(100))
-    assert get_metric_for_variable_type(numerical_series, "num_var") == "quantile_loss"
+    assert (
+        get_metric_for_variable_type(numerical_series, "num_var")
+        == "quantile_loss"
+    )
 
     # Integer numerical data with high cardinality
     int_series = pd.Series(np.random.randint(0, 100, size=100))
-    assert get_metric_for_variable_type(int_series, "int_var") == "quantile_loss"
+    assert (
+        get_metric_for_variable_type(int_series, "int_var") == "quantile_loss"
+    )
 
 
 def test_metric_detection_categorical() -> None:
     """Test that categorical variables are correctly identified."""
     # Binary data
     binary_series = pd.Series([0, 1, 0, 1, 1, 0, 1, 0])
-    assert get_metric_for_variable_type(binary_series, "binary_var") == "log_loss"
+    assert (
+        get_metric_for_variable_type(binary_series, "binary_var") == "log_loss"
+    )
 
     # String categorical
     string_series = pd.Series(["A", "B", "C", "A", "B", "C"])
-    assert get_metric_for_variable_type(string_series, "string_var") == "log_loss"
+    assert (
+        get_metric_for_variable_type(string_series, "string_var") == "log_loss"
+    )
 
     # Low cardinality integer (categorical-like)
     low_card_series = pd.Series([0, 1, 2, 0, 1, 2, 0, 1, 2])
-    assert get_metric_for_variable_type(low_card_series, "low_card_var") == "log_loss"
+    assert (
+        get_metric_for_variable_type(low_card_series, "low_card_var")
+        == "log_loss"
+    )
 
     # Boolean type
     bool_series = pd.Series([True, False, True, False, True])
@@ -195,9 +203,9 @@ def test_compare_metrics_mixed_types(split_mixed_data: tuple) -> None:
     assert "log_loss" in metrics_used
 
     # Check correct metric assignment
-    num_target_metrics = results_df[results_df["Imputed Variable"] == "num_target1"][
-        "Metric"
-    ].unique()
+    num_target_metrics = results_df[
+        results_df["Imputed Variable"] == "num_target1"
+    ]["Metric"].unique()
     assert len(num_target_metrics) == 1
     assert num_target_metrics[0] == "quantile_loss"
 
@@ -245,7 +253,9 @@ def test_compare_metrics_all_categorical(split_mixed_data: tuple) -> None:
     )
 
     Y_test = test_data[categorical_targets]
-    results_df = compare_metrics(Y_test, method_imputations, categorical_targets)
+    results_df = compare_metrics(
+        Y_test, method_imputations, categorical_targets
+    )
 
     # Should only have log loss
     assert all(results_df["Metric"].isin(["log_loss"]))
@@ -545,7 +555,9 @@ def test_log_loss_constant_across_quantiles(split_mixed_data: tuple) -> None:
     )
 
     Y_test = test_data[categorical_targets]
-    results_df = compare_metrics(Y_test, method_imputations, categorical_targets)
+    results_df = compare_metrics(
+        Y_test, method_imputations, categorical_targets
+    )
 
     # Filter to log loss results for the categorical variable
     log_loss_results = results_df[
@@ -556,16 +568,18 @@ def test_log_loss_constant_across_quantiles(split_mixed_data: tuple) -> None:
     # Get losses at different quantiles
     losses_by_quantile = {}
     for q in QUANTILES:
-        q_loss = log_loss_results[log_loss_results["Percentile"] == q]["Loss"].values
+        q_loss = log_loss_results[log_loss_results["Percentile"] == q][
+            "Loss"
+        ].values
         if len(q_loss) > 0:
             losses_by_quantile[q] = q_loss[0]
 
     # All quantiles should have the same log loss
     if len(losses_by_quantile) > 1:
         loss_values = list(losses_by_quantile.values())
-        assert np.allclose(loss_values, loss_values[0], rtol=1e-10), (
-            "Log loss should be constant across quantiles"
-        )
+        assert np.allclose(
+            loss_values, loss_values[0], rtol=1e-10
+        ), "Log loss should be constant across quantiles"
 
 
 def test_empty_variable_lists() -> None:
@@ -578,20 +592,30 @@ def test_empty_variable_lists() -> None:
     }
 
     # Should raise an error when no variables to evaluate with 'auto'
-    with pytest.raises(ValueError, match="No variables compatible with any model"):
+    with pytest.raises(
+        ValueError, match="No variables compatible with any model"
+    ):
         select_best_model_dual_metrics(method_results, metric_priority="auto")
 
     # Should raise error with 'numerical' priority
     with pytest.raises(ValueError, match="No numerical variables found"):
-        select_best_model_dual_metrics(method_results, metric_priority="numerical")
+        select_best_model_dual_metrics(
+            method_results, metric_priority="numerical"
+        )
 
     # Should raise error with 'categorical' priority
     with pytest.raises(ValueError, match="No categorical variables found"):
-        select_best_model_dual_metrics(method_results, metric_priority="categorical")
+        select_best_model_dual_metrics(
+            method_results, metric_priority="categorical"
+        )
 
     # Should raise error with 'combined' priority
-    with pytest.raises(ValueError, match="No variables available for evaluation"):
-        select_best_model_dual_metrics(method_results, metric_priority="combined")
+    with pytest.raises(
+        ValueError, match="No variables available for evaluation"
+    ):
+        select_best_model_dual_metrics(
+            method_results, metric_priority="combined"
+        )
 
 
 def test_quantreg_with_numerical_only(split_mixed_data: tuple) -> None:
@@ -720,16 +744,15 @@ def test_categorical_probabilities_in_cross_validation() -> None:
 
     # This threshold distinguishes between using real probabilities vs dummy ones
     # Real probabilities should give lower log loss
-    assert test_loss < 2.0, (
-        f"Log loss {test_loss} suggests dummy probabilities are being used instead of real ones"
-    )
+    assert (
+        test_loss < 2.0
+    ), f"Log loss {test_loss} suggests dummy probabilities are being used instead of real ones"
 
 
 def test_probability_ordering() -> None:
     """Test that probabilities are ordered alphabetically to match sklearn's log_loss expectation."""
-    from microimpute.comparisons.metrics import (
-        order_probabilities_alphabetically,
-    )
+    from microimpute.comparisons.metrics import \
+        order_probabilities_alphabetically
 
     # Create test data with known probabilities
     np.random.seed(42)
@@ -757,17 +780,17 @@ def test_probability_ordering() -> None:
     )
 
     # Correct alphabetical order: A, B, C
-    probs_correct_order, alphabetical_labels = order_probabilities_alphabetically(
-        probs_wrong_order, labels_wrong
+    probs_correct_order, alphabetical_labels = (
+        order_probabilities_alphabetically(probs_wrong_order, labels_wrong)
     )
     _, loss_correct = compute_loss(
         y_true, probs_correct_order, "log_loss", labels=alphabetical_labels
     )
 
     # The correctly ordered probabilities should give much lower loss
-    assert loss_correct < loss_wrong, (
-        "Alphabetical ordering of probabilities is not working correctly"
-    )
+    assert (
+        loss_correct < loss_wrong
+    ), "Alphabetical ordering of probabilities is not working correctly"
 
     # Check that labels are alphabetically ordered
     assert list(alphabetical_labels) == sorted(alphabetical_labels)
@@ -801,16 +824,18 @@ def test_ols_returns_probabilities_for_categorical() -> None:
     predictions = fitted.predict(test_data, quantiles=[0.5], return_probs=True)
 
     # Check that probabilities are returned
-    assert "probabilities" in predictions, (
-        "Model should return probabilities when return_probs=True"
-    )
-    assert "cat_target" in predictions["probabilities"], (
-        "Probabilities should include categorical variable"
-    )
+    assert (
+        "probabilities" in predictions
+    ), "Model should return probabilities when return_probs=True"
+    assert (
+        "cat_target" in predictions["probabilities"]
+    ), "Probabilities should include categorical variable"
 
     # Check probability structure
     prob_info = predictions["probabilities"]["cat_target"]
-    assert isinstance(prob_info, dict), "Probability info should be a dictionary"
+    assert isinstance(
+        prob_info, dict
+    ), "Probability info should be a dictionary"
     assert "probabilities" in prob_info, "Should contain probabilities array"
     assert "classes" in prob_info, "Should contain classes array"
 
@@ -818,13 +843,15 @@ def test_ols_returns_probabilities_for_categorical() -> None:
     classes = prob_info["classes"]
 
     # Check shapes
-    assert probs.shape[0] == len(test_data), (
-        "Should have probabilities for each test sample"
-    )
-    assert probs.shape[1] == len(np.unique(df["cat_target"])), (
-        "Should have probability for each class"
-    )
-    assert len(classes) == len(np.unique(df["cat_target"])), "Should have all classes"
+    assert probs.shape[0] == len(
+        test_data
+    ), "Should have probabilities for each test sample"
+    assert probs.shape[1] == len(
+        np.unique(df["cat_target"])
+    ), "Should have probability for each class"
+    assert len(classes) == len(
+        np.unique(df["cat_target"])
+    ), "Should have all classes"
 
     # Check that probabilities sum to 1
     prob_sums = probs.sum(axis=1)
@@ -843,7 +870,9 @@ def test_qrf_returns_probabilities_for_categorical() -> None:
         {
             "x1": np.random.randn(n_samples),
             "x2": np.random.randn(n_samples),
-            "cat_target": np.random.choice(["Apple", "Banana", "Cherry"], n_samples),
+            "cat_target": np.random.choice(
+                ["Apple", "Banana", "Cherry"], n_samples
+            ),
         }
     )
 
@@ -861,16 +890,18 @@ def test_qrf_returns_probabilities_for_categorical() -> None:
     predictions = fitted.predict(test_data, quantiles=[0.5], return_probs=True)
 
     # Check that probabilities are returned
-    assert "probabilities" in predictions, (
-        "Model should return probabilities when return_probs=True"
-    )
-    assert "cat_target" in predictions["probabilities"], (
-        "Probabilities should include categorical variable"
-    )
+    assert (
+        "probabilities" in predictions
+    ), "Model should return probabilities when return_probs=True"
+    assert (
+        "cat_target" in predictions["probabilities"]
+    ), "Probabilities should include categorical variable"
 
     # Check probability structure
     prob_info = predictions["probabilities"]["cat_target"]
-    assert isinstance(prob_info, dict), "Probability info should be a dictionary"
+    assert isinstance(
+        prob_info, dict
+    ), "Probability info should be a dictionary"
     assert "probabilities" in prob_info, "Should contain probabilities array"
     assert "classes" in prob_info, "Should contain classes array"
 
@@ -878,18 +909,20 @@ def test_qrf_returns_probabilities_for_categorical() -> None:
     classes = prob_info["classes"]
 
     # Check that we have the original string labels, not encoded values
-    assert all(isinstance(c, str) for c in classes), (
-        "Classes should be original string labels"
-    )
-    assert set(classes) == set(df["cat_target"].unique()), (
-        "Should have all original class labels"
-    )
+    assert all(
+        isinstance(c, str) for c in classes
+    ), "Classes should be original string labels"
+    assert set(classes) == set(
+        df["cat_target"].unique()
+    ), "Should have all original class labels"
 
     # Check shapes
-    assert probs.shape[0] == len(test_data), (
-        "Should have probabilities for each test sample"
-    )
-    assert probs.shape[1] == len(classes), "Should have probability for each class"
+    assert probs.shape[0] == len(
+        test_data
+    ), "Should have probabilities for each test sample"
+    assert probs.shape[1] == len(
+        classes
+    ), "Should have probability for each class"
 
     # Check that probabilities sum to 1
     prob_sums = probs.sum(axis=1)
@@ -900,9 +933,8 @@ def test_qrf_returns_probabilities_for_categorical() -> None:
 
 def test_probability_ordering_with_real_model() -> None:
     """Test that probability ordering works correctly with real model output."""
-    from microimpute.comparisons.metrics import (
-        order_probabilities_alphabetically,
-    )
+    from microimpute.comparisons.metrics import \
+        order_probabilities_alphabetically
 
     np.random.seed(42)
     n_samples = 50
@@ -924,25 +956,30 @@ def test_probability_ordering_with_real_model() -> None:
 
     # Fit model
     model = OLS()
-    fitted = model.fit(train_df, predictors=["x1", "x2"], imputed_variables=["target"])
+    fitted = model.fit(
+        train_df, predictors=["x1", "x2"], imputed_variables=["target"]
+    )
 
     # Get predictions with probabilities
     predictions = fitted.predict(test_df, quantiles=[0.5], return_probs=True)
 
-    if "probabilities" in predictions and "target" in predictions["probabilities"]:
+    if (
+        "probabilities" in predictions
+        and "target" in predictions["probabilities"]
+    ):
         prob_info = predictions["probabilities"]["target"]
         probs = prob_info["probabilities"]
         model_classes = prob_info["classes"]
 
         # Test ordering function
-        probs_ordered, alphabetical_labels = order_probabilities_alphabetically(
-            probs, model_classes
+        probs_ordered, alphabetical_labels = (
+            order_probabilities_alphabetically(probs, model_classes)
         )
 
         # Check that labels are alphabetical
-        assert list(alphabetical_labels) == sorted(alphabetical_labels), (
-            "Labels should be alphabetically ordered"
-        )
+        assert list(alphabetical_labels) == sorted(
+            alphabetical_labels
+        ), "Labels should be alphabetically ordered"
 
         # Compute log loss with ordered probabilities
         y_test = test_df["target"].values
@@ -963,9 +1000,9 @@ def test_probability_ordering_with_real_model() -> None:
         _, loss_dummy = compute_loss(y_test, class_preds, "log_loss")
 
         # Real probabilities should give better (lower) loss than dummy probabilities
-        assert loss_ordered < loss_dummy, (
-            "Real probabilities should give better loss than dummy probabilities"
-        )
+        assert (
+            loss_ordered < loss_dummy
+        ), "Real probabilities should give better loss than dummy probabilities"
 
 
 # === Distribution Comparison Tests ===
@@ -975,9 +1012,9 @@ def test_kl_divergence_identical() -> None:
     """Test KL divergence between identical distributions."""
     values = np.array(["A", "B", "C", "A", "B", "C"])
     kl = kl_divergence(values, values)
-    assert np.isclose(kl, 0.0, atol=1e-10), (
-        "KL divergence should be 0 for identical distributions"
-    )
+    assert np.isclose(
+        kl, 0.0, atol=1e-10
+    ), "KL divergence should be 0 for identical distributions"
 
 
 def test_kl_divergence_disjoint() -> None:
@@ -986,7 +1023,9 @@ def test_kl_divergence_disjoint() -> None:
     receiver = np.array(["B", "B", "B", "B"])
     kl = kl_divergence(donor, receiver)
     # KL divergence should be very large (approaching infinity) for disjoint distributions
-    assert kl > 10, "KL divergence should be very large for disjoint distributions"
+    assert (
+        kl > 10
+    ), "KL divergence should be very large for disjoint distributions"
 
 
 def test_kl_divergence_partial_overlap() -> None:
@@ -1000,10 +1039,12 @@ def test_kl_divergence_partial_overlap() -> None:
     #          = 0.75*log(1.5) + 0.25*log(0.5)
     #          ≈ 0.75*0.405 + 0.25*(-0.693)
     #          ≈ 0.304 - 0.173 ≈ 0.131
-    assert kl > 0, "KL divergence should be positive for different distributions"
-    assert kl < 1, (
-        f"KL divergence should be reasonable for similar distributions, got {kl}"
-    )
+    assert (
+        kl > 0
+    ), "KL divergence should be positive for different distributions"
+    assert (
+        kl < 1
+    ), f"KL divergence should be reasonable for similar distributions, got {kl}"
 
 
 def test_kl_divergence_symmetric_epsilon_handling() -> None:
@@ -1038,9 +1079,9 @@ def test_kl_divergence_different_categories() -> None:
     # Donor: A=0.5, B=0.5, C=0.0
     # Receiver: A=0.0+ε, B=0.5, C=0.5  (ε added to avoid log(0))
     # KL divergence should be large due to A having 0 probability in receiver
-    assert kl > 5, (
-        f"KL divergence should be large when categories are missing, got {kl}"
-    )
+    assert (
+        kl > 5
+    ), f"KL divergence should be large when categories are missing, got {kl}"
 
 
 def test_kl_divergence_empty_input() -> None:
@@ -1090,7 +1131,9 @@ def test_compare_distributions_categorical_only() -> None:
     # Create donor data
     donor = pd.DataFrame(
         {
-            "region": np.random.choice(["North", "South", "East", "West"], 100),
+            "region": np.random.choice(
+                ["North", "South", "East", "West"], 100
+            ),
             "status": np.random.choice(["Active", "Inactive"], 100),
         }
     )
@@ -1101,7 +1144,9 @@ def test_compare_distributions_categorical_only() -> None:
             "region": np.random.choice(
                 ["North", "South", "East", "West"], 100, p=[0.4, 0.3, 0.2, 0.1]
             ),
-            "status": np.random.choice(["Active", "Inactive"], 100, p=[0.7, 0.3]),
+            "status": np.random.choice(
+                ["Active", "Inactive"], 100, p=[0.7, 0.3]
+            ),
         }
     )
 
@@ -1132,7 +1177,9 @@ def test_compare_distributions_mixed_types() -> None:
     receiver = pd.DataFrame(
         {
             "income": np.random.normal(51000, 10000, 100),
-            "region": np.random.choice(["A", "B", "C"], 100, p=[0.5, 0.3, 0.2]),
+            "region": np.random.choice(
+                ["A", "B", "C"], 100, p=[0.5, 0.3, 0.2]
+            ),
             "age": np.random.normal(40.5, 10, 100),
             "employed": np.random.choice([True, False], 100, p=[0.8, 0.2]),
         }
@@ -1276,25 +1323,29 @@ def test_kl_divergence_with_weights() -> None:
 
     # Without weights: both distributions are 50% A, 50% B
     kl_unweighted = kl_divergence(donor, receiver)
-    assert np.isclose(kl_unweighted, 0.0, atol=1e-10), (
-        "Unweighted identical distributions should have KL=0"
-    )
+    assert np.isclose(
+        kl_unweighted, 0.0, atol=1e-10
+    ), "Unweighted identical distributions should have KL=0"
 
     # With weights: donor becomes 80% A, 20% B; receiver stays 50% A, 50% B
-    donor_weights = np.array([4.0, 4.0, 1.0, 1.0])  # A weighted 8, B weighted 2
-    kl_weighted_donor = kl_divergence(donor, receiver, donor_weights=donor_weights)
-    assert kl_weighted_donor > 0, (
-        "Weighted donor with different distribution should have KL > 0"
+    donor_weights = np.array(
+        [4.0, 4.0, 1.0, 1.0]
+    )  # A weighted 8, B weighted 2
+    kl_weighted_donor = kl_divergence(
+        donor, receiver, donor_weights=donor_weights
     )
+    assert (
+        kl_weighted_donor > 0
+    ), "Weighted donor with different distribution should have KL > 0"
 
     # With receiver weights: donor 50/50, receiver becomes 80% A, 20% B
     receiver_weights = np.array([4.0, 4.0, 1.0, 1.0])
     kl_weighted_receiver = kl_divergence(
         donor, receiver, receiver_weights=receiver_weights
     )
-    assert kl_weighted_receiver > 0, (
-        "Weighted receiver with different distribution should have KL > 0"
-    )
+    assert (
+        kl_weighted_receiver > 0
+    ), "Weighted receiver with different distribution should have KL > 0"
 
 
 def test_kl_divergence_weights_symmetry() -> None:
@@ -1315,9 +1366,9 @@ def test_kl_divergence_weights_symmetry() -> None:
         donor_weights=donor_weights,
         receiver_weights=receiver_weights,
     )
-    assert np.isclose(kl, 0.0, atol=1e-10), (
-        "Identically weighted distributions should have KL=0"
-    )
+    assert np.isclose(
+        kl, 0.0, atol=1e-10
+    ), "Identically weighted distributions should have KL=0"
 
 
 def test_compare_distributions_with_weights() -> None:
@@ -1341,7 +1392,9 @@ def test_compare_distributions_with_weights() -> None:
     receiver_weights = np.random.uniform(0.5, 2.0, 100)
 
     # Unweighted comparison
-    results_unweighted = compare_distributions(donor, receiver, ["income", "region"])
+    results_unweighted = compare_distributions(
+        donor, receiver, ["income", "region"]
+    )
 
     # Weighted comparison
     results_weighted = compare_distributions(
@@ -1358,12 +1411,12 @@ def test_compare_distributions_with_weights() -> None:
 
     # Results should be different (weights should affect the computation)
     # Get income distances
-    income_unweighted = results_unweighted[results_unweighted["Variable"] == "income"][
-        "Distance"
-    ].values[0]
-    income_weighted = results_weighted[results_weighted["Variable"] == "income"][
-        "Distance"
-    ].values[0]
+    income_unweighted = results_unweighted[
+        results_unweighted["Variable"] == "income"
+    ]["Distance"].values[0]
+    income_weighted = results_weighted[
+        results_weighted["Variable"] == "income"
+    ]["Distance"].values[0]
 
     # With random weights, results should typically differ
     # (though not guaranteed, so we just check they're both valid)
@@ -1389,7 +1442,9 @@ def test_compare_distributions_donor_weight_only() -> None:
     )
 
     # Should work with only donor weights
-    results = compare_distributions(donor, receiver, ["x"], donor_weights=donor_weights)
+    results = compare_distributions(
+        donor, receiver, ["x"], donor_weights=donor_weights
+    )
 
     assert len(results) == 1
     assert results["Variable"].values[0] == "x"
@@ -1480,9 +1535,9 @@ def test_compare_distributions_weights_affect_wasserstein() -> None:
         donor_weights=donor_weights,
         receiver_weights=receiver_weights,
     )
-    assert np.isclose(results_identical["Distance"].values[0], 0.0, atol=1e-10), (
-        "Identical weighted distributions should have distance=0"
-    )
+    assert np.isclose(
+        results_identical["Distance"].values[0], 0.0, atol=1e-10
+    ), "Identical weighted distributions should have distance=0"
 
     # Now change receiver weights to shift distribution toward higher values
     receiver_shifted_weights = np.array(
@@ -1496,9 +1551,9 @@ def test_compare_distributions_weights_affect_wasserstein() -> None:
         donor_weights=donor_weights,
         receiver_weights=receiver_shifted_weights,
     )
-    assert results_shifted["Distance"].values[0] > 0, (
-        "Different weighted distributions should have distance > 0"
-    )
+    assert (
+        results_shifted["Distance"].values[0] > 0
+    ), "Different weighted distributions should have distance > 0"
 
 
 def test_compare_distributions_weights_affect_kl() -> None:
@@ -1526,14 +1581,16 @@ def test_compare_distributions_weights_affect_kl() -> None:
         donor_weights=donor_weights,
         receiver_weights=receiver_weights,
     )
-    assert np.isclose(results_identical["Distance"].values[0], 0.0, atol=1e-10), (
-        "Identical weighted distributions should have KL=0"
-    )
+    assert np.isclose(
+        results_identical["Distance"].values[0], 0.0, atol=1e-10
+    ), "Identical weighted distributions should have KL=0"
 
     # Now change weights to create different distributions
     # Donor: 50% A, 50% B (equal weights)
     # Receiver: 90% A, 10% B (by weights)
-    receiver_shifted_weights = np.array([4.5, 4.5, 0.5, 0.5])  # 90% weight on A
+    receiver_shifted_weights = np.array(
+        [4.5, 4.5, 0.5, 0.5]
+    )  # 90% weight on A
 
     results_shifted = compare_distributions(
         donor,
@@ -1542,9 +1599,9 @@ def test_compare_distributions_weights_affect_kl() -> None:
         donor_weights=donor_weights,
         receiver_weights=receiver_shifted_weights,
     )
-    assert results_shifted["Distance"].values[0] > 0, (
-        "Different weighted distributions should have KL > 0"
-    )
+    assert (
+        results_shifted["Distance"].values[0] > 0
+    ), "Different weighted distributions should have KL > 0"
 
 
 def test_compare_distributions_weight_length_mismatch() -> None:

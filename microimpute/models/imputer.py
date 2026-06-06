@@ -2,7 +2,7 @@
 
 This module defines the core architecture for imputation models in MicroImpute.
 It provides two abstract base classes:
-1. Imputer - For model initialization and fitting
+1. BaseImputer - For model initialization and fitting
 2. ImputerResults - For storing fitted models and making predictions
 
 All model implementations should extend these classes to ensure a consistent interface.
@@ -17,10 +17,8 @@ import pandas as pd
 from pydantic import validate_call
 
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
-from microimpute.utils.type_handling import (
-    DummyVariableProcessor,
-    VariableTypeDetector,
-)
+from microimpute.utils.type_handling import (DummyVariableProcessor,
+                                             VariableTypeDetector)
 
 
 class _ConstantValueModel:
@@ -32,10 +30,12 @@ class _ConstantValueModel:
 
     def predict(self, X: pd.DataFrame, **kwargs) -> pd.Series:
         """Return the constant value for all rows."""
-        return pd.Series(self.constant_value, index=X.index, name=self.variable_name)
+        return pd.Series(
+            self.constant_value, index=X.index, name=self.variable_name
+        )
 
 
-class Imputer(ABC):
+class BaseImputer(ABC):
     """
     Abstract base class for fitting imputation models.
 
@@ -53,16 +53,16 @@ class Imputer(ABC):
         self.imputed_variables: Optional[List[str]] = None
         self.imputed_vars_dummy_info: Optional[Dict[str, Any]] = None
         self.original_predictors: Optional[List[str]] = None
-        self.categorical_targets: Dict[
-            str, Dict
-        ] = {}  # {var_name: {"type": "categorical", "categories": [...]}}
-        self.boolean_targets: Dict[
-            str, Dict
-        ] = {}  # {var_name: {"type": "boolean", "dtype": ...}}
+        self.categorical_targets: Dict[str, Dict] = (
+            {}
+        )  # {var_name: {"type": "categorical", "categories": [...]}}
+        self.boolean_targets: Dict[str, Dict] = (
+            {}
+        )  # {var_name: {"type": "boolean", "dtype": ...}}
         self.numeric_targets: List[str] = []  # [var_name, ...]
-        self.constant_targets: Dict[
-            str, Dict
-        ] = {}  # {var_name: {"value": constant, "dtype": ...}}
+        self.constant_targets: Dict[str, Dict] = (
+            {}
+        )  # {var_name: {"value": constant, "dtype": ...}}
         self.seed = seed
         self.logger = logging.getLogger(__name__)
 
@@ -97,7 +97,9 @@ class Imputer(ABC):
 
         missing_count = data.isna().sum().sum()
         if missing_count > 0:
-            self.logger.warning(f"Data contains {missing_count} missing values")
+            self.logger.warning(
+                f"Data contains {missing_count} missing values"
+            )
 
     def identify_target_types(
         self,
@@ -173,14 +175,18 @@ class Imputer(ABC):
     def _coerce_fit_filter(
         self,
         X_train: pd.DataFrame,
-        fit_filter: Union[str, np.ndarray, pd.Series, List[bool], Tuple[bool, ...]],
+        fit_filter: Union[
+            str, np.ndarray, pd.Series, List[bool], Tuple[bool, ...]
+        ],
         *,
         name: str,
     ) -> pd.Series:
         """Normalize a row-filter input to a boolean Series on ``X_train``."""
         if isinstance(fit_filter, str):
             if fit_filter not in X_train.columns:
-                raise ValueError(f"{name} column '{fit_filter}' not found in X_train")
+                raise ValueError(
+                    f"{name} column '{fit_filter}' not found in X_train"
+                )
             mask = X_train[fit_filter]
         elif isinstance(fit_filter, pd.Series):
             mask = fit_filter.reindex(X_train.index)
@@ -188,7 +194,9 @@ class Imputer(ABC):
             mask = pd.Series(fit_filter, index=X_train.index)
 
         if len(mask) != len(X_train):
-            raise ValueError(f"{name} must have length {len(X_train)}, got {len(mask)}")
+            raise ValueError(
+                f"{name} must have length {len(X_train)}, got {len(mask)}"
+            )
         if mask.isna().any():
             raise ValueError(f"{name} contains missing values")
 
@@ -221,11 +229,13 @@ class Imputer(ABC):
         """
         try:
             processor = DummyVariableProcessor(self.logger)
-            processed_data, updated_predictors = processor.preprocess_predictors(
-                data,
-                predictors,
-                imputed_variables,
-                not_numeric_categorical,
+            processed_data, updated_predictors = (
+                processor.preprocess_predictors(
+                    data,
+                    predictors,
+                    imputed_variables,
+                    not_numeric_categorical,
+                )
             )
 
             # Store the processor for later use in test data
@@ -251,7 +261,12 @@ class Imputer(ABC):
             Union[str, np.ndarray, pd.Series, List[bool], Tuple[bool, ...]]
         ] = None,
         target_filters: Optional[
-            Dict[str, Union[str, np.ndarray, pd.Series, List[bool], Tuple[bool, ...]]]
+            Dict[
+                str,
+                Union[
+                    str, np.ndarray, pd.Series, List[bool], Tuple[bool, ...]
+                ],
+            ]
         ] = None,
         **kwargs: Any,
     ) -> Any:  # Returns ImputerResults
@@ -311,14 +326,18 @@ class Imputer(ABC):
                 & base_mask
             )
 
-        if target_filters and not getattr(self, "supports_target_filters", False):
+        if target_filters and not getattr(
+            self, "supports_target_filters", False
+        ):
             raise NotImplementedError(
                 f"{type(self).__name__} does not support target_filters"
             )
 
         if not base_mask.all():
             if isinstance(weight_col, np.ndarray):
-                weight_col = pd.Series(weight_col, index=base_mask.index).loc[base_mask]
+                weight_col = pd.Series(weight_col, index=base_mask.index).loc[
+                    base_mask
+                ]
             elif isinstance(weight_col, pd.Series):
                 weight_col = weight_col.reindex(base_mask.index).loc[base_mask]
             X_train = X_train.loc[base_mask].copy()
@@ -470,7 +489,9 @@ class Imputer(ABC):
         """
         # Identify available and missing variables
         available_vars = [v for v in imputed_variables if v in X_train.columns]
-        missing_vars = [v for v in imputed_variables if v not in X_train.columns]
+        missing_vars = [
+            v for v in imputed_variables if v not in X_train.columns
+        ]
 
         if missing_vars:
             self.logger.warning(
@@ -536,8 +557,12 @@ class ImputerResults(ABC):
         """
         if quantiles is not None:
             if not isinstance(quantiles, list):
-                self.logger.error(f"quantiles must be a list, got {type(quantiles)}")
-                raise ValueError(f"quantiles must be a list, got {type(quantiles)}")
+                self.logger.error(
+                    f"quantiles must be a list, got {type(quantiles)}"
+                )
+                raise ValueError(
+                    f"quantiles must be a list, got {type(quantiles)}"
+                )
 
             invalid_quantiles = [q for q in quantiles if not 0 <= q <= 1]
             if invalid_quantiles:
@@ -571,14 +596,18 @@ class ImputerResults(ABC):
         try:
             if dummy_processor and hasattr(dummy_processor, "dummy_mapping"):
                 # Use existing processor with training mappings
-                return dummy_processor.apply_dummy_encoding_to_test(data, predictors)
+                return dummy_processor.apply_dummy_encoding_to_test(
+                    data, predictors
+                )
             else:
                 # Fallback: create new processor (shouldn't happen normally)
                 processor = DummyVariableProcessor(self.logger)
                 # This will only encode predictors in test data
                 return processor.preprocess_predictors(data, predictors, [])
         except Exception as e:
-            self.logger.error(f"Error during test data preprocessing: {str(e)}")
+            self.logger.error(
+                f"Error during test data preprocessing: {str(e)}"
+            )
             raise RuntimeError("Failed to preprocess data types") from e
 
     # Note: postprocess_imputations removed - categorical targets now handled directly by classification
@@ -653,4 +682,6 @@ class ImputerResults(ABC):
             RuntimeError: If imputation fails.
             NotImplementedError: If method is not implemented by subclass.
         """
-        raise NotImplementedError("Subclasses must implement the predict method")
+        raise NotImplementedError(
+            "Subclasses must implement the predict method"
+        )

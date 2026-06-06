@@ -4,14 +4,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from microimpute.utils.data import (
-    asinh_transform_data,
-    log_transform_data,
-    normalize_data,
-    preprocess_data,
-    un_asinh_transform_predictions,
-    unlog_transform_predictions,
-)
+from microimpute.utils.data import (asinh_transform_data, log_transform_data,
+                                    normalize_data, preprocess_data,
+                                    un_asinh_transform_predictions,
+                                    unlog_transform_predictions)
 
 
 class TestNormalize:
@@ -65,7 +61,9 @@ class TestNormalize:
 
         # Categorical columns should have exact same values
         pd.testing.assert_series_equal(normalized_data["race"], data["race"])
-        pd.testing.assert_series_equal(normalized_data["is_female"], data["is_female"])
+        pd.testing.assert_series_equal(
+            normalized_data["is_female"], data["is_female"]
+        )
 
     def test_normalize_correctly_normalizes_numeric_columns(self):
         """Test that numeric columns are normalized with mean=0, std=1."""
@@ -110,7 +108,9 @@ class TestNormalize:
 
         # Constant columns are detected as numeric_categorical and excluded
         # So they should remain unchanged
-        pd.testing.assert_series_equal(normalized_data["constant"], data["constant"])
+        pd.testing.assert_series_equal(
+            normalized_data["constant"], data["constant"]
+        )
 
         # Only varying column should have normalization params
         assert "constant" not in norm_params
@@ -173,7 +173,9 @@ class TestPreprocessDataWithNormalize:
             }
         )
 
-        result, transform_params = preprocess_data(data, full_data=True, normalize=True)
+        result, transform_params = preprocess_data(
+            data, full_data=True, normalize=True
+        )
 
         # Extract normalization params from nested dict
         norm_params = transform_params["normalization"]
@@ -258,7 +260,9 @@ class TestLogTransform:
         pd.testing.assert_series_equal(
             log_data["categorical_col"], data["categorical_col"]
         )
-        pd.testing.assert_series_equal(log_data["boolean_col"], data["boolean_col"])
+        pd.testing.assert_series_equal(
+            log_data["boolean_col"], data["boolean_col"]
+        )
 
         # Numeric column should be log transformed
         assert not np.allclose(
@@ -308,8 +312,12 @@ class TestLogTransform:
         expected_value1 = np.log(data["value1"].values)
         expected_value2 = np.log(data["value2"].values)
 
-        np.testing.assert_array_almost_equal(log_data["value1"].values, expected_value1)
-        np.testing.assert_array_almost_equal(log_data["value2"].values, expected_value2)
+        np.testing.assert_array_almost_equal(
+            log_data["value1"].values, expected_value1
+        )
+        np.testing.assert_array_almost_equal(
+            log_data["value2"].values, expected_value2
+        )
 
         # Check log transform params are stored
         assert "value1" in log_params
@@ -428,7 +436,9 @@ class TestUnlogTransformPredictions:
         # Only have params for value1, not value2
         log_params = {"value1": {}}
 
-        with pytest.raises(ValueError, match="Missing log transformation parameters"):
+        with pytest.raises(
+            ValueError, match="Missing log transformation parameters"
+        ):
             unlog_transform_predictions(imputations, log_params)
 
 
@@ -515,7 +525,9 @@ class TestPreprocessDataWithLogTransform:
             ValueError,
             match="Cannot apply multiple transformations",
         ):
-            preprocess_data(data, full_data=True, normalize=True, log_transform=True)
+            preprocess_data(
+                data, full_data=True, normalize=True, log_transform=True
+            )
 
     def test_preprocess_data_with_log_transform_and_split(self):
         """Test that preprocess_data correctly splits and log transforms data."""
@@ -779,7 +791,9 @@ class TestPreprocessDataWithSelectiveTransformation:
         )
 
         with pytest.raises(ValueError, match="not found in data"):
-            preprocess_data(data, full_data=True, normalize=["income", "nonexistent"])
+            preprocess_data(
+                data, full_data=True, normalize=["income", "nonexistent"]
+            )
 
     def test_error_on_nonexistent_column_log_transform(self):
         """Test that error is raised when specifying non-existent column."""
@@ -905,7 +919,9 @@ class TestAsinhTransform:
         pd.testing.assert_series_equal(
             asinh_data["categorical_col"], data["categorical_col"]
         )
-        pd.testing.assert_series_equal(asinh_data["boolean_col"], data["boolean_col"])
+        pd.testing.assert_series_equal(
+            asinh_data["boolean_col"], data["boolean_col"]
+        )
 
         # Numeric column should be asinh transformed
         assert not np.allclose(
@@ -978,9 +994,15 @@ class TestAsinhTransform:
         asinh_data, asinh_params = asinh_transform_data(data)
 
         # Check that transformation is symmetric
-        assert np.isclose(asinh_data["value"].iloc[0], -asinh_data["value"].iloc[6])
-        assert np.isclose(asinh_data["value"].iloc[1], -asinh_data["value"].iloc[5])
-        assert np.isclose(asinh_data["value"].iloc[2], -asinh_data["value"].iloc[4])
+        assert np.isclose(
+            asinh_data["value"].iloc[0], -asinh_data["value"].iloc[6]
+        )
+        assert np.isclose(
+            asinh_data["value"].iloc[1], -asinh_data["value"].iloc[5]
+        )
+        assert np.isclose(
+            asinh_data["value"].iloc[2], -asinh_data["value"].iloc[4]
+        )
         assert np.isclose(asinh_data["value"].iloc[3], 0.0)
 
     def test_asinh_transform_returns_copy(self):
@@ -1035,7 +1057,9 @@ class TestUnAsinhTransformPredictions:
         imputations = {0.5: asinh_data}
 
         # Reverse asinh transform
-        reversed_data = un_asinh_transform_predictions(imputations, asinh_params)
+        reversed_data = un_asinh_transform_predictions(
+            imputations, asinh_params
+        )
 
         # Should match original data
         pd.testing.assert_frame_equal(
@@ -1056,7 +1080,9 @@ class TestUnAsinhTransformPredictions:
         # Only have params for value1, not value2
         asinh_params = {"value1": {}}
 
-        with pytest.raises(ValueError, match="Missing asinh transformation parameters"):
+        with pytest.raises(
+            ValueError, match="Missing asinh transformation parameters"
+        ):
             un_asinh_transform_predictions(imputations, asinh_params)
 
 

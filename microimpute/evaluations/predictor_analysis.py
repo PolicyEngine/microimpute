@@ -12,29 +12,19 @@ import numpy as np
 import pandas as pd
 from pydantic import validate_call
 from scipy.stats import spearmanr
-from sklearn.feature_selection import (
-    mutual_info_classif,
-    mutual_info_regression,
-)
+from sklearn.feature_selection import (mutual_info_classif,
+                                       mutual_info_regression)
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from tqdm.auto import tqdm
 
-from microimpute.comparisons.metrics import (
-    compute_loss,
-    get_metric_for_variable_type,
-)
-from microimpute.config import (
-    QUANTILES,
-    RANDOM_STATE,
-    TRAIN_SIZE,
-    VALIDATE_CONFIG,
-)
-from microimpute.models import Imputer, ImputerResults
-from microimpute.utils.type_handling import (
-    DummyVariableProcessor,
-    VariableTypeDetector,
-)
+from microimpute.comparisons.metrics import (compute_loss,
+                                             get_metric_for_variable_type)
+from microimpute.config import (QUANTILES, RANDOM_STATE, TRAIN_SIZE,
+                                VALIDATE_CONFIG)
+from microimpute.models import BaseImputer, ImputerResults
+from microimpute.utils.type_handling import (DummyVariableProcessor,
+                                             VariableTypeDetector)
 
 log = logging.getLogger(__name__)
 
@@ -100,7 +90,9 @@ def compute_predictor_correlations(
     if imputed_variables:
         missing_targets = set(imputed_variables) - set(data.columns)
         if missing_targets:
-            raise ValueError(f"Target variables not found in data: {missing_targets}")
+            raise ValueError(
+                f"Target variables not found in data: {missing_targets}"
+            )
 
     valid_methods = ["all", "pearson", "spearman", "mutual_info"]
     if method not in valid_methods:
@@ -191,7 +183,9 @@ def compute_predictor_correlations(
         target_is_categorical = {}
 
         for target in imputed_variables:
-            var_type, _ = detector.categorize_variable(data[target], target, log)
+            var_type, _ = detector.categorize_variable(
+                data[target], target, log
+            )
             target_is_categorical[target] = var_type in [
                 "categorical",
                 "numeric_categorical",
@@ -201,7 +195,9 @@ def compute_predictor_correlations(
             if target_is_categorical[target]:
                 # Encode categorical targets
                 le = LabelEncoder()
-                targets_encoded[target] = le.fit_transform(data[target].astype(str))
+                targets_encoded[target] = le.fit_transform(
+                    data[target].astype(str)
+                )
             else:
                 targets_encoded[target] = data[target].values
 
@@ -238,7 +234,7 @@ def leave_one_out_analysis(
     data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    model_class: Type[Imputer],
+    model_class: Type[BaseImputer],
     weight_col: Optional[Union[str, np.ndarray, pd.Series]] = None,
     quantiles: List[float] = QUANTILES,
     train_size: float = TRAIN_SIZE,
@@ -254,7 +250,7 @@ def leave_one_out_analysis(
         data: DataFrame containing the data.
         predictors: List of predictor column names.
         imputed_variables: List of variables to impute.
-        model_class: The Imputer class to use for evaluation (e.g., OLS, QRF, QuantReg).
+        model_class: The BaseImputer class to use for evaluation (e.g., OLS, QRF, QuantReg).
         weight_col: Optional column name or array of sampling weights.
         quantiles: List of quantiles for evaluation (default: [0.1, 0.5, 0.9]).
         train_size: Proportion of data to use for training (default: 0.8).
@@ -334,12 +330,16 @@ def leave_one_out_analysis(
                 "avg_log_loss": losses.get("log_loss", 0),
                 "loss_increase": loss_increase,
                 "relative_impact": (
-                    (loss_increase / baseline_total * 100) if baseline_total > 0 else 0
+                    (loss_increase / baseline_total * 100)
+                    if baseline_total > 0
+                    else 0
                 ),
             }
 
         except Exception as e:
-            log.warning(f"Failed to evaluate model without predictor {pred}: {e}")
+            log.warning(
+                f"Failed to evaluate model without predictor {pred}: {e}"
+            )
             return {
                 "predictor_removed": pred,
                 "avg_quantile_loss": np.nan,
@@ -375,7 +375,7 @@ def progressive_predictor_inclusion(
     data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    model_class: Type[Imputer],
+    model_class: Type[BaseImputer],
     weight_col: Optional[Union[str, np.ndarray, pd.Series]] = None,
     quantiles: Optional[List[float]] = QUANTILES,
     train_size: Optional[float] = TRAIN_SIZE,
@@ -391,7 +391,7 @@ def progressive_predictor_inclusion(
         data: DataFrame containing the data.
         predictors: List of candidate predictor column names.
         imputed_variables: List of variables to impute.
-        model_class: The Imputer class to use for evaluation (e.g., OLS, QRF, QuantReg).
+        model_class: The BaseImputer class to use for evaluation (e.g., OLS, QRF, QuantReg).
         weight_col: Optional column name or array of sampling weights.
         quantiles: List of quantiles for evaluation.
         train_size: Proportion of data to use for training.
@@ -457,7 +457,9 @@ def progressive_predictor_inclusion(
                     random_state=random_state,
                 )
 
-                total_loss = losses["quantile_loss"] + losses.get("log_loss", 0)
+                total_loss = losses["quantile_loss"] + losses.get(
+                    "log_loss", 0
+                )
 
                 if total_loss < best_step_loss:
                     best_step_loss = total_loss
@@ -481,7 +483,9 @@ def progressive_predictor_inclusion(
 
             # Calculate improvements
             marginal_improvement = (
-                previous_loss - best_step_loss if previous_loss != float("inf") else 0.0
+                previous_loss - best_step_loss
+                if previous_loss != float("inf")
+                else 0.0
             )
             cumulative_improvement = first_loss - best_step_loss
 
@@ -543,9 +547,13 @@ def _compute_mutual_information(
 
     # Use appropriate MI function based on target type
     if y_is_categorical:
-        mi = mutual_info_classif(x_clean, y_clean, random_state=RANDOM_STATE)[0]
+        mi = mutual_info_classif(x_clean, y_clean, random_state=RANDOM_STATE)[
+            0
+        ]
     else:
-        mi = mutual_info_regression(x_clean, y_clean, random_state=RANDOM_STATE)[0]
+        mi = mutual_info_regression(
+            x_clean, y_clean, random_state=RANDOM_STATE
+        )[0]
 
     return mi
 
@@ -573,7 +581,7 @@ def _evaluate_model_performance(
     test_data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    model_class: Type[Imputer],
+    model_class: Type[BaseImputer],
     weight_col: Optional[Union[str, np.ndarray, pd.Series]],
     quantiles: List[float],
     random_state: int,

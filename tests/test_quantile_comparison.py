@@ -119,7 +119,9 @@ def test_compare_metrics_basic(split_data: tuple) -> None:
     )
 
     # Compare quantile loss
-    loss_comparison_df = compare_metrics(Y_test, method_imputations, imputed_variables)
+    loss_comparison_df = compare_metrics(
+        Y_test, method_imputations, imputed_variables
+    )
 
     # Check structure - returns long format DataFrame
     assert isinstance(loss_comparison_df, pd.DataFrame)
@@ -154,7 +156,9 @@ def test_single_imputed_variable(split_data: tuple) -> None:
         model_classes, X_train, X_test, predictors, imputed_variables
     )
 
-    loss_comparison_df = compare_metrics(Y_test, method_imputations, imputed_variables)
+    loss_comparison_df = compare_metrics(
+        Y_test, method_imputations, imputed_variables
+    )
 
     # Check results contain data for single variable
     variables = loss_comparison_df["Imputed Variable"].unique()
@@ -176,7 +180,9 @@ def test_multiple_imputed_variables(split_data: tuple) -> None:
         model_classes, X_train, X_test, predictors, imputed_variables
     )
 
-    loss_comparison_df = compare_metrics(Y_test, method_imputations, imputed_variables)
+    loss_comparison_df = compare_metrics(
+        Y_test, method_imputations, imputed_variables
+    )
 
     # Check results contain data for all variables
     variables = loss_comparison_df["Imputed Variable"].unique()
@@ -215,7 +221,9 @@ def test_quantile_loss_symmetry() -> None:
         model_classes, X_train, X_test, predictors, imputed_variables
     )
 
-    loss_comparison_df = compare_metrics(Y_test, method_imputations, imputed_variables)
+    loss_comparison_df = compare_metrics(
+        Y_test, method_imputations, imputed_variables
+    )
 
     assert not loss_comparison_df.empty
 
@@ -248,10 +256,14 @@ def test_perfect_predictions() -> None:
         model_classes, X_train, X_test, predictors, imputed_variables
     )
 
-    loss_comparison_df = compare_metrics(Y_test, method_imputations, imputed_variables)
+    loss_comparison_df = compare_metrics(
+        Y_test, method_imputations, imputed_variables
+    )
 
     # Loss should be relatively low for perfect predictions
-    ols_loss = loss_comparison_df[loss_comparison_df["Method"] == "OLS"]["Loss"]
+    ols_loss = loss_comparison_df[loss_comparison_df["Method"] == "OLS"][
+        "Loss"
+    ]
     assert ols_loss.min() <= 1.01  # Allow for small floating point errors
 
 
@@ -276,7 +288,9 @@ def test_model_ranking(diabetes_data: pd.DataFrame) -> None:
         model_classes, X_train, X_test, predictors, imputed_variables
     )
 
-    loss_comparison_df = compare_metrics(Y_test, method_imputations, imputed_variables)
+    loss_comparison_df = compare_metrics(
+        Y_test, method_imputations, imputed_variables
+    )
 
     # Check we can compute mean loss per model
     mean_losses = loss_comparison_df.groupby("Method")["Loss"].mean()
@@ -303,7 +317,9 @@ def test_wide_format_visualization(split_data: tuple) -> None:
         model_classes, X_train, X_test, predictors, imputed_variables
     )
 
-    loss_comparison_df = compare_metrics(Y_test, method_imputations, imputed_variables)
+    loss_comparison_df = compare_metrics(
+        Y_test, method_imputations, imputed_variables
+    )
 
     # Convert to wide format for plotting
     # Filter to mean_loss only
@@ -320,7 +336,9 @@ def test_wide_format_visualization(split_data: tuple) -> None:
         assert isinstance(wide_df, pd.DataFrame)
         assert wide_df.shape[0] <= len(model_classes)  # One row per model
         # Columns should be quantiles
-        assert all(col in QUANTILES for col in wide_df.columns if col in QUANTILES)
+        assert all(
+            col in QUANTILES for col in wide_df.columns if col in QUANTILES
+        )
 
 
 def test_long_format_visualization(split_data: tuple) -> None:
@@ -336,7 +354,9 @@ def test_long_format_visualization(split_data: tuple) -> None:
         model_classes, X_train, X_test, predictors, imputed_variables
     )
 
-    loss_comparison_df = compare_metrics(Y_test, method_imputations, imputed_variables)
+    loss_comparison_df = compare_metrics(
+        Y_test, method_imputations, imputed_variables
+    )
 
     # Long format is directly suitable for seaborn/plotly
     assert "Method" in loss_comparison_df.columns
@@ -344,7 +364,9 @@ def test_long_format_visualization(split_data: tuple) -> None:
     assert "Loss" in loss_comparison_df.columns
 
     # Can group by method and percentile
-    grouped = loss_comparison_df.groupby(["Method", "Percentile"])["Loss"].mean()
+    grouped = loss_comparison_df.groupby(["Method", "Percentile"])[
+        "Loss"
+    ].mean()
     assert not grouped.empty
 
 
@@ -400,7 +422,9 @@ def test_log_loss_for_categorical_variables() -> None:
         model_classes, X_train, X_test, predictors, binary_imputed
     )
 
-    loss_df = compare_metrics(Y_test_binary, method_imputations, binary_imputed)
+    loss_df = compare_metrics(
+        Y_test_binary, method_imputations, binary_imputed
+    )
 
     # Check that log loss is used for binary categorical
     binary_metrics = loss_df[loss_df["Imputed Variable"] == "binary_cat"][
@@ -434,7 +458,9 @@ def test_log_loss_for_categorical_variables() -> None:
         model_classes, X_train, X_test, predictors, string_imputed
     )
 
-    loss_df = compare_metrics(Y_test_string, method_imputations, string_imputed)
+    loss_df = compare_metrics(
+        Y_test_string, method_imputations, string_imputed
+    )
 
     # Check that log loss is used for string categorical
     string_metrics = loss_df[loss_df["Imputed Variable"] == "string_cat"][
@@ -454,7 +480,9 @@ def test_log_loss_for_categorical_variables() -> None:
     loss_df = compare_metrics(Y_test_num, method_imputations, num_imputed)
 
     # Check that quantile loss is used for numerical
-    num_metrics = loss_df[loss_df["Imputed Variable"] == "numerical"]["Metric"].unique()
+    num_metrics = loss_df[loss_df["Imputed Variable"] == "numerical"][
+        "Metric"
+    ].unique()
     assert "quantile_loss" in num_metrics
     assert "log_loss" not in num_metrics
 
@@ -484,7 +512,9 @@ def test_mixed_variable_types() -> None:
         }
     )
 
-    predictors = ["predictor1"]  # Using only numerical predictor for simplicity
+    predictors = [
+        "predictor1"
+    ]  # Using only numerical predictor for simplicity
     imputed_variables = ["numerical_target", "categorical_target"]
 
     Y_test = X_test[imputed_variables]
@@ -529,7 +559,9 @@ def test_log_loss_value_properties() -> None:
     X_train = pd.DataFrame(
         {
             "x": range(100),
-            "y_perfect": [i % 2 for i in range(100)],  # Perfectly predictable from x
+            "y_perfect": [
+                i % 2 for i in range(100)
+            ],  # Perfectly predictable from x
             "y_random": np.random.choice([0, 1], size=100),  # Random
         }
     )
@@ -553,10 +585,14 @@ def test_log_loss_value_properties() -> None:
         model_classes, X_train, X_test, predictors, perfect_imputed
     )
 
-    loss_df = compare_metrics(Y_test_perfect, method_imputations, perfect_imputed)
+    loss_df = compare_metrics(
+        Y_test_perfect, method_imputations, perfect_imputed
+    )
 
     # Log loss for perfect predictions should be low
-    perfect_loss = loss_df[loss_df["Imputed Variable"] == "y_perfect"]["Loss"].mean()
+    perfect_loss = loss_df[loss_df["Imputed Variable"] == "y_perfect"][
+        "Loss"
+    ].mean()
     assert perfect_loss < 5.0  # Log loss should be relatively low
 
     # Test with random variable (should have higher loss)
@@ -567,10 +603,14 @@ def test_log_loss_value_properties() -> None:
         model_classes, X_train, X_test, predictors, random_imputed
     )
 
-    loss_df = compare_metrics(Y_test_random, method_imputations, random_imputed)
+    loss_df = compare_metrics(
+        Y_test_random, method_imputations, random_imputed
+    )
 
     # Log loss for random predictions should be higher
-    random_loss = loss_df[loss_df["Imputed Variable"] == "y_random"]["Loss"].mean()
+    random_loss = loss_df[loss_df["Imputed Variable"] == "y_random"][
+        "Loss"
+    ].mean()
 
     # Random loss should typically be higher than perfect predictions
     # (though not guaranteed due to randomness)

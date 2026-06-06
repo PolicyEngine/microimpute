@@ -10,7 +10,7 @@ from pydantic import validate_call
 from statsmodels.tools.sm_exceptions import IterationLimitWarning
 
 from microimpute.config import VALIDATE_CONFIG
-from microimpute.models.imputer import Imputer, ImputerResults
+from microimpute.models.imputer import BaseImputer, ImputerResults
 
 warnings.filterwarnings("ignore", category=IterationLimitWarning)
 
@@ -109,9 +109,8 @@ class QuantRegResults(ImputerResults):
                     self.logger.info(f"Predicting with model for q={q}")
                     for variable in self.imputed_variables:
                         # Import constant model
-                        from microimpute.models.imputer import (
-                            _ConstantValueModel,
-                        )
+                        from microimpute.models.imputer import \
+                            _ConstantValueModel
 
                         # Check if this is a constant target
                         # For constant targets, use any available quantile since value is the same
@@ -149,7 +148,9 @@ class QuantRegResults(ImputerResults):
             else:
                 quantiles = list(self.models[self.imputed_variables[0]].keys())
                 if random_quantile_sample:
-                    self.logger.info("Sampling random quantiles for each prediction")
+                    self.logger.info(
+                        "Sampling random quantiles for each prediction"
+                    )
                     mean_quantile = np.mean(quantiles)
 
                     # Get predictions for all quantiles first
@@ -158,14 +159,15 @@ class QuantRegResults(ImputerResults):
                         imputed_df = pd.DataFrame()
                         for variable in self.imputed_variables:
                             # Import constant model
-                            from microimpute.models.imputer import (
-                                _ConstantValueModel,
-                            )
+                            from microimpute.models.imputer import \
+                                _ConstantValueModel
 
                             # Check if this is a constant target
                             if variable in self.constant_targets:
                                 # Get the constant model from any quantile
-                                available_q = list(self.models[variable].keys())[0]
+                                available_q = list(
+                                    self.models[variable].keys()
+                                )[0]
                                 model = self.models[variable][available_q]
                                 predictions = model.predict(X_test)
                             else:
@@ -174,7 +176,9 @@ class QuantRegResults(ImputerResults):
                                     # Constant model - just return the constant value
                                     predictions = model.predict(X_test)
                                 else:
-                                    predictions = model.predict(X_test_with_const)
+                                    predictions = model.predict(
+                                        X_test_with_const
+                                    )
                                     # Convert to boolean if this was a boolean target
                                     if variable in self.boolean_targets:
                                         predictions = predictions > 0.5
@@ -194,7 +198,9 @@ class QuantRegResults(ImputerResults):
                     n_rows = len(index)
                     quantiles_arr = np.asarray(quantiles)
                     # Sampled quantile index per row.
-                    sampled_idx = rng.integers(0, len(quantiles_arr), size=n_rows)
+                    sampled_idx = rng.integers(
+                        0, len(quantiles_arr), size=n_rows
+                    )
 
                     result_df = pd.DataFrame(index=index)
                     for variable in self.imputed_variables:
@@ -204,7 +210,9 @@ class QuantRegResults(ImputerResults):
                         # each row uses its own sampled quantile.
                         stacked = np.column_stack(
                             [
-                                np.asarray(random_q_imputations[q][variable].values)
+                                np.asarray(
+                                    random_q_imputations[q][variable].values
+                                )
                                 for q in quantiles
                             ]
                         )
@@ -223,14 +231,15 @@ class QuantRegResults(ImputerResults):
                         imputed_df = pd.DataFrame()
                         for variable in self.imputed_variables:
                             # Import constant model
-                            from microimpute.models.imputer import (
-                                _ConstantValueModel,
-                            )
+                            from microimpute.models.imputer import \
+                                _ConstantValueModel
 
                             # Check if this is a constant target
                             if variable in self.constant_targets:
                                 # Get the constant model from any quantile
-                                available_q = list(self.models[variable].keys())[0]
+                                available_q = list(
+                                    self.models[variable].keys()
+                                )[0]
                                 model = self.models[variable][available_q]
                                 predictions = model.predict(X_test)
                             else:
@@ -239,14 +248,18 @@ class QuantRegResults(ImputerResults):
                                     # Constant model - just return the constant value
                                     predictions = model.predict(X_test)
                                 else:
-                                    predictions = model.predict(X_test_with_const)
+                                    predictions = model.predict(
+                                        X_test_with_const
+                                    )
                                     # Convert to boolean if this was a boolean target
                                     if variable in self.boolean_targets:
                                         predictions = predictions > 0.5
                             imputed_df[variable] = predictions
                         imputations[q] = imputed_df
 
-            self.logger.info(f"Completed predictions for {len(imputations)} quantiles")
+            self.logger.info(
+                f"Completed predictions for {len(imputations)} quantiles"
+            )
 
             # Return behavior based on how the model was fitted:
             # - If quantiles were explicitly specified during fit OR predict, return dict
@@ -268,7 +281,7 @@ class QuantRegResults(ImputerResults):
             ) from e
 
 
-class QuantReg(Imputer):
+class QuantReg(BaseImputer):
     """
     Quantile Regression model for imputation.
 
@@ -349,9 +362,7 @@ class QuantReg(Imputer):
             if quantiles:
                 invalid_quantiles = [q for q in quantiles if not 0 <= q <= 1]
                 if invalid_quantiles:
-                    error_msg = (
-                        f"Quantiles must be between 0 and 1, got: {invalid_quantiles}"
-                    )
+                    error_msg = f"Quantiles must be between 0 and 1, got: {invalid_quantiles}"
                     self.logger.error(error_msg)
                     raise ValueError(error_msg)
                 self.logger.info(
@@ -385,7 +396,9 @@ class QuantReg(Imputer):
                         # Convert boolean to numeric for regression
                         if variable in (boolean_targets or {}):
                             Y = Y.astype(float)
-                        self.models[variable][q] = sm.QuantReg(Y, X_with_const).fit(q=q)
+                        self.models[variable][q] = sm.QuantReg(
+                            Y, X_with_const
+                        ).fit(q=q)
                     self.logger.info(f"Model for q={q} fitted successfully")
             else:
                 # Default to fitting a single median model when no
@@ -413,7 +426,9 @@ class QuantReg(Imputer):
                     # Convert boolean to numeric for regression
                     if variable in (boolean_targets or {}):
                         Y = Y.astype(float)
-                    self.models[variable][q] = sm.QuantReg(Y, X_with_const).fit(q=q)
+                    self.models[variable][q] = sm.QuantReg(
+                        Y, X_with_const
+                    ).fit(q=q)
                 self.logger.info(f"Model for q={q:.4f} fitted successfully")
 
             self.logger.info(f"QuantReg has {len(self.models)} fitted models")
@@ -432,4 +447,6 @@ class QuantReg(Imputer):
             )
         except Exception as e:
             self.logger.error(f"Error fitting QuantReg model: {str(e)}")
-            raise RuntimeError(f"Failed to fit QuantReg model: {str(e)}") from e
+            raise RuntimeError(
+                f"Failed to fit QuantReg model: {str(e)}"
+            ) from e

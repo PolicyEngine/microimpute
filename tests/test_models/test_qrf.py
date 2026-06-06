@@ -107,7 +107,9 @@ def test_qrf_sequential_imputation(diabetes_data: pd.DataFrame) -> None:
 
     # Fit model with sequential imputation
     model = QRF()
-    fitted_model = model.fit(X_train, predictors, imputed_variables, n_estimators=30)
+    fitted_model = model.fit(
+        X_train, predictors, imputed_variables, n_estimators=30
+    )
 
     # Get predictions
     small_test = X_test.head(5).copy()
@@ -117,7 +119,9 @@ def test_qrf_sequential_imputation(diabetes_data: pd.DataFrame) -> None:
     parallel_predictions = {}
     for var in imputed_variables:
         single_model = QRF()
-        single_fitted = single_model.fit(X_train, predictors, [var], n_estimators=30)
+        single_fitted = single_model.fit(
+            X_train, predictors, [var], n_estimators=30
+        )
         single_pred = single_fitted.predict(small_test, quantiles=[0.5])
         parallel_predictions[var] = single_pred[0.5][var]
 
@@ -130,7 +134,9 @@ def test_qrf_sequential_imputation(diabetes_data: pd.DataFrame) -> None:
             differences_found = True
             break
 
-    assert differences_found, "Sequential imputation should differ from parallel"
+    assert (
+        differences_found
+    ), "Sequential imputation should differ from parallel"
 
     # Test that order matters
     reversed_model = QRF()
@@ -200,9 +206,9 @@ def test_qrf_repeated_predict_calls_produce_different_draws(
 
     # Predictions must differ across calls (stochastic imputation), not be
     # bit-identical as they were when the RNG was re-seeded every call.
-    assert not np.allclose(preds1["y"].values, preds2["y"].values), (
-        "Repeated predict() calls must produce different draws"
-    )
+    assert not np.allclose(
+        preds1["y"].values, preds2["y"].values
+    ), "Repeated predict() calls must produce different draws"
 
 
 def test_qrf_target_filters_fit_each_target_on_eligible_rows() -> None:
@@ -229,7 +235,9 @@ def test_qrf_target_filters_fit_each_target_on_eligible_rows() -> None:
         n_estimators=10,
     )
 
-    predictions = fitted.predict(pd.DataFrame({"x": [1.5, 2.5]}), quantiles=[0.5])
+    predictions = fitted.predict(
+        pd.DataFrame({"x": [1.5, 2.5]}), quantiles=[0.5]
+    )
 
     assert set(predictions[0.5].columns) == {"y1", "y2"}
     assert not predictions[0.5].isna().any().any()
@@ -258,7 +266,9 @@ def test_qrf_row_filter_applies_common_training_mask() -> None:
     assert not predictions[0.5].isna().any().any()
 
 
-def test_qrf_target_filters_reject_unknown_targets(simple_data: pd.DataFrame) -> None:
+def test_qrf_target_filters_reject_unknown_targets(
+    simple_data: pd.DataFrame,
+) -> None:
     with pytest.raises(ValueError, match="target_filters contains variables"):
         QRF().fit(
             simple_data,
@@ -330,9 +340,9 @@ def test_qrf_stochastic_median_is_unbiased() -> None:
 
     # With n_draws averaging, the gap should be small relative to y's scale.
     scale = np.std(y)
-    assert np.abs(stochastic_means - exact_median).mean() < 0.25 * scale, (
-        "Stochastic median prediction is biased vs deterministic median"
-    )
+    assert (
+        np.abs(stochastic_means - exact_median).mean() < 0.25 * scale
+    ), "Stochastic median prediction is biased vs deterministic median"
 
 
 def test_qrf_multi_quantile_per_row_monotonicity() -> None:
@@ -395,7 +405,9 @@ def test_qrf_missing_categorical_levels_in_test(
     )
 
     # Should handle missing category gracefully
-    predictions = fitted_model.predict(test_data[["numeric1", "numeric2", "category"]])
+    predictions = fitted_model.predict(
+        test_data[["numeric1", "numeric2", "category"]]
+    )
     # Default returns DataFrame directly
     assert not predictions["target"].isna().any()
 
@@ -792,7 +804,9 @@ def test_qrf_cross_validation(diabetes_data: pd.DataFrame) -> None:
     imputed_variables = ["s1", "s4"]
     data = diabetes_data[predictors + imputed_variables]
 
-    qrf_results = cross_validate_model(QRF, data, predictors, imputed_variables)
+    qrf_results = cross_validate_model(
+        QRF, data, predictors, imputed_variables
+    )
 
     # Validate cross-validation results - now a dict with dual metrics
     assert isinstance(qrf_results, dict)
@@ -865,18 +879,26 @@ def test_qrf_performance_characteristics(diabetes_data: pd.DataFrame) -> None:
 
     # Create train/test split
     np.random.seed(42)
-    train_idx = np.random.choice(len(data), int(0.8 * len(data)), replace=False)
+    train_idx = np.random.choice(
+        len(data), int(0.8 * len(data)), replace=False
+    )
     test_idx = np.array([i for i in range(len(data)) if i not in train_idx])
 
     train_data = data.iloc[train_idx].reset_index(drop=True)
     test_data = data.iloc[test_idx].reset_index(drop=True)
 
-    X_train = preprocess_data(train_data, full_data=True, train_size=1.0, test_size=0.0)
-    X_test = preprocess_data(test_data, full_data=True, train_size=1.0, test_size=0.0)
+    X_train = preprocess_data(
+        train_data, full_data=True, train_size=1.0, test_size=0.0
+    )
+    X_test = preprocess_data(
+        test_data, full_data=True, train_size=1.0, test_size=0.0
+    )
 
     # Fit model
     model = QRF()
-    fitted_model = model.fit(X_train, predictors, imputed_variables, n_estimators=50)
+    fitted_model = model.fit(
+        X_train, predictors, imputed_variables, n_estimators=50
+    )
 
     # Get predictions
     predictions = fitted_model.predict(X_test, quantiles=[0.5])
@@ -889,7 +911,9 @@ def test_qrf_performance_characteristics(diabetes_data: pd.DataFrame) -> None:
     correlation = np.corrcoef(true_values, pred_values)[0, 1]
 
     # QRF should achieve positive correlation
-    assert correlation > 0.0, f"QRF correlation should be positive: {correlation}"
+    assert (
+        correlation > 0.0
+    ), f"QRF correlation should be positive: {correlation}"
 
     # Calculate MSE
     mse = mean_squared_error(true_values, pred_values)
@@ -1246,12 +1270,12 @@ def test_qrf_not_numeric_categorical_override() -> None:
         {
             "predictor1": np.random.randn(n_samples),
             "predictor2": np.random.randn(n_samples),
-            "discrete_var1": np.random.choice([0, 1, 2, 3, 4, 5], n_samples).astype(
-                float
-            ),
-            "discrete_var2": np.random.choice([0, 1, 2, 3, 4, 5], n_samples).astype(
-                float
-            ),
+            "discrete_var1": np.random.choice(
+                [0, 1, 2, 3, 4, 5], n_samples
+            ).astype(float),
+            "discrete_var2": np.random.choice(
+                [0, 1, 2, 3, 4, 5], n_samples
+            ).astype(float),
             "continuous_var": np.random.randn(n_samples) * 5 + 10,
         }
     )
@@ -1272,15 +1296,15 @@ def test_qrf_not_numeric_categorical_override() -> None:
     )
 
     # Check that discrete vars were treated as categorical
-    assert "discrete_var1" in model_default.categorical_targets, (
-        "discrete_var1 should be categorical by default"
-    )
-    assert "discrete_var2" in model_default.categorical_targets, (
-        "discrete_var2 should be categorical by default"
-    )
-    assert "continuous_var" in model_default.numeric_targets, (
-        "continuous_var should be numeric"
-    )
+    assert (
+        "discrete_var1" in model_default.categorical_targets
+    ), "discrete_var1 should be categorical by default"
+    assert (
+        "discrete_var2" in model_default.categorical_targets
+    ), "discrete_var2 should be categorical by default"
+    assert (
+        "continuous_var" in model_default.numeric_targets
+    ), "continuous_var should be numeric"
 
     # Test 2: Override discrete_var1 to be numeric, keep discrete_var2 as categorical
     model_override = QRF(log_level="WARNING")
@@ -1288,24 +1312,26 @@ def test_qrf_not_numeric_categorical_override() -> None:
         X_train=donor_df,
         predictors=["predictor1", "predictor2"],
         imputed_variables=["discrete_var1", "discrete_var2", "continuous_var"],
-        not_numeric_categorical=["discrete_var1"],  # Force discrete_var1 to be numeric
+        not_numeric_categorical=[
+            "discrete_var1"
+        ],  # Force discrete_var1 to be numeric
         n_estimators=20,
         random_state=42,
     )
 
     # Check that discrete_var1 is now numeric, but discrete_var2 is still categorical
-    assert "discrete_var1" not in model_override.categorical_targets, (
-        "discrete_var1 should NOT be categorical with override"
-    )
-    assert "discrete_var1" in model_override.numeric_targets, (
-        "discrete_var1 should be numeric with override"
-    )
-    assert "discrete_var2" in model_override.categorical_targets, (
-        "discrete_var2 should still be categorical"
-    )
-    assert "continuous_var" in model_override.numeric_targets, (
-        "continuous_var should still be numeric"
-    )
+    assert (
+        "discrete_var1" not in model_override.categorical_targets
+    ), "discrete_var1 should NOT be categorical with override"
+    assert (
+        "discrete_var1" in model_override.numeric_targets
+    ), "discrete_var1 should be numeric with override"
+    assert (
+        "discrete_var2" in model_override.categorical_targets
+    ), "discrete_var2 should still be categorical"
+    assert (
+        "continuous_var" in model_override.numeric_targets
+    ), "continuous_var should still be numeric"
 
     # Test 3: Predictions should work with both models
     predictions_default = fitted_default.predict(receiver_df)
@@ -1320,17 +1346,15 @@ def test_qrf_not_numeric_categorical_override() -> None:
         predictions_default["discrete_var1"].values,
         predictions_override["discrete_var1"].values,
         rtol=1e-5,
-    ), (
-        "discrete_var1 predictions should differ between categorical and numeric treatment"
-    )
+    ), "discrete_var1 predictions should differ between categorical and numeric treatment"
 
     # Test 4: Override for predictors as well
     # Create data where a predictor has discrete values
     donor_df_pred = pd.DataFrame(
         {
-            "discrete_predictor": np.random.choice([10, 20, 30, 40], n_samples).astype(
-                float
-            ),
+            "discrete_predictor": np.random.choice(
+                [10, 20, 30, 40], n_samples
+            ).astype(float),
             "normal_predictor": np.random.randn(n_samples),
             "target": np.random.randn(n_samples) * 2 + 5,
         }
@@ -1338,7 +1362,9 @@ def test_qrf_not_numeric_categorical_override() -> None:
 
     receiver_df_pred = pd.DataFrame(
         {
-            "discrete_predictor": np.random.choice([10, 20, 30, 40], 30).astype(float),
+            "discrete_predictor": np.random.choice(
+                [10, 20, 30, 40], 30
+            ).astype(float),
             "normal_predictor": np.random.randn(30),
         }
     )
@@ -1441,9 +1467,9 @@ def test_qrf_hyperparameter_tuning_improves_performance() -> None:
     # Tuned model should perform at least as well as untuned, or within 20% margin
     # (allowing for random variation in small datasets)
     margin = 0.2
-    assert tuned_loss <= untuned_loss * (1 + margin), (
-        f"Tuned loss ({tuned_loss:.4f}) should be ≤ {(1 + margin) * 100}% of untuned loss ({untuned_loss:.4f} * {1 + margin} = {untuned_loss * (1 + margin):.4f})"
-    )
+    assert tuned_loss <= untuned_loss * (
+        1 + margin
+    ), f"Tuned loss ({tuned_loss:.4f}) should be ≤ {(1 + margin) * 100}% of untuned loss ({untuned_loss:.4f} * {1 + margin} = {untuned_loss * (1 + margin):.4f})"
 
 
 # === max_train_samples Tests ===

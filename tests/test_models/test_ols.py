@@ -54,7 +54,9 @@ def test_ols_basic_fit_predict(diabetes_data: pd.DataFrame) -> None:
     fitted_model = model.fit(X_train, predictors, imputed_variables)
 
     # Predict at multiple quantiles
-    predictions = fitted_model.predict(X_test, QUANTILES, random_quantile_sample=False)
+    predictions = fitted_model.predict(
+        X_test, QUANTILES, random_quantile_sample=False
+    )
 
     # Validate predictions
     assert isinstance(predictions, dict)
@@ -229,14 +231,20 @@ def test_ols_prediction_quality(diabetes_data: pd.DataFrame) -> None:
 
     # Split data
     np.random.seed(42)
-    train_idx = np.random.choice(len(data), int(0.8 * len(data)), replace=False)
+    train_idx = np.random.choice(
+        len(data), int(0.8 * len(data)), replace=False
+    )
     test_idx = np.array([i for i in range(len(data)) if i not in train_idx])
 
     train_data = data.iloc[train_idx].reset_index(drop=True)
     test_data = data.iloc[test_idx].reset_index(drop=True)
 
-    X_train = preprocess_data(train_data, full_data=True, train_size=1.0, test_size=0.0)
-    X_test = preprocess_data(test_data, full_data=True, train_size=1.0, test_size=0.0)
+    X_train = preprocess_data(
+        train_data, full_data=True, train_size=1.0, test_size=0.0
+    )
+    X_test = preprocess_data(
+        test_data, full_data=True, train_size=1.0, test_size=0.0
+    )
 
     # Fit model
     model = OLS()
@@ -354,7 +362,9 @@ def test_ols_mixed_targets_preserve_test_index() -> None:
     predictions = fitted.predict(test_data, quantiles=[0.5])
     out = predictions[0.5]
 
-    assert not out["num_target"].isna().any(), "num_target should not contain NaN"
+    assert (
+        not out["num_target"].isna().any()
+    ), "num_target should not contain NaN"
     assert not out["binary_target"].isna().any(), (
         "binary_target should not be NaN; the output DataFrame index must "
         "align with the X_test index so the categorical Series assignment "
@@ -369,8 +379,9 @@ def test_logistic_l1_ratio_activates_elasticnet() -> None:
     elasticnet penalty (and saga solver). Previously l1_ratio was
     passed through with the default L2 penalty and was silently ignored.
     """
-    from microimpute.models.ols import _LogisticRegressionModel
     import logging
+
+    from microimpute.models.ols import _LogisticRegressionModel
 
     rng = np.random.default_rng(0)
     n = 100
@@ -386,6 +397,6 @@ def test_logistic_l1_ratio_activates_elasticnet() -> None:
         f"Expected penalty='elasticnet' with l1_ratio=0.5, got "
         f"penalty={model.classifier.penalty!r} (l1_ratio silently ignored)"
     )
-    assert model.classifier.solver == "saga", (
-        f"Expected solver='saga' for elasticnet, got {model.classifier.solver!r}"
-    )
+    assert (
+        model.classifier.solver == "saga"
+    ), f"Expected solver='saga' for elasticnet, got {model.classifier.solver!r}"

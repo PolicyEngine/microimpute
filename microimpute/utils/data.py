@@ -21,12 +21,8 @@ import pandas as pd
 from pydantic import validate_call
 from sklearn.model_selection import train_test_split
 
-from microimpute.config import (
-    RANDOM_STATE,
-    TEST_SIZE,
-    TRAIN_SIZE,
-    VALIDATE_CONFIG,
-)
+from microimpute.config import (RANDOM_STATE, TEST_SIZE, TRAIN_SIZE,
+                                VALIDATE_CONFIG)
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +82,9 @@ def normalize_data(
 
             # Only normalize specified columns that are not categorical
             numeric_cols = [
-                col for col in columns_to_normalize if col not in categorical_cols
+                col
+                for col in columns_to_normalize
+                if col not in categorical_cols
             ]
 
             # Warn if user specified categorical columns
@@ -100,7 +98,9 @@ def normalize_data(
                 )
         else:
             # Get all numeric columns for normalization
-            numeric_cols = [col for col in data.columns if col not in categorical_cols]
+            numeric_cols = [
+                col for col in data.columns if col not in categorical_cols
+            ]
 
         if not numeric_cols:
             logger.warning("No numeric columns found for normalization")
@@ -121,7 +121,9 @@ def normalize_data(
 
         # Apply normalization only to numeric columns
         data[numeric_cols] = (data[numeric_cols] - mean) / std
-        logger.debug(f"Normalized {len(numeric_cols)} numeric columns successfully")
+        logger.debug(
+            f"Normalized {len(numeric_cols)} numeric columns successfully"
+        )
 
         # Store normalization parameters only for numeric columns
         normalization_params = {
@@ -193,7 +195,9 @@ def log_transform_data(
 
             # Only transform specified columns that are not categorical
             numeric_cols = [
-                col for col in columns_to_transform if col not in categorical_cols
+                col
+                for col in columns_to_transform
+                if col not in categorical_cols
             ]
 
             # Warn if user specified categorical columns
@@ -207,7 +211,9 @@ def log_transform_data(
                 )
         else:
             # Get all numeric columns for log transformation
-            numeric_cols = [col for col in data.columns if col not in categorical_cols]
+            numeric_cols = [
+                col for col in data.columns if col not in categorical_cols
+            ]
 
         if not numeric_cols:
             logger.warning("No numeric columns found for log transformation")
@@ -306,7 +312,9 @@ def asinh_transform_data(
 
             # Only transform specified columns that are not categorical
             numeric_cols = [
-                col for col in columns_to_transform if col not in categorical_cols
+                col
+                for col in columns_to_transform
+                if col not in categorical_cols
             ]
 
             # Warn if user specified categorical columns
@@ -320,7 +328,9 @@ def asinh_transform_data(
                 )
         else:
             # Get all numeric columns for asinh transformation
-            numeric_cols = [col for col in data.columns if col not in categorical_cols]
+            numeric_cols = [
+                col for col in data.columns if col not in categorical_cols
+            ]
 
         if not numeric_cols:
             logger.warning("No numeric columns found for asinh transformation")
@@ -336,7 +346,9 @@ def asinh_transform_data(
         logger.debug(
             f"Asinh transformed {len(numeric_cols)} numeric columns successfully"
         )
-        logger.debug(f"Asinh transformation parameters: {asinh_transform_params}")
+        logger.debug(
+            f"Asinh transformation parameters: {asinh_transform_params}"
+        )
 
         return data_copy, asinh_transform_params
 
@@ -409,15 +421,21 @@ def preprocess_data(
         RuntimeError: If data preprocessing fails
     """
 
-    logger.debug(f"Preprocessing data with shape {data.shape}, full_data={full_data}")
+    logger.debug(
+        f"Preprocessing data with shape {data.shape}, full_data={full_data}"
+    )
 
     if data.empty:
         raise ValueError("Data must not be None or empty")
 
     # Check which transformations are requested
     normalize_requested = normalize is not False and normalize != []
-    log_transform_requested = log_transform is not False and log_transform != []
-    asinh_transform_requested = asinh_transform is not False and asinh_transform != []
+    log_transform_requested = (
+        log_transform is not False and log_transform != []
+    )
+    asinh_transform_requested = (
+        asinh_transform is not False and asinh_transform != []
+    )
 
     # Collect transformation settings for conflict checking
     transforms = []
@@ -504,7 +522,9 @@ def preprocess_data(
 
     # Prepare transformation parameters to return
     has_transformations = (
-        normalize_requested or log_transform_requested or asinh_transform_requested
+        normalize_requested
+        or log_transform_requested
+        or asinh_transform_requested
     )
     if has_transformations:
         # Merge parameter dicts, with a key to distinguish them
@@ -516,7 +536,9 @@ def preprocess_data(
 
     if full_data:
         if has_transformations:
-            logger.info("Returning full preprocessed dataset with transformations")
+            logger.info(
+                "Returning full preprocessed dataset with transformations"
+            )
             return (data, transform_params)
         else:
             logger.info("Returning full preprocessed dataset")
@@ -546,7 +568,9 @@ def preprocess_data(
 
 
 @validate_call(config=VALIDATE_CONFIG)
-def unnormalize_predictions(imputations: dict, normalization_params: dict) -> dict:
+def unnormalize_predictions(
+    imputations: dict, normalization_params: dict
+) -> dict:
     """Unnormalize predictions using stored normalization parameters.
 
     Args:
@@ -562,7 +586,9 @@ def unnormalize_predictions(imputations: dict, normalization_params: dict) -> di
     logger.debug(f"Unnormalizing predictions for {len(imputations)} quantiles")
 
     # Extract mean and std from normalization parameters
-    mean = pd.Series({col: p["mean"] for col, p in normalization_params.items()})
+    mean = pd.Series(
+        {col: p["mean"] for col, p in normalization_params.items()}
+    )
     std = pd.Series({col: p["std"] for col, p in normalization_params.items()})
 
     unnormalized = {}
@@ -572,9 +598,7 @@ def unnormalize_predictions(imputations: dict, normalization_params: dict) -> di
         # Check that all columns have normalization parameters
         missing_params = [col for col in cols if col not in mean.index]
         if missing_params:
-            error_msg = (
-                f"Missing normalization parameters for columns: {missing_params}"
-            )
+            error_msg = f"Missing normalization parameters for columns: {missing_params}"
             logger.error(error_msg)
             raise ValueError(error_msg)
 
@@ -588,7 +612,9 @@ def unnormalize_predictions(imputations: dict, normalization_params: dict) -> di
 
 
 @validate_call(config=VALIDATE_CONFIG)
-def unlog_transform_predictions(imputations: dict, log_transform_params: dict) -> dict:
+def unlog_transform_predictions(
+    imputations: dict, log_transform_params: dict
+) -> dict:
     """Reverse log transformation on predictions using stored parameters.
 
     Args:
@@ -604,18 +630,20 @@ def unlog_transform_predictions(imputations: dict, log_transform_params: dict) -
         ValueError: If columns in imputations don't match log transformation
             parameters.
     """
-    logger.debug(f"Reversing log transformation for {len(imputations)} quantiles")
+    logger.debug(
+        f"Reversing log transformation for {len(imputations)} quantiles"
+    )
 
     untransformed = {}
     for q, df in imputations.items():
         cols = df.columns
 
         # Check that all columns have log transformation parameters
-        missing_params = [col for col in cols if col not in log_transform_params]
+        missing_params = [
+            col for col in cols if col not in log_transform_params
+        ]
         if missing_params:
-            error_msg = (
-                f"Missing log transformation parameters for columns: {missing_params}"
-            )
+            error_msg = f"Missing log transformation parameters for columns: {missing_params}"
             logger.error(error_msg)
             raise ValueError(error_msg)
 
@@ -652,18 +680,20 @@ def un_asinh_transform_predictions(
         ValueError: If columns in imputations don't match asinh transformation
             parameters.
     """
-    logger.debug(f"Reversing asinh transformation for {len(imputations)} quantiles")
+    logger.debug(
+        f"Reversing asinh transformation for {len(imputations)} quantiles"
+    )
 
     untransformed = {}
     for q, df in imputations.items():
         cols = df.columns
 
         # Check that all columns have asinh transformation parameters
-        missing_params = [col for col in cols if col not in asinh_transform_params]
+        missing_params = [
+            col for col in cols if col not in asinh_transform_params
+        ]
         if missing_params:
-            error_msg = (
-                f"Missing asinh transformation parameters for columns: {missing_params}"
-            )
+            error_msg = f"Missing asinh transformation parameters for columns: {missing_params}"
             logger.error(error_msg)
             raise ValueError(error_msg)
 

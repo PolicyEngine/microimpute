@@ -13,11 +13,8 @@ import torch
 from pydantic import validate_call
 
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
-from microimpute.models.imputer import (
-    Imputer,
-    ImputerResults,
-    _ConstantValueModel,
-)
+from microimpute.models.imputer import (BaseImputer, ImputerResults,
+                                        _ConstantValueModel)
 
 # PyTorch Tabular imports
 try:
@@ -81,11 +78,8 @@ try:
     # After import, also update the rank_zero_module logger
     from lightning_fabric.utilities.rank_zero import rank_zero_module
     from pytorch_tabular import TabularModel
-    from pytorch_tabular.config import (
-        DataConfig,
-        OptimizerConfig,
-        TrainerConfig,
-    )
+    from pytorch_tabular.config import (DataConfig, OptimizerConfig,
+                                        TrainerConfig)
     from pytorch_tabular.models import CategoryEmbeddingModelConfig, MDNConfig
 
     rank_zero_module.log.setLevel(logging.ERROR)
@@ -194,7 +188,9 @@ def _get_package_versions_hash() -> str:
     return hashlib.md5("_".join(versions).encode()).hexdigest()[:6]
 
 
-def _generate_cache_key(predictors: List[str], target: str, data_hash: str) -> str:
+def _generate_cache_key(
+    predictors: List[str], target: str, data_hash: str
+) -> str:
     """Generate a cache key for model storage.
 
     Args:
@@ -583,7 +579,9 @@ class _NeuralClassifierModel:
         preds_df = self.model.predict(X, ret_logits=False)
 
         # Extract probability columns (named like target_0_probability, etc.)
-        prob_cols = sorted([c for c in preds_df.columns if c.endswith("_probability")])
+        prob_cols = sorted(
+            [c for c in preds_df.columns if c.endswith("_probability")]
+        )
         probs = preds_df[prob_cols].values
 
         if return_probs:
@@ -604,7 +602,9 @@ class _NeuralClassifierModel:
         )
 
         if self.var_type == "boolean":
-            predictions = pd.Series(sampled_indices.astype(bool), index=X.index)
+            predictions = pd.Series(
+                sampled_indices.astype(bool), index=X.index
+            )
         else:
             predictions = pd.Series(
                 [self.categories[i] for i in sampled_indices], index=X.index
@@ -781,7 +781,9 @@ class MDNResults(ImputerResults):
                         imputed_df[variable] = quantile_values
 
                     else:
-                        raise ValueError(f"Unknown model type for variable {variable}")
+                        raise ValueError(
+                            f"Unknown model type for variable {variable}"
+                        )
 
                 imputations[q] = imputed_df
 
@@ -797,10 +799,12 @@ class MDNResults(ImputerResults):
 
         except Exception as e:
             self.logger.error(f"Error during MDN prediction: {str(e)}")
-            raise RuntimeError(f"Failed to predict with MDN model: {str(e)}") from e
+            raise RuntimeError(
+                f"Failed to predict with MDN model: {str(e)}"
+            ) from e
 
 
-class MDN(Imputer):
+class MDN(BaseImputer):
     """
     Mixture Density Network imputer using PyTorch Tabular.
 
@@ -999,7 +1003,9 @@ class MDN(Imputer):
                         # Only categorical - apply to learning rate
                         classifier_params = best_params["classifier"]
                         if "learning_rate" in classifier_params:
-                            self.learning_rate = classifier_params["learning_rate"]
+                            self.learning_rate = classifier_params[
+                                "learning_rate"
+                            ]
                     else:
                         # Only numeric - flat dict
                         if "num_gaussian" in best_params:
@@ -1007,16 +1013,22 @@ class MDN(Imputer):
                         if "learning_rate" in best_params:
                             self.learning_rate = best_params["learning_rate"]
 
-                self.logger.info(f"Applied tuned hyperparameters: {best_params}")
+                self.logger.info(
+                    f"Applied tuned hyperparameters: {best_params}"
+                )
 
-            self.logger.info(f"Fitting MDN model with {len(predictors)} predictors")
+            self.logger.info(
+                f"Fitting MDN model with {len(predictors)} predictors"
+            )
 
             self.models = {}
 
             # If force_retrain is True, delete existing cached models
             if self.force_retrain and Path(self.model_dir).exists():
                 shutil.rmtree(self.model_dir)
-                self.logger.info(f"Deleted cached models directory: {self.model_dir}")
+                self.logger.info(
+                    f"Deleted cached models directory: {self.model_dir}"
+                )
 
             # Ensure model directory exists
             Path(self.model_dir).mkdir(parents=True, exist_ok=True)
@@ -1041,7 +1053,9 @@ class MDN(Imputer):
                 # Generate data hash for caching
                 Y = X_train[variable]
                 data_hash = _generate_data_hash(X_train[predictors], Y)
-                cache_path = self._get_cache_path(predictors, variable, data_hash)
+                cache_path = self._get_cache_path(
+                    predictors, variable, data_hash
+                )
 
                 # Check cache
                 if not self.force_retrain and self._model_exists(cache_path):
@@ -1049,14 +1063,16 @@ class MDN(Imputer):
                         f"Loading cached model for '{variable}' from {cache_path}"
                     )
                     try:
-                        if variable in (categorical_targets or {}) or variable in (
-                            boolean_targets or {}
-                        ):
+                        if variable in (
+                            categorical_targets or {}
+                        ) or variable in (boolean_targets or {}):
                             model = _NeuralClassifierModel.load(
                                 cache_path, self.seed, self.logger
                             )
                         else:
-                            model = _MDNModel.load(cache_path, self.seed, self.logger)
+                            model = _MDNModel.load(
+                                cache_path, self.seed, self.logger
+                            )
                         self.models[variable] = model
                         continue
                     except Exception as e:
@@ -1088,7 +1104,9 @@ class MDN(Imputer):
                         X_train[predictors],
                         Y,
                         var_type=categorical_targets[variable]["type"],
-                        categories=categorical_targets[variable].get("categories"),
+                        categories=categorical_targets[variable].get(
+                            "categories"
+                        ),
                         categorical_cols=categorical_cols,
                     )
                     self.logger.info(
@@ -1125,7 +1143,9 @@ class MDN(Imputer):
 
                 else:
                     # Numeric target - use MDN
-                    self.logger.info(f"Training MDN for numeric variable {variable}")
+                    self.logger.info(
+                        f"Training MDN for numeric variable {variable}"
+                    )
 
                     model = _MDNModel(
                         seed=self.seed,
@@ -1146,7 +1166,9 @@ class MDN(Imputer):
                         Y,
                         categorical_cols=categorical_cols,
                     )
-                    self.logger.info(f"MDN fitted for numeric variable {variable}")
+                    self.logger.info(
+                        f"MDN fitted for numeric variable {variable}"
+                    )
 
                 self.models[variable] = model
 
@@ -1217,7 +1239,9 @@ class MDN(Imputer):
         def objective(trial: optuna.Trial) -> float:
             # Only tune num_gaussian and learning_rate
             num_gaussian = trial.suggest_int("num_gaussian", 2, 10)
-            learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
+            learning_rate = trial.suggest_float(
+                "learning_rate", 1e-4, 1e-2, log=True
+            )
 
             # Track errors across CV folds
             fold_errors = []
@@ -1266,7 +1290,9 @@ class MDN(Imputer):
                     # Normalize by variable's standard deviation
                     std = np.std(y_val.values.flatten())
                     normalized_loss = (
-                        quantile_loss_value / std if std > 0 else quantile_loss_value
+                        quantile_loss_value / std
+                        if std > 0
+                        else quantile_loss_value
                     )
 
                     var_errors.append(normalized_loss)
@@ -1327,9 +1353,7 @@ class MDN(Imputer):
         from sklearn.model_selection import KFold
 
         from microimpute.comparisons.metrics import (
-            compute_loss,
-            order_probabilities_alphabetically,
-        )
+            compute_loss, order_probabilities_alphabetically)
 
         # Suppress Optuna's logs during optimization
         optuna.logging.set_verbosity(optuna.logging.WARNING)
@@ -1342,7 +1366,9 @@ class MDN(Imputer):
 
         def objective(trial: optuna.Trial) -> float:
             # Only tune learning_rate for classifier
-            learning_rate = trial.suggest_float("learning_rate", 1e-4, 1e-2, log=True)
+            learning_rate = trial.suggest_float(
+                "learning_rate", 1e-4, 1e-2, log=True
+            )
 
             # Track errors across CV folds
             fold_errors = []
@@ -1364,7 +1390,9 @@ class MDN(Imputer):
                         var_type = "boolean"
                         categories = None
                     else:
-                        var_type = categorical_targets[var].get("type", "categorical")
+                        var_type = categorical_targets[var].get(
+                            "type", "categorical"
+                        )
                         categories = categorical_targets[var].get("categories")
 
                     # Create and fit classifier with trial parameters
@@ -1389,12 +1417,16 @@ class MDN(Imputer):
                     )
 
                     # Get probabilities for log loss calculation
-                    prob_info = model.predict(X_val_fold[predictors], return_probs=True)
+                    prob_info = model.predict(
+                        X_val_fold[predictors], return_probs=True
+                    )
                     probs = prob_info["probabilities"]
                     classes = prob_info["classes"]
 
                     # Order probabilities alphabetically for consistent evaluation
-                    probs, classes = order_probabilities_alphabetically(probs, classes)
+                    probs, classes = order_probabilities_alphabetically(
+                        probs, classes
+                    )
 
                     # Compute log loss
                     _, log_loss_value = compute_loss(
@@ -1427,7 +1459,9 @@ class MDN(Imputer):
         )
 
         best_params = study.best_params
-        self.logger.info(f"Classifier - Best hyperparameters found: {best_params}")
+        self.logger.info(
+            f"Classifier - Best hyperparameters found: {best_params}"
+        )
 
         return best_params
 
@@ -1469,7 +1503,9 @@ class MDN(Imputer):
             for var in imputed_variables
             if var in categorical_targets or var in boolean_targets
         ]
-        numeric_vars = [var for var in imputed_variables if var not in categorical_vars]
+        numeric_vars = [
+            var for var in imputed_variables if var not in categorical_vars
+        ]
 
         self.logger.info(
             f"MDN hyperparameter tuning with {n_cv_folds}-fold CV and "
@@ -1480,7 +1516,9 @@ class MDN(Imputer):
         # Tune appropriate models based on variable types
         if not categorical_vars:
             # Only numeric variables
-            self.logger.info("Tuning MDN hyperparameters (numeric variables only)")
+            self.logger.info(
+                "Tuning MDN hyperparameters (numeric variables only)"
+            )
             return self._tune_mdn_hyperparameters(
                 data, predictors, numeric_vars, n_cv_folds, n_trials
             )

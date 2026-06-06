@@ -11,10 +11,8 @@ from typing import Any, Dict, List, Optional, Type
 import pandas as pd
 from pydantic import validate_call
 
-from microimpute.comparisons.validation import (
-    validate_columns_exist,
-    validate_quantiles,
-)
+from microimpute.comparisons.validation import (validate_columns_exist,
+                                                validate_quantiles)
 from microimpute.config import QUANTILES, VALIDATE_CONFIG
 from microimpute.models.quantreg import QuantReg
 
@@ -63,7 +61,9 @@ def get_imputations(
         if quantiles:
             validate_quantiles(quantiles)
 
-        log.info(f"Generating imputations for {len(model_classes)} model classes")
+        log.info(
+            f"Generating imputations for {len(model_classes)} model classes"
+        )
         log.info(
             f"Training data shape: {X_train.shape}, Test data shape: {X_test.shape}"
         )
@@ -95,7 +95,9 @@ def get_imputations(
                     )
                 else:
                     log.info(f"Fitting {model_name}")
-                    fitted_model = model.fit(X_train, predictors, imputed_variables)
+                    fitted_model = model.fit(
+                        X_train, predictors, imputed_variables
+                    )
 
                 # Get predictions
                 log.info(f"Generating predictions with {model_name}")
@@ -103,7 +105,9 @@ def get_imputations(
                 method_imputations[model_name] = imputations
 
             except (TypeError, AttributeError, ValueError) as model_error:
-                log.error(f"Error processing model {model_name}: {str(model_error)}")
+                log.error(
+                    f"Error processing model {model_name}: {str(model_error)}"
+                )
                 raise RuntimeError(
                     f"Failed to process model {model_name}: {str(model_error)}"
                 ) from model_error

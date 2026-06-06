@@ -7,11 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from microimpute.utils.type_handling import (
-    DummyVariableProcessor,
-    VariableTypeDetector,
-)
-
+from microimpute.utils.type_handling import (DummyVariableProcessor,
+                                             VariableTypeDetector)
 
 # === Regression tests for #9: float {0.0, 1.0} misclassified as boolean ===
 
@@ -73,7 +70,9 @@ def test_unseen_category_warns_at_test_time() -> None:
         warnings.simplefilter("always")
         processor.apply_dummy_encoding_to_test(test, ["x", "cat"])
 
-    unseen_warnings = [x for x in w if "not present at training time" in str(x.message)]
+    unseen_warnings = [
+        x for x in w if "not present at training time" in str(x.message)
+    ]
     assert len(unseen_warnings) == 1, (
         f"Expected 1 unseen-category warning; got {len(w)} warnings: "
         f"{[str(x.message) for x in w]}"
@@ -107,7 +106,9 @@ def test_reference_level_does_not_trigger_warning() -> None:
         warnings.simplefilter("always")
         processor.apply_dummy_encoding_to_test(test, ["x", "cat"])
 
-    unseen_warnings = [x for x in w if "not present at training time" in str(x.message)]
+    unseen_warnings = [
+        x for x in w if "not present at training time" in str(x.message)
+    ]
     assert len(unseen_warnings) == 0, (
         "Reference level 'A' triggered a false-positive unseen-category warning: "
         f"{[str(x.message) for x in unseen_warnings]}"
@@ -138,5 +139,7 @@ def test_all_known_levels_do_not_warn() -> None:
         warnings.simplefilter("always")
         processor.apply_dummy_encoding_to_test(test, ["x", "cat"])
 
-    unseen_warnings = [x for x in w if "not present at training time" in str(x.message)]
+    unseen_warnings = [
+        x for x in w if "not present at training time" in str(x.message)
+    ]
     assert unseen_warnings == []
