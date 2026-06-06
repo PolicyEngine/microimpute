@@ -72,9 +72,7 @@ def test_single_target_is_unaffected_by_sequential_flag():
     out = {}
     for sequential in (True, False):
         imp = ZeroInflatedImputer(sequential=sequential, seed=7)
-        fitted = imp.fit(
-            X_train=train, predictors=["x"], imputed_variables=["a"]
-        )
+        fitted = imp.fit(X_train=train, predictors=["x"], imputed_variables=["a"])
         out[sequential] = fitted.predict(test[["x"]])["a"].to_numpy()
 
     np.testing.assert_allclose(out[True], out[False])

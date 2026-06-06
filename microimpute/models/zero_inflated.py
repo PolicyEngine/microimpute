@@ -79,12 +79,8 @@ def _make_classifier(kind: str, seed: int):
     if kind == "rf":
         from sklearn.ensemble import RandomForestClassifier
 
-        return RandomForestClassifier(
-            n_estimators=50, random_state=seed, n_jobs=-1
-        )
-    raise ValueError(
-        f"Unknown classifier_type {kind!r}; expected 'hist_gb' or 'rf'."
-    )
+        return RandomForestClassifier(n_estimators=50, random_state=seed, n_jobs=-1)
+    raise ValueError(f"Unknown classifier_type {kind!r}; expected 'hist_gb' or 'rf'.")
 
 
 def _detect_regime(
@@ -180,9 +176,7 @@ class ZeroInflatedImputer(Imputer):
     def get_regime(self, variable: str) -> str:
         """Return the detected regime label for a fitted variable."""
         if variable not in self._regimes:
-            raise KeyError(
-                f"Variable {variable!r} not fitted; call fit() first."
-            )
+            raise KeyError(f"Variable {variable!r} not fitted; call fit() first.")
         return self._regimes[variable]
 
     def fit(
@@ -267,9 +261,7 @@ class ZeroInflatedImputer(Imputer):
 
         # Non-numeric (categorical / boolean / constant) targets are
         # handled by a single auxiliary base imputer over their union.
-        non_numeric = [
-            v for v in imputed_variables if v not in numeric_targets
-        ]
+        non_numeric = [v for v in imputed_variables if v not in numeric_targets]
         if non_numeric:
             aux = self.base_imputer_class(
                 log_level="ERROR",
@@ -553,9 +545,7 @@ class ZeroInflatedImputerResults(ImputerResults):
                     quantile=quantile,
                     **kwargs,
                 )
-                values[positive_mask] = sub_preds[variable].to_numpy(
-                    dtype=float
-                )
+                values[positive_mask] = sub_preds[variable].to_numpy(dtype=float)
             return values
 
         if kind == "zi_negative":
@@ -570,9 +560,7 @@ class ZeroInflatedImputerResults(ImputerResults):
                     quantile=quantile,
                     **kwargs,
                 )
-                values[negative_mask] = sub_preds[variable].to_numpy(
-                    dtype=float
-                )
+                values[negative_mask] = sub_preds[variable].to_numpy(dtype=float)
             return values
 
         if kind == "sign_only":
@@ -588,9 +576,7 @@ class ZeroInflatedImputerResults(ImputerResults):
                     quantile=quantile,
                     **kwargs,
                 )
-                values[positive_mask] = sub_preds[variable].to_numpy(
-                    dtype=float
-                )
+                values[positive_mask] = sub_preds[variable].to_numpy(dtype=float)
             if negative_mask.any():
                 sub_preds = self._invoke_base(
                     bundle["negative_base"],
@@ -598,9 +584,7 @@ class ZeroInflatedImputerResults(ImputerResults):
                     quantile=quantile,
                     **kwargs,
                 )
-                values[negative_mask] = sub_preds[variable].to_numpy(
-                    dtype=float
-                )
+                values[negative_mask] = sub_preds[variable].to_numpy(dtype=float)
             return values
 
         if kind == "three_sign":
@@ -622,9 +606,7 @@ class ZeroInflatedImputerResults(ImputerResults):
                     quantile=quantile,
                     **kwargs,
                 )
-                values[positive_mask] = sub_preds[variable].to_numpy(
-                    dtype=float
-                )
+                values[positive_mask] = sub_preds[variable].to_numpy(dtype=float)
             if negative_mask.any():
                 sub_preds = self._invoke_base(
                     bundle["negative_base"],
@@ -632,9 +614,7 @@ class ZeroInflatedImputerResults(ImputerResults):
                     quantile=quantile,
                     **kwargs,
                 )
-                values[negative_mask] = sub_preds[variable].to_numpy(
-                    dtype=float
-                )
+                values[negative_mask] = sub_preds[variable].to_numpy(dtype=float)
             return values
 
         raise ValueError(f"Unhandled bundle kind {kind!r}")
