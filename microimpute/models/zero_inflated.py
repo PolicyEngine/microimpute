@@ -234,20 +234,26 @@ class ZeroInflatedImputer(Imputer):
             for v in imputed_variables
             if v in self.numeric_targets or v in constant_numeric_targets
         ]
-        for var in numeric_targets:
+        numeric_target_set = set(numeric_targets)
+        previous_numeric_targets: List[str] = []
+        for var in imputed_variables:
+            if var not in numeric_target_set:
+                continue
             y = X_train[var].to_numpy(dtype=float, copy=False)
             regime = _detect_regime(
                 y,
                 zero_atol=self.zero_atol,
             )
+            sequential_predictors = list(predictors) + previous_numeric_targets
             self._regimes[var] = regime
             self._per_variable[var] = self._fit_single_numeric(
                 X_train=X_train,
-                predictors=predictors,
+                predictors=sequential_predictors,
                 variable=var,
                 regime=regime,
                 y=y,
             )
+            previous_numeric_targets.append(var)
 
         # Non-numeric (categorical / boolean / constant) targets are
         # handled by a single auxiliary base imputer over their union.
@@ -298,17 +304,24 @@ class ZeroInflatedImputer(Imputer):
         Returns a bundle dict with the regime, the gate classifier
         (or None), and the base imputer(s) keyed by their role.
         """
+
+        def with_predictors(bundle: Dict[str, Any]) -> Dict[str, Any]:
+            bundle["predictors"] = list(predictors)
+            return bundle
+
         X_pred = X_train[predictors].to_numpy(dtype=float, copy=False)
 
         if regime == REGIME_DEGENERATE_ZERO:
-            return {"kind": "constant", "value": 0.0}
+            return with_predictors({"kind": "constant", "value": 0.0})
 
         if regime in (REGIME_POSITIVE_ONLY, REGIME_NEGATIVE_ONLY):
             # No gate; single base imputer on the full training set.
-            return {
-                "kind": "single",
-                "base": self._fit_base_single(X_train, predictors, variable),
-            }
+            return with_predictors(
+                {
+                    "kind": "single",
+                    "base": self._fit_base_single(X_train, predictors, variable),
+                }
+            )
 
         if regime == REGIME_ZI_POSITIVE:
             labels = (y > self.zero_atol).astype(int)
@@ -318,11 +331,13 @@ class ZeroInflatedImputer(Imputer):
             pos_base = self._fit_base_single(
                 X_train.loc[pos_mask], predictors, variable
             )
-            return {
-                "kind": "zi_positive",
-                "classifier": clf,
-                "positive_base": pos_base,
-            }
+            return with_predictors(
+                {
+                    "kind": "zi_positive",
+                    "classifier": clf,
+                    "positive_base": pos_base,
+                }
+            )
 
         if regime == REGIME_ZI_NEGATIVE:
             labels = (y < -self.zero_atol).astype(int)
@@ -332,11 +347,13 @@ class ZeroInflatedImputer(Imputer):
             neg_base = self._fit_base_single(
                 X_train.loc[neg_mask], predictors, variable
             )
-            return {
-                "kind": "zi_negative",
-                "classifier": clf,
-                "negative_base": neg_base,
-            }
+            return with_predictors(
+                {
+                    "kind": "zi_negative",
+                    "classifier": clf,
+                    "negative_base": neg_base,
+                }
+            )
 
         if regime == REGIME_SIGN_ONLY:
             # No zero class, but both signs present. Binary sign gate
@@ -346,16 +363,18 @@ class ZeroInflatedImputer(Imputer):
             clf.fit(X_pred, labels)
             pos_mask = y > 0
             neg_mask = ~pos_mask
-            return {
-                "kind": "sign_only",
-                "classifier": clf,
-                "positive_base": self._fit_base_single(
-                    X_train.loc[pos_mask], predictors, variable
-                ),
-                "negative_base": self._fit_base_single(
-                    X_train.loc[neg_mask], predictors, variable
-                ),
-            }
+            return with_predictors(
+                {
+                    "kind": "sign_only",
+                    "classifier": clf,
+                    "positive_base": self._fit_base_single(
+                        X_train.loc[pos_mask], predictors, variable
+                    ),
+                    "negative_base": self._fit_base_single(
+                        X_train.loc[neg_mask], predictors, variable
+                    ),
+                }
+            )
 
         if regime == REGIME_THREE_SIGN:
             # 0 / neg / pos three-way gate + two base imputers.
@@ -368,16 +387,18 @@ class ZeroInflatedImputer(Imputer):
             clf.fit(X_pred, labels)
             pos_mask = y > self.zero_atol
             neg_mask = y < -self.zero_atol
-            return {
-                "kind": "three_sign",
-                "classifier": clf,
-                "positive_base": self._fit_base_single(
-                    X_train.loc[pos_mask], predictors, variable
-                ),
-                "negative_base": self._fit_base_single(
-                    X_train.loc[neg_mask], predictors, variable
-                ),
-            }
+            return with_predictors(
+                {
+                    "kind": "three_sign",
+                    "classifier": clf,
+                    "positive_base": self._fit_base_single(
+                        X_train.loc[pos_mask], predictors, variable
+                    ),
+                    "negative_base": self._fit_base_single(
+                        X_train.loc[neg_mask], predictors, variable
+                    ),
+                }
+            )
 
         raise ValueError(f"Unhandled regime {regime!r}")
 
@@ -465,6 +486,7 @@ class ZeroInflatedImputerResults(ImputerResults):
         **kwargs: Any,
     ) -> pd.DataFrame:
         out = pd.DataFrame(index=X_test.index)
+        X_test_augmented = X_test.copy()
 
         for variable in self.imputed_variables:
             regime = self._regimes.get(variable)
@@ -472,9 +494,11 @@ class ZeroInflatedImputerResults(ImputerResults):
                 # Non-numeric target; handled by the auxiliary bundle.
                 continue
             bundle = self._per_variable[variable]
-            out[variable] = self._predict_single_variable(
-                X_test, variable, bundle, quantile=quantile, **kwargs
+            values = self._predict_single_variable(
+                X_test_augmented, variable, bundle, quantile=quantile, **kwargs
             )
+            out[variable] = values
+            X_test_augmented[variable] = values
 
         # Merge in non-numeric target predictions from the auxiliary
         # single base imputer.
@@ -501,6 +525,7 @@ class ZeroInflatedImputerResults(ImputerResults):
     ) -> np.ndarray:
         n = len(X_test)
         kind = bundle["kind"]
+        predictors = bundle.get("predictors", self.predictors)
 
         if kind == "constant":
             return np.full(n, bundle["value"], dtype=float)
@@ -511,7 +536,7 @@ class ZeroInflatedImputerResults(ImputerResults):
             )
             return preds[variable].to_numpy(dtype=float)
 
-        X_pred = X_test[self.predictors].to_numpy(dtype=float, copy=False)
+        X_pred = X_test[predictors].to_numpy(dtype=float, copy=False)
 
         if kind == "zi_positive":
             clf = bundle["classifier"]

@@ -303,3 +303,55 @@ class TestBaseImputerParity:
             abs(bare_preds.mean() - wrapped_preds.mean()) / max(bare_preds.mean(), 1.0)
             < 0.25
         )
+
+
+class TestSequentialNumericTargets:
+    """Multiple numeric targets should use earlier imputations as predictors."""
+
+    def test_later_numeric_targets_receive_previous_predictions(self) -> None:
+        from microimpute.models.zero_inflated import ZeroInflatedImputer
+
+        class SequentialProbeResult:
+            def __init__(self, variable: str, predictors: list[str]) -> None:
+                self.variable = variable
+                self.predictors = predictors
+
+            def predict(self, X_test: pd.DataFrame, **_kwargs) -> pd.DataFrame:
+                if self.variable == "y1":
+                    return pd.DataFrame({"y1": np.full(len(X_test), 7.0)})
+                return pd.DataFrame({"y2": X_test["y1"].to_numpy(dtype=float) * 3.0})
+
+        class SequentialProbeImputer:
+            def __init__(self, **_kwargs) -> None:
+                pass
+
+            def fit(
+                self,
+                X_train: pd.DataFrame,
+                predictors: list[str],
+                imputed_variables: list[str],
+            ) -> SequentialProbeResult:
+                assert len(imputed_variables) == 1
+                return SequentialProbeResult(imputed_variables[0], predictors)
+
+        data = pd.DataFrame(
+            {
+                "x": np.arange(20, dtype=float),
+                "y1": np.linspace(10.0, 29.0, 20),
+                "y2": np.linspace(100.0, 119.0, 20),
+            }
+        )
+
+        result = ZeroInflatedImputer(
+            base_imputer_class=SequentialProbeImputer,
+        ).fit(data, predictors=["x"], imputed_variables=["y1", "y2"])
+
+        assert result._per_variable["y1"]["predictors"] == ["x"]
+        assert result._per_variable["y1"]["base"].predictors == ["x"]
+        assert result._per_variable["y2"]["predictors"] == ["x", "y1"]
+        assert result._per_variable["y2"]["base"].predictors == ["x", "y1"]
+
+        predictions = result.predict(pd.DataFrame({"x": [1.0, 2.0, 3.0]}))
+
+        np.testing.assert_array_equal(predictions["y1"].to_numpy(), 7.0)
+        np.testing.assert_array_equal(predictions["y2"].to_numpy(), 21.0)
