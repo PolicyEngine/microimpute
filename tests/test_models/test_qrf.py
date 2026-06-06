@@ -145,6 +145,31 @@ def test_qrf_sequential_imputation(diabetes_data: pd.DataFrame) -> None:
     ), "Imputation order should affect results"
 
 
+def test_qrf_model_prediction_reorders_to_fitted_feature_order() -> None:
+    """Prediction must honor the fitted sklearn feature order contract."""
+    rng = np.random.default_rng(42)
+    X_fit = pd.DataFrame(
+        {
+            "b": rng.normal(size=120),
+            "a": rng.normal(size=120),
+        }
+    )
+    y = pd.Series(
+        2.0 * X_fit["a"] - X_fit["b"] + rng.normal(scale=0.1, size=120),
+        name="target",
+    )
+
+    model = _QRFModel(seed=42, logger=logging.getLogger(__name__))
+    model.fit(X_fit[["b", "a"]], y, n_estimators=10)
+
+    X_reordered = X_fit[["a", "b"]].head(12)
+    predictions = model.predict(X_reordered, exact_quantile=0.5)
+
+    assert isinstance(predictions, pd.Series)
+    assert predictions.shape == (12,)
+    assert not predictions.isna().any()
+
+
 def test_qrf_beta_distribution_sampling():
     """Test different mean_quantile values for beta distribution sampling."""
     np.random.seed(42)

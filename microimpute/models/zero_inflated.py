@@ -232,6 +232,9 @@ class ZeroInflatedImputer(Imputer):
             for v in imputed_variables
             if v in self.numeric_targets or v in constant_numeric_targets
         ]
+        nested_not_numeric_categorical = list(
+            dict.fromkeys([*(not_numeric_categorical or []), *numeric_targets])
+        )
         # Sequential (chained-equations) imputation: condition each numeric
         # target on the original predictors plus the previously-fit numeric
         # targets, so the imputed vector preserves cross-variable joint
@@ -255,6 +258,7 @@ class ZeroInflatedImputer(Imputer):
                 variable=var,
                 regime=regime,
                 y=y,
+                not_numeric_categorical=nested_not_numeric_categorical,
             )
             bundle["predictors"] = list(seq_predictors)
             self._per_variable[var] = bundle
@@ -302,6 +306,7 @@ class ZeroInflatedImputer(Imputer):
         variable: str,
         regime: str,
         y: np.ndarray,
+        not_numeric_categorical: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Fit the gate and base imputer(s) for one numeric target.
 
@@ -317,7 +322,12 @@ class ZeroInflatedImputer(Imputer):
             # No gate; single base imputer on the full training set.
             return {
                 "kind": "single",
-                "base": self._fit_base_single(X_train, predictors, variable),
+                "base": self._fit_base_single(
+                    X_train,
+                    predictors,
+                    variable,
+                    not_numeric_categorical=not_numeric_categorical,
+                ),
             }
 
         if regime == REGIME_ZI_POSITIVE:
@@ -326,7 +336,10 @@ class ZeroInflatedImputer(Imputer):
             clf.fit(X_pred, labels)
             pos_mask = y > self.zero_atol
             pos_base = self._fit_base_single(
-                X_train.loc[pos_mask], predictors, variable
+                X_train.loc[pos_mask],
+                predictors,
+                variable,
+                not_numeric_categorical=not_numeric_categorical,
             )
             return {
                 "kind": "zi_positive",
@@ -340,7 +353,10 @@ class ZeroInflatedImputer(Imputer):
             clf.fit(X_pred, labels)
             neg_mask = y < -self.zero_atol
             neg_base = self._fit_base_single(
-                X_train.loc[neg_mask], predictors, variable
+                X_train.loc[neg_mask],
+                predictors,
+                variable,
+                not_numeric_categorical=not_numeric_categorical,
             )
             return {
                 "kind": "zi_negative",
@@ -360,10 +376,16 @@ class ZeroInflatedImputer(Imputer):
                 "kind": "sign_only",
                 "classifier": clf,
                 "positive_base": self._fit_base_single(
-                    X_train.loc[pos_mask], predictors, variable
+                    X_train.loc[pos_mask],
+                    predictors,
+                    variable,
+                    not_numeric_categorical=not_numeric_categorical,
                 ),
                 "negative_base": self._fit_base_single(
-                    X_train.loc[neg_mask], predictors, variable
+                    X_train.loc[neg_mask],
+                    predictors,
+                    variable,
+                    not_numeric_categorical=not_numeric_categorical,
                 ),
             }
 
@@ -382,10 +404,16 @@ class ZeroInflatedImputer(Imputer):
                 "kind": "three_sign",
                 "classifier": clf,
                 "positive_base": self._fit_base_single(
-                    X_train.loc[pos_mask], predictors, variable
+                    X_train.loc[pos_mask],
+                    predictors,
+                    variable,
+                    not_numeric_categorical=not_numeric_categorical,
                 ),
                 "negative_base": self._fit_base_single(
-                    X_train.loc[neg_mask], predictors, variable
+                    X_train.loc[neg_mask],
+                    predictors,
+                    variable,
+                    not_numeric_categorical=not_numeric_categorical,
                 ),
             }
 
@@ -396,6 +424,7 @@ class ZeroInflatedImputer(Imputer):
         X_train: pd.DataFrame,
         predictors: List[str],
         variable: str,
+        not_numeric_categorical: Optional[List[str]] = None,
     ) -> ImputerResults:
         """Fit a single base Imputer on a (possibly filtered) slice."""
         imputer = self.base_imputer_class(
@@ -406,6 +435,7 @@ class ZeroInflatedImputer(Imputer):
             X_train=X_train,
             predictors=predictors,
             imputed_variables=[variable],
+            not_numeric_categorical=not_numeric_categorical,
         )
 
 

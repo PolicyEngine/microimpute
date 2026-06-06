@@ -303,3 +303,72 @@ class TestBaseImputerParity:
             abs(bare_preds.mean() - wrapped_preds.mean()) / max(bare_preds.mean(), 1.0)
             < 0.25
         )
+
+
+class TestSequentialPredictorTyping:
+    """Numeric overrides must reach nested per-regime base imputers."""
+
+    def test_chained_numeric_targets_stay_numeric_in_nested_base_fits(self) -> None:
+        from microimpute.models.zero_inflated import ZeroInflatedImputer
+
+        rng = np.random.default_rng(42)
+        y1 = np.tile(np.arange(20, dtype=float), 10)
+        positive = y1 < 3
+        data = pd.DataFrame(
+            {
+                "x": rng.normal(size=len(y1)),
+                # Numeric in the full target block, but low-cardinality inside
+                # the y2 positive-regime slice where it becomes a predictor.
+                "y1": y1,
+                "y2": np.where(
+                    positive,
+                    rng.exponential(scale=100.0, size=len(y1)) + 1.0,
+                    0.0,
+                ),
+            }
+        )
+
+        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        fitted = imputer.fit(
+            data,
+            predictors=["x"],
+            imputed_variables=["y1", "y2"],
+        )
+
+        y2_base = fitted._per_variable["y2"]["positive_base"]
+        assert "y1" not in y2_base.dummy_processor.dummy_mapping
+
+        predictions = fitted.predict(data[["x"]].head(20))
+        assert set(predictions.columns) == {"y1", "y2"}
+        assert not predictions.isna().any().any()
+
+    def test_not_numeric_categorical_applies_to_chained_base_predictors(self) -> None:
+        from microimpute.models.zero_inflated import ZeroInflatedImputer
+
+        rng = np.random.default_rng(42)
+        n = 180
+        data = pd.DataFrame(
+            {
+                "x": rng.normal(size=n),
+                # Low-cardinality, equally spaced numeric target. Without
+                # the override this becomes a categorical predictor inside
+                # the nested base QRF for y2.
+                "y1": rng.choice([0.0, 1.0, 2.0], size=n),
+                "y2": rng.exponential(scale=100.0, size=n) + 1.0,
+            }
+        )
+
+        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        fitted = imputer.fit(
+            data,
+            predictors=["x"],
+            imputed_variables=["y1", "y2"],
+            not_numeric_categorical=["y1"],
+        )
+
+        y2_base = fitted._per_variable["y2"]["base"]
+        assert "y1" not in y2_base.dummy_processor.dummy_mapping
+
+        predictions = fitted.predict(data[["x"]].head(20))
+        assert set(predictions.columns) == {"y1", "y2"}
+        assert not predictions.isna().any().any()
