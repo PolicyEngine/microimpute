@@ -2,9 +2,11 @@
 
 This module provides a collection of statistical models for data imputation,
 including both parametric and non-parametric approaches. Each model extends
-the base Imputer class and provides quantile-based predictions.
+the base imputer class and provides quantile-based predictions.
 
 Available models:
+    - Imputer: canonical regime-gated, QRF-based, sequentially-chained
+        imputer (the opinionated default)
     - OLS: ordinary least squares regression with bootstrapped quantiles
     - QRF: quantile regression forest for non-parametric quantile regression
     - QuantReg: linear quantile regression model
@@ -13,12 +15,12 @@ Available models:
         (optional, requires pytorch-tabular)
 
 Base classes:
-    - Imputer: abstract base class for all imputation models
+    - BaseImputer: abstract base class for all imputation models
     - ImputerResults: container for fitted model and prediction methods
 """
 
 # Import base classes
-from microimpute.models.imputer import Imputer, ImputerResults
+from microimpute.models.imputer import BaseImputer, ImputerResults
 
 try:
     from microimpute.models.matching import Matching
@@ -34,3 +36,7 @@ except ImportError:
 from microimpute.models.ols import OLS
 from microimpute.models.qrf import QRF
 from microimpute.models.quantreg import QuantReg
+
+# Canonical opinionated imputer: sign-regime gating + QRF base + sequential
+# chained-equations imputation, all on by default.
+from microimpute.models.regime_gated import Imputer

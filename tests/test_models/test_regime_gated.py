@@ -1,4 +1,4 @@
-"""Regime-aware zero-inflation wrapper around base imputers.
+"""Canonical regime-gated ``Imputer`` over base imputers.
 
 Tabular microdata variables fall into seven regimes based on which of
 {negative, zero, positive} values appear in the training data:
@@ -24,7 +24,7 @@ so they run in under a second each — the correctness axes are:
 1. Regime detection from training data is correct.
 2. Predictions respect the detected regime (no zero leaks, no
    sign-interpolation between positive and negative regimes).
-3. Fit/predict lifecycle matches the base `Imputer` contract.
+3. Fit/predict lifecycle matches the base ``BaseImputer`` contract.
 4. Pure support detection: any observed negative, zero, or positive
    support participates in regime selection.
 """
@@ -62,31 +62,31 @@ class TestRegimeDetection:
     """Regime auto-detection from the training distribution."""
 
     def test_regime_detection_is_importable(self) -> None:
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+        from microimpute.models.regime_gated import Imputer
 
-        assert ZeroInflatedImputer is not None
+        assert Imputer is not None
 
     def test_positive_plus_zero_is_zi_positive(self) -> None:
         """97% zeros + 3% positives → ZI_POSITIVE regime."""
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+        from microimpute.models.regime_gated import Imputer
 
         rng = np.random.default_rng(0)
         y = np.where(rng.random(500) > 0.97, rng.exponential(100, 500), 0.0)
         data = _deterministic_frame(500, y)
 
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        imputer = Imputer(base_imputer_class=QRF)
         imputer.fit(data, predictors=["age", "income_bin"], imputed_variables=["y"])
         assert imputer.get_regime("y") == "ZI_POSITIVE"
 
     def test_negative_plus_zero_is_zi_negative(self) -> None:
         """97% zeros + 3% negatives → ZI_NEGATIVE regime (mirror)."""
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+        from microimpute.models.regime_gated import Imputer
 
         rng = np.random.default_rng(0)
         y = np.where(rng.random(500) > 0.97, -rng.exponential(100, 500), 0.0)
         data = _deterministic_frame(500, y)
 
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        imputer = Imputer(base_imputer_class=QRF)
         imputer.fit(data, predictors=["age", "income_bin"], imputed_variables=["y"])
         assert imputer.get_regime("y") == "ZI_NEGATIVE"
 
@@ -96,7 +96,7 @@ class TestRegimeDetection:
         Fixture models a capital-gains-like distribution: 70% zero,
         15% positive, 15% negative, with distinct pos/neg means.
         """
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+        from microimpute.models.regime_gated import Imputer
 
         rng = np.random.default_rng(0)
         n = 1000
@@ -108,28 +108,28 @@ class TestRegimeDetection:
         y[neg_mask] = -rng.exponential(300, size=neg_mask.sum())
         data = _deterministic_frame(n, y)
 
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        imputer = Imputer(base_imputer_class=QRF)
         imputer.fit(data, predictors=["age", "income_bin"], imputed_variables=["y"])
         assert imputer.get_regime("y") == "THREE_SIGN"
 
     def test_positive_only_is_positive_only(self) -> None:
         """All positive, no zeros → POSITIVE_ONLY (no gate, raw base imputer)."""
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+        from microimpute.models.regime_gated import Imputer
 
         rng = np.random.default_rng(0)
         y = rng.exponential(100, size=500)  # strictly positive
         data = _deterministic_frame(500, y)
 
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        imputer = Imputer(base_imputer_class=QRF)
         imputer.fit(data, predictors=["age", "income_bin"], imputed_variables=["y"])
         assert imputer.get_regime("y") == "POSITIVE_ONLY"
 
     def test_constant_zero_is_degenerate(self) -> None:
         """All zeros → DEGENERATE_ZERO, predictions are exactly 0."""
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+        from microimpute.models.regime_gated import Imputer
 
         data = _deterministic_frame(500, np.zeros(500))
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        imputer = Imputer(base_imputer_class=QRF)
         imputer.fit(data, predictors=["age", "income_bin"], imputed_variables=["y"])
         assert imputer.get_regime("y") == "DEGENERATE_ZERO"
 
@@ -140,7 +140,7 @@ class TestRegimeDetection:
         The negative mass is real and should trigger THREE_SIGN without
         caller-supplied support/sign metadata.
         """
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+        from microimpute.models.regime_gated import Imputer
 
         rng = np.random.default_rng(0)
         n = 500
@@ -154,7 +154,7 @@ class TestRegimeDetection:
         assert (y == 0).sum() > 0, "fixture precondition"
 
         data = _deterministic_frame(n, y)
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        imputer = Imputer(base_imputer_class=QRF)
         imputer.fit(data, predictors=["age", "income_bin"], imputed_variables=["y"])
         assert imputer.get_regime("y") == "THREE_SIGN"
 
@@ -163,10 +163,10 @@ class TestPredictionsRespectRegime:
     """Predicted values must lie in the regime's support."""
 
     def _fit_predict(self, y: np.ndarray, n_pred: int = 200) -> pd.Series:
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+        from microimpute.models.regime_gated import Imputer
 
         data = _deterministic_frame(len(y), y, seed=1)
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        imputer = Imputer(base_imputer_class=QRF)
         result = imputer.fit(
             data, predictors=["age", "income_bin"], imputed_variables=["y"]
         )
@@ -218,7 +218,7 @@ class TestPredictionsRespectRegime:
         strictly below `max(train_negatives)` on records the gate calls
         negative. No record should land in the interpolated band between
         max(neg) and min(pos)."""
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+        from microimpute.models.regime_gated import Imputer
 
         rng = np.random.default_rng(0)
         n = 2000
@@ -232,7 +232,7 @@ class TestPredictionsRespectRegime:
         y[neg_mask] = -(100 + rng.exponential(300, size=neg_mask.sum()))
         data = _deterministic_frame(n, y, seed=2)
 
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        imputer = Imputer(base_imputer_class=QRF)
         result = imputer.fit(
             data, predictors=["age", "income_bin"], imputed_variables=["y"]
         )
@@ -259,13 +259,13 @@ class TestPredictionsRespectRegime:
 
 
 class TestBaseImputerParity:
-    """Single-regime behavior must match the base Imputer (no gate overhead)."""
+    """Single-regime behavior must match the base imputer (no gate overhead)."""
 
     def test_positive_only_matches_bare_qrf(self) -> None:
-        """For a strictly-positive target, ZeroInflatedImputer should
+        """For a strictly-positive target, Imputer should
         produce equivalent distributions to QRF directly (since regime
         detection returns POSITIVE_ONLY and no gate is applied)."""
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+        from microimpute.models.regime_gated import Imputer
 
         rng = np.random.default_rng(0)
         y = rng.exponential(100, size=500)  # strictly positive
@@ -276,7 +276,7 @@ class TestBaseImputerParity:
             data, predictors=["age", "income_bin"], imputed_variables=["y"]
         )
 
-        wrapped = ZeroInflatedImputer(base_imputer_class=QRF)
+        wrapped = Imputer(base_imputer_class=QRF)
         wrapped_result = wrapped.fit(
             data, predictors=["age", "income_bin"], imputed_variables=["y"]
         )
@@ -308,8 +308,10 @@ class TestBaseImputerParity:
 class TestSequentialPredictorTyping:
     """Numeric overrides must reach nested per-regime base imputers."""
 
-    def test_chained_numeric_targets_stay_numeric_in_nested_base_fits(self) -> None:
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+    def test_chained_numeric_targets_stay_numeric_in_nested_base_fits(
+        self,
+    ) -> None:
+        from microimpute.models.regime_gated import Imputer
 
         rng = np.random.default_rng(42)
         y1 = np.tile(np.arange(20, dtype=float), 10)
@@ -328,7 +330,7 @@ class TestSequentialPredictorTyping:
             }
         )
 
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        imputer = Imputer(base_imputer_class=QRF)
         fitted = imputer.fit(
             data,
             predictors=["x"],
@@ -342,8 +344,10 @@ class TestSequentialPredictorTyping:
         assert set(predictions.columns) == {"y1", "y2"}
         assert not predictions.isna().any().any()
 
-    def test_not_numeric_categorical_applies_to_chained_base_predictors(self) -> None:
-        from microimpute.models.zero_inflated import ZeroInflatedImputer
+    def test_not_numeric_categorical_applies_to_chained_base_predictors(
+        self,
+    ) -> None:
+        from microimpute.models.regime_gated import Imputer
 
         rng = np.random.default_rng(42)
         n = 180
@@ -358,7 +362,7 @@ class TestSequentialPredictorTyping:
             }
         )
 
-        imputer = ZeroInflatedImputer(base_imputer_class=QRF)
+        imputer = Imputer(base_imputer_class=QRF)
         fitted = imputer.fit(
             data,
             predictors=["x"],

@@ -2,7 +2,7 @@
 
 This module defines the core architecture for imputation models in MicroImpute.
 It provides two abstract base classes:
-1. Imputer - For model initialization and fitting
+1. BaseImputer - For model initialization and fitting
 2. ImputerResults - For storing fitted models and making predictions
 
 All model implementations should extend these classes to ensure a consistent interface.
@@ -35,7 +35,7 @@ class _ConstantValueModel:
         return pd.Series(self.constant_value, index=X.index, name=self.variable_name)
 
 
-class Imputer(ABC):
+class BaseImputer(ABC):
     """
     Abstract base class for fitting imputation models.
 

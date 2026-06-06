@@ -170,6 +170,110 @@ def test_qrf_model_prediction_reorders_to_fitted_feature_order() -> None:
     assert not predictions.isna().any()
 
 
+def test_qrf_feature_importances_self_consistent_with_categorical() -> None:
+    """Regression test: feature_importances_ keys and values must align.
+
+    A categorical predictor expands into several dummy columns, so the
+    forest's importance vector is LONGER than the list of original input
+    predictor names. The prior implementation paired
+    ``feature_names_in_`` (original names) positionally with the raw
+    importance array — a silent length/order mismatch under dummy
+    encoding. The fix keys ``feature_importances_`` by the forest's
+    actual fitted columns (always self-consistent), and reports the
+    original predictor names via ``feature_names_in_``.
+    """
+    rng = np.random.default_rng(0)
+    n = 400
+    cat = rng.choice(["red", "green", "blue"], size=n)
+    offset = pd.Series(cat).map({"red": 0.0, "green": 5.0, "blue": 10.0})
+    data = pd.DataFrame(
+        {
+            "x": rng.normal(size=n),
+            "color": cat,
+            "y": 20.0 + offset.to_numpy() + rng.exponential(1.0, size=n),
+        }
+    )
+
+    fitted = QRF().fit(
+        data,
+        predictors=["x", "color"],
+        imputed_variables=["y"],
+        n_estimators=20,
+    )
+
+    # feature_names_in_ is the ORIGINAL input predictor names (sklearn
+    # convention), as an ndarray.
+    assert isinstance(fitted.feature_names_in_, np.ndarray)
+    assert set(fitted.feature_names_in_) == {"x", "color"}
+
+    importances = fitted.feature_importances_
+    assert isinstance(importances, dict)
+    # Keyed by the forest's actual fitted columns -> dummy expansion means
+    # MORE importance entries than original predictor names. This is the
+    # exact mismatch the old positional pairing got wrong.
+    qrf_model = fitted.models["y"]
+    assert set(importances) == set(qrf_model.feature_columns)
+    assert len(importances) == len(qrf_model.qrf.feature_importances_)
+    assert len(importances) > len(fitted.feature_names_in_)
+    # Every value is finite and they sum to ~1 (sklearn importances).
+    assert all(np.isfinite(v) for v in importances.values())
+    assert abs(sum(importances.values()) - 1.0) < 1e-6
+    # The expanded color dummies carry signal -> at least one nonzero.
+    color_keys = [k for k in importances if str(k).startswith("color")]
+    assert color_keys
+    assert any(importances[k] > 0 for k in color_keys)
+
+
+def test_qrf_feature_importances_multiple_variables_is_nested() -> None:
+    """Multiple imputed variables -> {var: {feature: importance}}."""
+    rng = np.random.default_rng(1)
+    n = 400
+    data = pd.DataFrame(
+        {
+            "x1": rng.normal(size=n),
+            "x2": rng.normal(size=n),
+            "y1": rng.exponential(1.0, size=n) + 1.0,
+            "y2": rng.exponential(1.0, size=n) + 1.0,
+        }
+    )
+    fitted = QRF().fit(
+        data,
+        predictors=["x1", "x2"],
+        imputed_variables=["y1", "y2"],
+        n_estimators=15,
+    )
+    importances = fitted.feature_importances_
+    assert set(importances) == {"y1", "y2"}
+    for var in ("y1", "y2"):
+        per_var = importances[var]
+        assert isinstance(per_var, dict)
+        assert set(per_var) == set(fitted.models[var].feature_columns)
+
+
+def test_qrf_feature_importances_absent_for_classifier_base() -> None:
+    """Non-QRF bases (classifier/constant) must NOT expose importances.
+
+    ``feature_importances_`` raises ``AttributeError`` for a categorical
+    (classifier) target so ``hasattr`` reports ``False``, matching the
+    sklearn ``hasattr``-probe convention used by callers.
+    """
+    rng = np.random.default_rng(2)
+    n = 300
+    data = pd.DataFrame(
+        {
+            "x": rng.normal(size=n),
+            "cat_target": rng.choice(["a", "b", "c"], size=n),
+        }
+    )
+    fitted = QRF().fit(
+        data,
+        predictors=["x"],
+        imputed_variables=["cat_target"],
+        n_estimators=15,
+    )
+    assert not hasattr(fitted, "feature_importances_")
+
+
 def test_qrf_beta_distribution_sampling():
     """Test different mean_quantile values for beta distribution sampling."""
     np.random.seed(42)
@@ -283,7 +387,9 @@ def test_qrf_row_filter_applies_common_training_mask() -> None:
     assert not predictions[0.5].isna().any().any()
 
 
-def test_qrf_target_filters_reject_unknown_targets(simple_data: pd.DataFrame) -> None:
+def test_qrf_target_filters_reject_unknown_targets(
+    simple_data: pd.DataFrame,
+) -> None:
     with pytest.raises(ValueError, match="target_filters contains variables"):
         QRF().fit(
             simple_data,

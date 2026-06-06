@@ -46,12 +46,7 @@ from microimpute.comparisons.validation import (
 )
 
 # Main configuration
-from microimpute.config import (
-    PLOT_CONFIG,
-    QUANTILES,
-    RANDOM_STATE,
-    VALIDATE_CONFIG,
-)
+from microimpute.config import PLOT_CONFIG, QUANTILES, RANDOM_STATE, VALIDATE_CONFIG
 
 # Import evaluation modules
 from microimpute.evaluations.cross_validation import cross_validate_model
@@ -61,8 +56,10 @@ from microimpute.evaluations.predictor_analysis import (
     progressive_predictor_inclusion,
 )
 
-# Import main models and utilities
-from microimpute.models import OLS, QRF, Imputer, ImputerResults, QuantReg
+# Import main models and utilities. ``Imputer`` is the canonical
+# regime-gated, QRF-based, sequentially-chained imputer; ``BaseImputer``
+# is the abstract base class all models extend.
+from microimpute.models import OLS, QRF, BaseImputer, Imputer, ImputerResults, QuantReg
 
 # Import data handling functions
 from microimpute.utils.data import preprocess_data, unnormalize_predictions

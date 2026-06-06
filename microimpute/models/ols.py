@@ -10,7 +10,7 @@ from scipy.stats import norm
 from sklearn.linear_model import LogisticRegression
 
 from microimpute.config import VALIDATE_CONFIG
-from microimpute.models.imputer import Imputer, ImputerResults
+from microimpute.models.imputer import BaseImputer, ImputerResults
 
 
 class _LogisticRegressionModel:
@@ -462,7 +462,7 @@ class OLSResults(ImputerResults):
             ) from e
 
 
-class OLS(Imputer):
+class OLS(BaseImputer):
     """
     Ordinary Least Squares regression model for imputation.
 

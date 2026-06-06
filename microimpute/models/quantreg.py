@@ -10,7 +10,7 @@ from pydantic import validate_call
 from statsmodels.tools.sm_exceptions import IterationLimitWarning
 
 from microimpute.config import VALIDATE_CONFIG
-from microimpute.models.imputer import Imputer, ImputerResults
+from microimpute.models.imputer import BaseImputer, ImputerResults
 
 warnings.filterwarnings("ignore", category=IterationLimitWarning)
 
@@ -268,7 +268,7 @@ class QuantRegResults(ImputerResults):
             ) from e
 
 
-class QuantReg(Imputer):
+class QuantReg(BaseImputer):
     """
     Quantile Regression model for imputation.
 

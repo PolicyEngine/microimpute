@@ -24,7 +24,7 @@ from microimpute.comparisons.validation import (
     validate_quantiles,
 )
 from microimpute.evaluations import cross_validate_model
-from microimpute.models import Imputer
+from microimpute.models import BaseImputer
 from microimpute.utils.data import preprocess_data
 
 log = logging.getLogger(__name__)
@@ -237,7 +237,7 @@ def prepare_data_for_imputation(
 
 
 def evaluate_model(
-    model: Type[Imputer],
+    model: Type[BaseImputer],
     data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
@@ -290,7 +290,7 @@ def evaluate_model(
 
 
 def fit_and_predict_model(
-    model_class: Type[Imputer],
+    model_class: Type[BaseImputer],
     training_data: pd.DataFrame,
     imputing_data: pd.DataFrame,
     predictors: List[str],

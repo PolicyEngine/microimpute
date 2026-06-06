@@ -7,7 +7,7 @@ import pandas as pd
 from pydantic import validate_call
 
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
-from microimpute.models.imputer import Imputer, ImputerResults
+from microimpute.models.imputer import BaseImputer, ImputerResults
 from microimpute.utils.statmatch_hotdeck import nnd_hotdeck_using_rpy2
 
 MatchingHotdeckFn = Callable[
@@ -402,7 +402,7 @@ class MatchingResults(ImputerResults):
             raise RuntimeError("Failed to create output imputations") from output_error
 
 
-class Matching(Imputer):
+class Matching(BaseImputer):
     """
     Statistical matching model for imputation using nearest neighbor distance
     hot deck method.
