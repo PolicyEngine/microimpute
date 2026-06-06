@@ -42,7 +42,6 @@ three-sign architecture. Callers do not provide sign/regime metadata.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Type, Union
 
 import numpy as np
@@ -137,75 +136,6 @@ def _detect_regime(
 # Used when sign-regime gating is turned off: a single base imputer over
 # the full training set, no gate.
 REGIME_NO_GATE = "NO_GATE"
-
-
-def _fit_metrics(y: np.ndarray, *, zero_atol: float) -> Dict[str, int]:
-    """Per-variable training-support counts, captured at fit time."""
-    return {
-        "n_train": int(len(y)),
-        "n_negative": int((y < -zero_atol).sum()),
-        "n_zero": int((np.abs(y) <= zero_atol).sum()),
-        "n_positive": int((y > zero_atol).sum()),
-    }
-
-
-@dataclass(frozen=True)
-class VariableLineage:
-    """Provenance for one imputed variable: how it was modelled.
-
-    Attributes:
-        variable: The imputed target name.
-        regime: Detected sign regime (or ``NO_GATE`` when sign-regime
-            gating is disabled).
-        predictors: Predictor columns used, in order — the original
-            predictors followed by the previously-imputed targets this
-            variable was chained on.
-        fit_metrics: Training-support counts (``n_train``, ``n_negative``,
-            ``n_zero``, ``n_positive``).
-        models: The fitted pieces by role (``gate``, ``base``,
-            ``positive_base``, ``negative_base``) for full introspection.
-        feature_importances: Per-role ``{predictor: importance}`` maps
-            where the underlying model exposes them (QRF / RF); ``None``
-            for roles whose model has no importances.
-    """
-
-    variable: str
-    regime: str
-    predictors: List[str]
-    fit_metrics: Dict[str, int]
-    models: Dict[str, Any]
-    feature_importances: Dict[str, Optional[Dict[str, float]]]
-
-
-def _model_feature_importances(
-    model: Any, variable: str, predictors: List[str]
-) -> Optional[Dict[str, float]]:
-    """Best-effort ``{predictor: importance}`` for a fitted piece.
-
-    Handles a QRF base ``ImputerResults`` (per-variable
-    ``RandomForestQuantileRegressor``) and bare sklearn classifiers (the
-    gate). Returns ``None`` when no importances are exposed.
-    """
-    try:
-        importances = None
-        names: List[str] = list(predictors)
-        base_models = getattr(model, "models", None)
-        if isinstance(base_models, dict) and variable in base_models:
-            inner = getattr(base_models[variable], "qrf", None)
-            importances = getattr(inner, "feature_importances_", None)
-            base_predictors = getattr(model, "predictors", None)
-            if base_predictors:
-                names = list(base_predictors)
-        if importances is None:
-            importances = getattr(model, "feature_importances_", None)
-        if importances is None:
-            return None
-        importances = np.asarray(importances, dtype=float).ravel()
-        if len(names) != len(importances):
-            return None
-        return {n: float(v) for n, v in zip(names, importances)}
-    except Exception:
-        return None
 
 
 class Imputer(BaseImputer):
@@ -334,7 +264,6 @@ class Imputer(BaseImputer):
                 y=y,
             )
             bundle["predictors"] = list(seq_predictors)
-            bundle["fit_metrics"] = _fit_metrics(y, zero_atol=self.zero_atol)
             self._per_variable[var] = bundle
 
         # Non-numeric (categorical / boolean / constant) targets are
@@ -552,44 +481,54 @@ class RegimeGatedImputerResults(ImputerResults):
             }
         return self._predict_single_draw(X_test, quantile=None, **kwargs)
 
-    def lineage(self) -> Dict[str, VariableLineage]:
-        """Per-variable provenance: regime, the chained predictor set,
-        training-support metrics, the fitted models, and feature
-        importances where the underlying model exposes them.
+    @property
+    def regimes_(self) -> Dict[str, str]:
+        """Detected sign regime per numeric target.
 
-        Only numeric (regime-gated) targets are included; non-numeric
-        targets are delegated to a single auxiliary base imputer.
+        Maps each numeric (regime-gated) target to its regime label
+        (one of the ``REGIME_*`` constants, or ``REGIME_NO_GATE`` when
+        sign-regime gating is disabled).
         """
-        out: Dict[str, VariableLineage] = {}
-        for variable in self.imputed_variables:
-            regime = self._regimes.get(variable)
-            if regime is None:
-                continue
-            bundle = self._per_variable[variable]
-            predictors = list(bundle.get("predictors", self.predictors))
-            models: Dict[str, Any] = {}
-            importances: Dict[str, Optional[Dict[str, float]]] = {}
-            for role, key in (
-                ("base", "base"),
-                ("gate", "classifier"),
-                ("positive_base", "positive_base"),
-                ("negative_base", "negative_base"),
-            ):
-                piece = bundle.get(key)
-                if piece is None:
-                    continue
-                models[role] = piece
-                importances[role] = _model_feature_importances(
-                    piece, variable, predictors
-                )
-            out[variable] = VariableLineage(
-                variable=variable,
-                regime=regime,
-                predictors=predictors,
-                fit_metrics=dict(bundle.get("fit_metrics", {})),
-                models=models,
-                feature_importances=importances,
-            )
+        return dict(self._regimes)
+
+    @property
+    def predictors_(self) -> Dict[str, List[str]]:
+        """Chained predictor list per numeric target.
+
+        Each target maps to the predictor columns used, in order — the
+        original predictors followed by the previously-imputed targets
+        this variable was chained on.
+        """
+        return {
+            var: list(self._per_variable[var]["predictors"])
+            for var in self._per_variable
+        }
+
+    @property
+    def models_(self) -> Dict[str, Dict[str, Any]]:
+        """Fitted sub-estimators per numeric target, keyed by role.
+
+        Each target maps to a ``{role: estimator}`` dict translating the
+        internal bundle keys to sklearn-style roles: ``base`` ->
+        ``single``, ``classifier`` -> ``gate``, ``positive_base`` ->
+        ``positive``, ``negative_base`` -> ``negative``. Only actual
+        fitted models are included; bookkeeping keys (``kind``,
+        ``predictors``, ``value``) are skipped, and a ``constant``-kind
+        bundle yields an empty role dict.
+        """
+        key_to_role = {
+            "base": "single",
+            "classifier": "gate",
+            "positive_base": "positive",
+            "negative_base": "negative",
+        }
+        out: Dict[str, Dict[str, Any]] = {}
+        for var, bundle in self._per_variable.items():
+            roles: Dict[str, Any] = {}
+            for key, role in key_to_role.items():
+                if key in bundle:
+                    roles[role] = bundle[key]
+            out[var] = roles
         return out
 
     def _predict_single_draw(
@@ -819,7 +758,6 @@ __all__ = [
     "REGIME_THREE_SIGN",
     "REGIME_ZI_NEGATIVE",
     "REGIME_ZI_POSITIVE",
-    "VariableLineage",
     "Imputer",
     "RegimeGatedImputerResults",
 ]

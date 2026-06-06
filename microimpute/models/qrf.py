@@ -322,6 +322,51 @@ class QRFResults(ImputerResults):
         self.constant_targets = constant_targets or {}
         self.dummy_processor = dummy_processor
 
+    @property
+    def feature_names_in_(self) -> np.ndarray:
+        """sklearn-style input feature names seen during fit.
+
+        Uses the original (pre-dummy-encoding) predictor names when
+        available, falling back to the encoded predictor list.
+        """
+        names = (
+            self.original_predictors
+            if getattr(self, "original_predictors", None)
+            else self.predictors
+        )
+        return np.asarray(names, dtype=object)
+
+    @property
+    def feature_importances_(self):
+        """sklearn-style feature importances from the underlying forest.
+
+        For a single imputed variable, delegates to that variable's
+        fitted ``RandomForestQuantileRegressor`` (``_QRFModel.qrf``). For
+        multiple imputed variables, returns a ``{variable: importances}``
+        dict. Raises ``AttributeError`` when no QRF-backed importances
+        are available (e.g. constant or classifier models), so
+        ``hasattr`` reports ``False``.
+        """
+
+        def _importances_for(variable: str) -> np.ndarray:
+            model = self.models.get(variable)
+            forest = getattr(model, "qrf", None)
+            if forest is None:
+                raise AttributeError(
+                    "feature_importances_ is unavailable: model for "
+                    f"{variable!r} has no underlying forest"
+                )
+            importances = getattr(forest, "feature_importances_", None)
+            if importances is None:
+                raise AttributeError(
+                    "feature_importances_ is unavailable for " f"{variable!r}"
+                )
+            return importances
+
+        if len(self.imputed_variables) == 1:
+            return _importances_for(self.imputed_variables[0])
+        return {var: _importances_for(var) for var in self.imputed_variables}
+
     def _get_encoded_predictors(
         self, current_predictors: List[str]
     ) -> List[str]:

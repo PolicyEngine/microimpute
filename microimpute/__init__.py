@@ -45,7 +45,7 @@ from microimpute.evaluations.predictor_analysis import (
     progressive_predictor_inclusion)
 # Import main models and utilities
 from microimpute.models import (OLS, QRF, BaseImputer, Imputer, ImputerResults,
-                                QuantReg, VariableLineage)
+                                QuantReg)
 # Import data handling functions
 from microimpute.utils.data import preprocess_data, unnormalize_predictions
 

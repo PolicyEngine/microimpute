@@ -36,4 +36,4 @@ from microimpute.models.qrf import QRF
 from microimpute.models.quantreg import QuantReg
 # Canonical opinionated imputer: sign-regime gating + QRF base + sequential
 # chained-equations imputation, all on by default.
-from microimpute.models.regime_gated import Imputer, VariableLineage
+from microimpute.models.regime_gated import Imputer
