@@ -50,6 +50,7 @@ class _RandomForestClassifierModel:
         self.var_type = None
         self.categories = None
         self.label_map = None
+        self.feature_columns: List[str] = []
 
     def fit(
         self,
@@ -99,10 +100,24 @@ class _RandomForestClassifierModel:
         fit_kwargs = {}
         if sample_weight is not None:
             fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
+        self.feature_columns = list(X.columns)
         self.classifier.fit(X, y_encoded, **fit_kwargs)
+
+    def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Reorder prediction features to the fitted sklearn column contract."""
+        if not self.feature_columns:
+            return X
+        missing = [column for column in self.feature_columns if column not in X.columns]
+        if missing:
+            raise ValueError(
+                "Prediction data is missing fitted feature columns for "
+                f"{self.output_column}: {missing}"
+            )
+        return X.loc[:, self.feature_columns]
 
     def predict(self, X: pd.DataFrame, return_probs: bool = False) -> pd.Series:
         """Predict classes or probabilities."""
+        X = self._align_features(X)
         if return_probs:
             probs = self.classifier.predict_proba(X)
             # Return both probabilities and the original category labels
@@ -151,6 +166,7 @@ class _QRFModel:
         self.logger = logger
         self.qrf = None
         self.output_column = None
+        self.feature_columns: List[str] = []
         # Create the RNG once at construction so that repeated predict()
         # calls consume state progressively and return different draws.
         self._rng = np.random.default_rng(self.seed)
@@ -192,7 +208,20 @@ class _QRFModel:
         fit_kwargs = {}
         if sample_weight is not None:
             fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
+        self.feature_columns = list(X.columns)
         self.qrf.fit(X, y.values.ravel(), **fit_kwargs)
+
+    def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Reorder prediction features to the fitted QRF column contract."""
+        if not self.feature_columns:
+            return X
+        missing = [column for column in self.feature_columns if column not in X.columns]
+        if missing:
+            raise ValueError(
+                "Prediction data is missing fitted feature columns for "
+                f"{self.output_column}: {missing}"
+            )
+        return X.loc[:, self.feature_columns]
 
     def predict(
         self,
@@ -218,6 +247,8 @@ class _QRFModel:
                 across quantiles for a given row and is used when the caller
                 supplies an explicit ``quantiles`` list.
         """
+        X = self._align_features(X)
+
         # Deterministic path: user asked for a specific quantile — query the
         # QRF directly so that for any row i,
         # prediction(q_low) <= prediction(q_mid) <= prediction(q_high).
