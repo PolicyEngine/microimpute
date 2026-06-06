@@ -1,3 +1,10 @@
+## [3.1.1] - 2026-06-06
+
+### Fixed
+
+- Preserved fitted feature order for QRF/RFC prediction and propagated numeric-categorical overrides into zero-inflated nested base imputers.
+
+
 ## [3.1.0] - 2026-06-06
 
 ### Added
