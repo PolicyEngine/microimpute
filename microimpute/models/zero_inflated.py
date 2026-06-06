@@ -49,12 +49,8 @@ import pandas as pd
 from pydantic import validate_call
 
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
-from microimpute.models.imputer import (
-    Imputer,
-    ImputerResults,
-)
+from microimpute.models.imputer import Imputer, ImputerResults
 from microimpute.models.qrf import QRF
-
 
 # Regime labels. Kept as module-level constants so downstream code can
 # match on them without magic strings.
@@ -156,6 +152,7 @@ class ZeroInflatedImputer(Imputer):
         base_imputer_kwargs: Optional[Dict[str, Any]] = None,
         zero_atol: float = 1e-6,
         classifier_type: str = "hist_gb",
+        sequential: bool = True,
         seed: Optional[int] = RANDOM_STATE,
         log_level: Optional[str] = "WARNING",
     ) -> None:
@@ -164,6 +161,7 @@ class ZeroInflatedImputer(Imputer):
         self.base_imputer_kwargs = dict(base_imputer_kwargs or {})
         self.zero_atol = float(zero_atol)
         self.classifier_type = classifier_type
+        self.sequential = bool(sequential)
 
         # Filled in during fit().
         self._regimes: Dict[str, str] = {}
@@ -234,20 +232,32 @@ class ZeroInflatedImputer(Imputer):
             for v in imputed_variables
             if v in self.numeric_targets or v in constant_numeric_targets
         ]
-        for var in numeric_targets:
+        # Sequential (chained-equations) imputation: condition each numeric
+        # target on the original predictors plus the previously-fit numeric
+        # targets, so the imputed vector preserves cross-variable joint
+        # structure. ``imputed_variables`` order is the chain order; a
+        # single-target list is unaffected (no priors to chain on).
+        for position, var in enumerate(numeric_targets):
+            seq_predictors = (
+                list(predictors) + numeric_targets[:position]
+                if self.sequential
+                else list(predictors)
+            )
             y = X_train[var].to_numpy(dtype=float, copy=False)
             regime = _detect_regime(
                 y,
                 zero_atol=self.zero_atol,
             )
             self._regimes[var] = regime
-            self._per_variable[var] = self._fit_single_numeric(
+            bundle = self._fit_single_numeric(
                 X_train=X_train,
-                predictors=predictors,
+                predictors=seq_predictors,
                 variable=var,
                 regime=regime,
                 y=y,
             )
+            bundle["predictors"] = list(seq_predictors)
+            self._per_variable[var] = bundle
 
         # Non-numeric (categorical / boolean / constant) targets are
         # handled by a single auxiliary base imputer over their union.
@@ -466,15 +476,23 @@ class ZeroInflatedImputerResults(ImputerResults):
     ) -> pd.DataFrame:
         out = pd.DataFrame(index=X_test.index)
 
+        # Carry imputed numeric targets forward as predictors for later
+        # targets (chained-equations imputation), matching the sequential
+        # conditioning used at fit time. ``X_aug`` accumulates imputed
+        # columns in ``imputed_variables`` order so each target's gate/base
+        # can condition on the ones already drawn.
+        X_aug = X_test.copy()
         for variable in self.imputed_variables:
             regime = self._regimes.get(variable)
             if regime is None:
                 # Non-numeric target; handled by the auxiliary bundle.
                 continue
             bundle = self._per_variable[variable]
-            out[variable] = self._predict_single_variable(
-                X_test, variable, bundle, quantile=quantile, **kwargs
+            values = self._predict_single_variable(
+                X_aug, variable, bundle, quantile=quantile, **kwargs
             )
+            out[variable] = values
+            X_aug[variable] = np.asarray(values, dtype=float)
 
         # Merge in non-numeric target predictions from the auxiliary
         # single base imputer.
@@ -511,7 +529,9 @@ class ZeroInflatedImputerResults(ImputerResults):
             )
             return preds[variable].to_numpy(dtype=float)
 
-        X_pred = X_test[self.predictors].to_numpy(dtype=float, copy=False)
+        X_pred = X_test[bundle.get("predictors", self.predictors)].to_numpy(
+            dtype=float, copy=False
+        )
 
         if kind == "zi_positive":
             clf = bundle["classifier"]
