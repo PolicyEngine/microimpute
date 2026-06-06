@@ -1,3 +1,10 @@
+## [3.1.0] - 2026-06-06
+
+### Added
+
+- `ZeroInflatedImputer` now imputes a list of targets **sequentially** (chained-equations): each numeric target is conditioned on the original predictors plus the previously-imputed targets, so the imputed vector preserves cross-variable joint structure instead of imputing each variable in isolation. Controlled by the new `sequential` parameter (default `True`); single-target lists are unaffected.
+
+
 ## [3.0.0] - 2026-06-02
 
 ### Breaking changes
