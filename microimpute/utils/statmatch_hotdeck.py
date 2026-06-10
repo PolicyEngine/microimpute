@@ -106,7 +106,7 @@ def nnd_hotdeck_using_rpy2(
             r_match = ro.StrVector(matching_variables)
             r_z = ro.StrVector(z_variables)
 
-        # Extract optional donor sample weights (threaded from Imputer.fit
+        # Extract optional donor sample weights (threaded from BaseImputer.fit
         # when weight_col was supplied). StatMatch accepts these via the
         # ``weight.don`` R argument; we pop it from matching_kwargs so that
         # other kwargs pass through unchanged.

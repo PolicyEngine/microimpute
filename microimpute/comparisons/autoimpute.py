@@ -26,7 +26,7 @@ from microimpute.config import (
     TRAIN_SIZE,
     VALIDATE_CONFIG,
 )
-from microimpute.models import OLS, QRF, Imputer, QuantReg
+from microimpute.models import OLS, QRF, BaseImputer, QuantReg
 from microimpute.utils.data import (
     un_asinh_transform_predictions,
     unlog_transform_predictions,
@@ -121,7 +121,7 @@ class AutoImputeResult(BaseModel):
     receiver_data : pd.DataFrame
         Copy of the receiver data with the median-quantile imputations of the best performing model attached.
     fitted_models : Dict[str, Any]
-        Mapping model name → fitted Imputer instance.
+        Mapping model name → fitted BaseImputer instance.
     cv_results : Dict[str, Dict[str, Any]]
         Cross-validation results with separate quantile_loss and log_loss metrics for each model.
     """
@@ -203,7 +203,7 @@ def _setup_logging(log_level: str) -> int:
 
 
 def _evaluate_models_parallel(
-    model_classes: List[Type[Imputer]],
+    model_classes: List[Type[BaseImputer]],
     training_data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
@@ -279,7 +279,7 @@ def _evaluate_models_parallel(
 
 
 def _generate_imputations_for_all_models(
-    model_classes: List[Type[Imputer]],
+    model_classes: List[Type[BaseImputer]],
     best_method: str,
     donor_data: pd.DataFrame,
     receiver_data: pd.DataFrame,
@@ -500,7 +500,7 @@ def autoimpute(
 
         # Get model classes
         if not models:
-            model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg]
+            model_classes: List[Type[BaseImputer]] = [QRF, OLS, QuantReg]
             if HAS_MATCHING:
                 model_classes.append(Matching)
             if HAS_MDN:

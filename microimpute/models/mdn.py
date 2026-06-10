@@ -14,7 +14,7 @@ from pydantic import validate_call
 
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
 from microimpute.models.imputer import (
-    Imputer,
+    BaseImputer,
     ImputerResults,
     _ConstantValueModel,
 )
@@ -800,7 +800,7 @@ class MDNResults(ImputerResults):
             raise RuntimeError(f"Failed to predict with MDN model: {str(e)}") from e
 
 
-class MDN(Imputer):
+class MDN(BaseImputer):
     """
     Mixture Density Network imputer using PyTorch Tabular.
 

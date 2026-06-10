@@ -11,7 +11,7 @@ from quantile_forest import RandomForestQuantileRegressor
 from sklearn.ensemble import RandomForestClassifier
 
 from microimpute.config import VALIDATE_CONFIG
-from microimpute.models.imputer import Imputer, ImputerResults
+from microimpute.models.imputer import BaseImputer, ImputerResults
 
 try:
     import psutil
@@ -37,6 +37,32 @@ def _get_sequential_predictors(
         List of predictor columns including previously imputed variables
     """
     return predictors + imputed_variables[:current_variable_index]
+
+
+def _weighted_resample(
+    X: pd.DataFrame,
+    y: pd.Series,
+    sample_weight: np.ndarray,
+    rng: np.random.Generator,
+) -> Tuple[pd.DataFrame, pd.Series]:
+    """Materialize sampling weights by weighted bootstrap resampling.
+
+    The forest backends cannot honor ``sample_weight`` in their
+    predictive distributions: ``quantile_forest`` uses it only as a
+    zero-weight filter when assembling leaf membership, and fully-grown
+    forest leaves hold a single training sample each, so weighted
+    impurity does not move leaf values either. Drawing ``len(X)`` rows
+    with replacement with probability proportional to weight bakes the
+    weighted distribution into the training data, so leaf distributions
+    (and the values imputed from them) reflect the weights.
+    """
+    weights = np.asarray(sample_weight, dtype=float)
+    probabilities = weights / weights.sum()
+    sel = rng.choice(len(X), size=len(X), replace=True, p=probabilities)
+    return (
+        X.iloc[sel].reset_index(drop=True),
+        y.iloc[sel].reset_index(drop=True),
+    )
 
 
 class _RandomForestClassifierModel:
@@ -65,9 +91,23 @@ class _RandomForestClassifierModel:
 
         Note: y should be the ORIGINAL categorical/boolean column,
         not dummy encoded.
+
+        ``sample_weight`` is materialized by weighted bootstrap
+        resampling of the training rows (see ``_weighted_resample``)
+        because fully-grown random-forest leaves are single-sample, so
+        passing weights to the native ``fit`` would leave predicted
+        class probabilities effectively unweighted.
         """
         self.output_column = y.name
         self.var_type = var_type
+
+        if sample_weight is not None:
+            X, y = _weighted_resample(
+                X,
+                y,
+                sample_weight,
+                np.random.default_rng(self.seed),
+            )
 
         if var_type == "boolean":
             # For boolean, convert to 0/1 but keep as single target
@@ -97,11 +137,8 @@ class _RandomForestClassifierModel:
         }
 
         self.classifier = RandomForestClassifier(**classifier_params)
-        fit_kwargs = {}
-        if sample_weight is not None:
-            fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
         self.feature_columns = list(X.columns)
-        self.classifier.fit(X, y_encoded, **fit_kwargs)
+        self.classifier.fit(X, y_encoded)
 
     def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """Reorder prediction features to the fitted sklearn column contract."""
@@ -181,17 +218,24 @@ class _QRFModel:
         """Fit the QRF model.
 
         Note: Assumes X is already preprocessed with categorical encoding
-        handled by the base Imputer class.
+        handled by the base imputer class.
 
         Args:
             X: Predictor DataFrame (preprocessed).
             y: Target Series.
-            sample_weight: Optional per-row sample weights, passed directly to
-                the underlying ``RandomForestQuantileRegressor.fit`` so each
-                row contributes to the weighted-survey estimator rather than
-                being treated as a bootstrap-resample probability.
+            sample_weight: Optional per-row sample weights, materialized
+                by weighted bootstrap resampling of the training rows
+                (see ``_weighted_resample``).
+                ``RandomForestQuantileRegressor.fit`` accepts
+                ``sample_weight`` but only uses it as a zero-weight
+                filter when assembling leaf membership, so passing it
+                natively would leave the leaf quantile distributions —
+                and every value imputed from them — unweighted.
         """
         self.output_column = y.name
+
+        if sample_weight is not None:
+            X, y = _weighted_resample(X, y, sample_weight, self._rng)
 
         # Remove random_state / sample_weight from kwargs if present, since
         # we set them explicitly below.
@@ -205,11 +249,8 @@ class _QRFModel:
         self.qrf = RandomForestQuantileRegressor(
             random_state=self.seed, **qrf_kwargs_filtered
         )
-        fit_kwargs = {}
-        if sample_weight is not None:
-            fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
         self.feature_columns = list(X.columns)
-        self.qrf.fit(X, y.values.ravel(), **fit_kwargs)
+        self.qrf.fit(X, y.values.ravel())
 
     def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """Reorder prediction features to the fitted QRF column contract."""
@@ -346,6 +387,89 @@ class QRFResults(ImputerResults):
         self.boolean_targets = boolean_targets or {}
         self.constant_targets = constant_targets or {}
         self.dummy_processor = dummy_processor
+
+    @property
+    def feature_names_in_(self) -> np.ndarray:
+        """sklearn-style input feature names seen during fit.
+
+        Returns the original (pre-dummy-encoding) predictor names — the
+        columns the caller actually supplied — as an ``np.ndarray``,
+        matching the sklearn ``feature_names_in_`` convention. Falls back
+        to the encoded predictor list only if originals are unavailable.
+
+        Note that for a forest fit on a categorical predictor the encoded
+        feature columns (and hence ``feature_importances_`` keys) differ
+        from these input names; ``feature_importances_`` is therefore
+        keyed by the forest's actual fitted columns rather than paired
+        positionally with this array.
+        """
+        names = (
+            self.original_predictors
+            if getattr(self, "original_predictors", None)
+            else self.predictors
+        )
+        return np.asarray(names, dtype=object)
+
+    @property
+    def feature_importances_(self):
+        """sklearn-style feature importances from the underlying forest.
+
+        Returns a ``{encoded_feature_name: importance}`` dict keyed by the
+        forest's ACTUAL fitted feature columns
+        (``_QRFModel.feature_columns``). Keying by the fitted columns —
+        rather than pairing the raw importance array with
+        ``feature_names_in_`` — guarantees the names and values are always
+        self-consistent in length and order, including when a categorical
+        predictor expands into several dummy columns.
+
+        For a single imputed variable, returns one such dict. For multiple
+        imputed variables, returns ``{variable: {feature: importance}}``.
+
+        Raises ``AttributeError`` when no QRF-backed importances are
+        available (e.g. constant or classifier base models), so
+        ``hasattr`` reports ``False``.
+        """
+
+        def _importances_for(variable: str) -> Dict[str, float]:
+            model = self.models.get(variable)
+            forest = getattr(model, "qrf", None)
+            if forest is None:
+                raise AttributeError(
+                    "feature_importances_ is unavailable: model for "
+                    f"{variable!r} has no underlying forest"
+                )
+            importances = getattr(forest, "feature_importances_", None)
+            if importances is None:
+                raise AttributeError(
+                    f"feature_importances_ is unavailable for {variable!r}"
+                )
+            # Key by the forest's actual fitted feature columns so the
+            # names and values always match in length and order. The QRF
+            # base model records these as ``feature_columns`` at fit time;
+            # fall back to the forest's own ``feature_names_in_`` if set.
+            feature_columns = list(getattr(model, "feature_columns", []))
+            if not feature_columns:
+                fitted_names = getattr(forest, "feature_names_in_", None)
+                if fitted_names is not None:
+                    feature_columns = list(fitted_names)
+            importances = np.asarray(importances)
+            if len(feature_columns) != len(importances):
+                # Should not happen — the forest's importance vector is by
+                # construction one entry per fitted column — but guard so
+                # we never silently pair mismatched names and values.
+                raise AttributeError(
+                    "feature_importances_ is inconsistent for "
+                    f"{variable!r}: {len(feature_columns)} fitted columns "
+                    f"vs {len(importances)} importances"
+                )
+            return {
+                name: float(importance)
+                for name, importance in zip(feature_columns, importances)
+            }
+
+        if len(self.imputed_variables) == 1:
+            return _importances_for(self.imputed_variables[0])
+        return {var: _importances_for(var) for var in self.imputed_variables}
 
     def _get_encoded_predictors(self, current_predictors: List[str]) -> List[str]:
         """Get properly encoded predictor columns for sequential imputation.
@@ -590,7 +714,7 @@ class QRFResults(ImputerResults):
             raise RuntimeError(f"Failed to predict with QRF model: {str(e)}") from e
 
 
-class QRF(Imputer):
+class QRF(BaseImputer):
     """
     Quantile Regression Forest model for imputation.
 
@@ -722,7 +846,7 @@ class QRF(Imputer):
         categorical_targets = getattr(self, "categorical_targets", {})
         boolean_targets = getattr(self, "boolean_targets", {})
 
-        # sample_weight is threaded via kwargs from the base Imputer.fit,
+        # sample_weight is threaded via kwargs from the base imputer fit,
         # bypassing the nested qrf/rfc structure so both classifier and
         # regressor paths see the same per-row weights.
         sample_weight = kwargs.pop("sample_weight", None)
@@ -860,9 +984,9 @@ class QRF(Imputer):
             X_train: DataFrame containing the training data.
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
-            sample_weight: Optional per-row sample weights threaded through
-                to ``RandomForestQuantileRegressor.fit`` /
-                ``RandomForestClassifier.fit``.
+            sample_weight: Optional per-row sample weights, honored by
+                weighted bootstrap resampling of each model's training
+                rows (see ``_weighted_resample``).
             **qrf_kwargs: Additional keyword arguments to pass to QRF.
 
         Returns:

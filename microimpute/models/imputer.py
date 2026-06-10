@@ -2,7 +2,7 @@
 
 This module defines the core architecture for imputation models in MicroImpute.
 It provides two abstract base classes:
-1. Imputer - For model initialization and fitting
+1. BaseImputer - For model initialization and fitting
 2. ImputerResults - For storing fitted models and making predictions
 
 All model implementations should extend these classes to ensure a consistent interface.
@@ -35,7 +35,7 @@ class _ConstantValueModel:
         return pd.Series(self.constant_value, index=X.index, name=self.variable_name)
 
 
-class Imputer(ABC):
+class BaseImputer(ABC):
     """
     Abstract base class for fitting imputation models.
 
@@ -238,6 +238,47 @@ class Imputer(ABC):
             self.logger.error(f"Error during data preprocessing: {str(e)}")
             raise RuntimeError("Failed to preprocess data types") from e
 
+    @staticmethod
+    def _resolve_sample_weights(
+        X_train: pd.DataFrame,
+        weight_col: Optional[Union[str, np.ndarray, pd.Series]],
+    ) -> Optional[np.ndarray]:
+        """Resolve a weight specification to a validated per-row array.
+
+        Accepts a column name in ``X_train``, a positional array, or a
+        Series aligned by index, and returns a float array positionally
+        aligned with ``X_train`` rows (``None`` when no weights given).
+
+        Raises:
+            ValueError: If a named weight column is missing from
+                ``X_train``, or any resolved weight is non-positive or
+                NaN.
+        """
+        if weight_col is None:
+            return None
+        if isinstance(weight_col, str):
+            if weight_col not in X_train.columns:
+                raise ValueError(
+                    f"Weight column '{weight_col}' not found in training data"
+                )
+            weights = X_train[weight_col]
+        elif isinstance(weight_col, np.ndarray):
+            weights = pd.Series(weight_col, index=X_train.index)
+        else:
+            weights = weight_col.reindex(X_train.index)
+
+        # Check for NaN AND non-positive values together. NaN weights
+        # (e.g. from a Series reindex miss) would otherwise propagate
+        # into sample_weight passed to learners.
+        weights_arr = np.asarray(weights, dtype=float)
+        invalid_mask = np.isnan(weights_arr) | (weights_arr <= 0)
+        if invalid_mask.any():
+            raise ValueError(
+                "Weights must be positive and finite; found "
+                f"{int(invalid_mask.sum())} non-positive or NaN weight(s)"
+            )
+        return weights_arr
+
     @validate_call(config=VALIDATE_CONFIG)
     def fit(
         self,
@@ -261,7 +302,7 @@ class Imputer(ABC):
             X_train: DataFrame containing the training data.
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
-            weight_col: Optional name of the column or column array/series containing sampling weights. When provided, `X_train` will be sampled with replacement using this column as selection probabilities before fitting the model.
+            weight_col: Optional name of the column or column array/series containing sampling weights. When provided, the resolved per-row weights are passed to the model subclass as `sample_weight`, which honors them natively (e.g. OLS->WLS) or by weighted bootstrap resampling (QRF).
             skip_missing: If True, skip variables missing from training data with warning. If False, raise error for missing variables.
             not_numeric_categorical: Optional list of variable names that should
                 be treated as numeric even if they would normally be detected as
@@ -348,30 +389,7 @@ class Imputer(ABC):
         except Exception as e:
             raise ValueError(f"Invalid input data for model: {str(e)}") from e
 
-        weights = None
-        if weight_col is not None and isinstance(weight_col, str):
-            if weight_col not in X_train.columns:
-                raise ValueError(
-                    f"Weight column '{weight_col}' not found in training data"
-                )
-            weights = X_train[weight_col]
-        elif weight_col is not None and isinstance(weight_col, np.ndarray):
-            weights = pd.Series(weight_col, index=X_train.index)
-        elif weight_col is not None and isinstance(weight_col, pd.Series):
-            weights = weight_col.reindex(X_train.index)
-
-        if weights is not None:
-            # Check for NaN AND non-positive values together. Previously only
-            # (weights <= 0).any() was checked, which returns False for NaN
-            # weights — those then propagated into .sample() as NaN
-            # probabilities or corrupted sample_weight passed to learners.
-            weights_arr = np.asarray(weights, dtype=float)
-            invalid_mask = np.isnan(weights_arr) | (weights_arr <= 0)
-            if invalid_mask.any():
-                raise ValueError(
-                    "Weights must be positive and finite; found "
-                    f"{int(invalid_mask.sum())} non-positive or NaN weight(s)"
-                )
+        weights_arr = self._resolve_sample_weights(X_train, weight_col)
 
         # Identify target types BEFORE preprocessing
         self.identify_target_types(
@@ -393,21 +411,20 @@ class Imputer(ABC):
         self.imputed_vars_dummy_info = imputed_vars_dummy_info
         self.original_predictors = original_predictors
 
-        # Pass sample_weight through to the subclass so it can use each
-        # learner's native weighted-fit API (QRF, OLS→WLS, logistic, RFC all
-        # support sample_weight). This replaces the previous bootstrap
-        # resample, which silently discarded weights for the underlying
-        # estimator and inflated variance / shrank effective sample size.
-        sample_weight = None
-        if weights is not None:
-            sample_weight = np.asarray(weights_arr, dtype=float)
-            # Reindex if preprocess_data_types changed the row ordering
-            # (it currently does not, but guard against future drift).
-            if len(sample_weight) != len(X_train):
-                raise RuntimeError(
-                    "Internal error: sample_weight length no longer matches "
-                    "X_train after preprocessing"
-                )
+        # Pass sample_weight through to the subclass so it can honor the
+        # weights with whichever mechanism its learner supports: an exact
+        # native weighted-fit API where available (OLS→WLS), or weighted
+        # bootstrap resampling where the native API cannot weight the
+        # predictive distribution (the forest-backed QRF — see
+        # qrf._weighted_resample).
+        sample_weight = weights_arr
+        if sample_weight is not None and len(sample_weight) != len(X_train):
+            # preprocess_data_types currently preserves row order/count,
+            # but guard against future drift.
+            raise RuntimeError(
+                "Internal error: sample_weight length no longer matches "
+                "X_train after preprocessing"
+            )
 
         # Defer actual training to subclass with all parameters
         fit_kwargs = {

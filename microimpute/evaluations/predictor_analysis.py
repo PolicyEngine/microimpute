@@ -30,7 +30,7 @@ from microimpute.config import (
     TRAIN_SIZE,
     VALIDATE_CONFIG,
 )
-from microimpute.models import Imputer, ImputerResults
+from microimpute.models import BaseImputer, ImputerResults
 from microimpute.utils.type_handling import (
     DummyVariableProcessor,
     VariableTypeDetector,
@@ -238,7 +238,7 @@ def leave_one_out_analysis(
     data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    model_class: Type[Imputer],
+    model_class: Type[BaseImputer],
     weight_col: Optional[Union[str, np.ndarray, pd.Series]] = None,
     quantiles: List[float] = QUANTILES,
     train_size: float = TRAIN_SIZE,
@@ -254,7 +254,7 @@ def leave_one_out_analysis(
         data: DataFrame containing the data.
         predictors: List of predictor column names.
         imputed_variables: List of variables to impute.
-        model_class: The Imputer class to use for evaluation (e.g., OLS, QRF, QuantReg).
+        model_class: The BaseImputer class to use for evaluation (e.g., OLS, QRF, QuantReg).
         weight_col: Optional column name or array of sampling weights.
         quantiles: List of quantiles for evaluation (default: [0.1, 0.5, 0.9]).
         train_size: Proportion of data to use for training (default: 0.8).
@@ -375,7 +375,7 @@ def progressive_predictor_inclusion(
     data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    model_class: Type[Imputer],
+    model_class: Type[BaseImputer],
     weight_col: Optional[Union[str, np.ndarray, pd.Series]] = None,
     quantiles: Optional[List[float]] = QUANTILES,
     train_size: Optional[float] = TRAIN_SIZE,
@@ -391,7 +391,7 @@ def progressive_predictor_inclusion(
         data: DataFrame containing the data.
         predictors: List of candidate predictor column names.
         imputed_variables: List of variables to impute.
-        model_class: The Imputer class to use for evaluation (e.g., OLS, QRF, QuantReg).
+        model_class: The BaseImputer class to use for evaluation (e.g., OLS, QRF, QuantReg).
         weight_col: Optional column name or array of sampling weights.
         quantiles: List of quantiles for evaluation.
         train_size: Proportion of data to use for training.
@@ -573,7 +573,7 @@ def _evaluate_model_performance(
     test_data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    model_class: Type[Imputer],
+    model_class: Type[BaseImputer],
     weight_col: Optional[Union[str, np.ndarray, pd.Series]],
     quantiles: List[float],
     random_state: int,
