@@ -39,6 +39,32 @@ def _get_sequential_predictors(
     return predictors + imputed_variables[:current_variable_index]
 
 
+def _weighted_resample(
+    X: pd.DataFrame,
+    y: pd.Series,
+    sample_weight: np.ndarray,
+    rng: np.random.Generator,
+) -> Tuple[pd.DataFrame, pd.Series]:
+    """Materialize sampling weights by weighted bootstrap resampling.
+
+    The forest backends cannot honor ``sample_weight`` in their
+    predictive distributions: ``quantile_forest`` uses it only as a
+    zero-weight filter when assembling leaf membership, and fully-grown
+    forest leaves hold a single training sample each, so weighted
+    impurity does not move leaf values either. Drawing ``len(X)`` rows
+    with replacement with probability proportional to weight bakes the
+    weighted distribution into the training data, so leaf distributions
+    (and the values imputed from them) reflect the weights.
+    """
+    weights = np.asarray(sample_weight, dtype=float)
+    probabilities = weights / weights.sum()
+    sel = rng.choice(len(X), size=len(X), replace=True, p=probabilities)
+    return (
+        X.iloc[sel].reset_index(drop=True),
+        y.iloc[sel].reset_index(drop=True),
+    )
+
+
 class _RandomForestClassifierModel:
     """Internal class to handle classification for categorical/boolean targets."""
 
@@ -65,9 +91,23 @@ class _RandomForestClassifierModel:
 
         Note: y should be the ORIGINAL categorical/boolean column,
         not dummy encoded.
+
+        ``sample_weight`` is materialized by weighted bootstrap
+        resampling of the training rows (see ``_weighted_resample``)
+        because fully-grown random-forest leaves are single-sample, so
+        passing weights to the native ``fit`` would leave predicted
+        class probabilities effectively unweighted.
         """
         self.output_column = y.name
         self.var_type = var_type
+
+        if sample_weight is not None:
+            X, y = _weighted_resample(
+                X,
+                y,
+                sample_weight,
+                np.random.default_rng(self.seed),
+            )
 
         if var_type == "boolean":
             # For boolean, convert to 0/1 but keep as single target
@@ -97,11 +137,8 @@ class _RandomForestClassifierModel:
         }
 
         self.classifier = RandomForestClassifier(**classifier_params)
-        fit_kwargs = {}
-        if sample_weight is not None:
-            fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
         self.feature_columns = list(X.columns)
-        self.classifier.fit(X, y_encoded, **fit_kwargs)
+        self.classifier.fit(X, y_encoded)
 
     def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """Reorder prediction features to the fitted sklearn column contract."""
@@ -186,12 +223,19 @@ class _QRFModel:
         Args:
             X: Predictor DataFrame (preprocessed).
             y: Target Series.
-            sample_weight: Optional per-row sample weights, passed directly to
-                the underlying ``RandomForestQuantileRegressor.fit`` so each
-                row contributes to the weighted-survey estimator rather than
-                being treated as a bootstrap-resample probability.
+            sample_weight: Optional per-row sample weights, materialized
+                by weighted bootstrap resampling of the training rows
+                (see ``_weighted_resample``).
+                ``RandomForestQuantileRegressor.fit`` accepts
+                ``sample_weight`` but only uses it as a zero-weight
+                filter when assembling leaf membership, so passing it
+                natively would leave the leaf quantile distributions —
+                and every value imputed from them — unweighted.
         """
         self.output_column = y.name
+
+        if sample_weight is not None:
+            X, y = _weighted_resample(X, y, sample_weight, self._rng)
 
         # Remove random_state / sample_weight from kwargs if present, since
         # we set them explicitly below.
@@ -205,11 +249,8 @@ class _QRFModel:
         self.qrf = RandomForestQuantileRegressor(
             random_state=self.seed, **qrf_kwargs_filtered
         )
-        fit_kwargs = {}
-        if sample_weight is not None:
-            fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
         self.feature_columns = list(X.columns)
-        self.qrf.fit(X, y.values.ravel(), **fit_kwargs)
+        self.qrf.fit(X, y.values.ravel())
 
     def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """Reorder prediction features to the fitted QRF column contract."""
@@ -943,9 +984,9 @@ class QRF(BaseImputer):
             X_train: DataFrame containing the training data.
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
-            sample_weight: Optional per-row sample weights threaded through
-                to ``RandomForestQuantileRegressor.fit`` /
-                ``RandomForestClassifier.fit``.
+            sample_weight: Optional per-row sample weights, honored by
+                weighted bootstrap resampling of each model's training
+                rows (see ``_weighted_resample``).
             **qrf_kwargs: Additional keyword arguments to pass to QRF.
 
         Returns:

@@ -95,6 +95,21 @@ def _make_classifier(kind: str, seed: int):
     raise ValueError(f"Unknown classifier_type {kind!r}; expected 'hist_gb' or 'rf'.")
 
 
+def _subset_weights(
+    sample_weight: Optional[np.ndarray],
+    mask: np.ndarray,
+) -> Optional[np.ndarray]:
+    """Slice a per-row weight vector with a boolean row mask.
+
+    Sub-fits on row subsets (e.g. the positive part of a zero-inflated
+    target) must receive the weights sliced with the same mask so each
+    weight stays aligned with its row.
+    """
+    if sample_weight is None:
+        return None
+    return sample_weight[mask]
+
+
 def _detect_regime(
     y: np.ndarray,
     *,
@@ -218,10 +233,21 @@ class Imputer(BaseImputer):
         are handled per-variable: regime detection, then composition
         of gate + base imputer(s) as appropriate.
 
+        ``weight_col`` (a column name, array, or Series of per-row
+        sampling weights) is resolved once and threaded through every
+        nested fit: gate classifiers receive it as ``sample_weight``
+        and per-regime base imputers as ``weight_col``, sliced to the
+        regime's row subset.
+
         Returns a ``RegimeGatedImputerResults`` that routes
         predictions through each target's regime-specific pipeline.
         """
         self._validate_data(X_train, predictors + imputed_variables)
+
+        # Resolve weights once to a validated per-row vector aligned
+        # with ``X_train`` so every nested fit (gate classifiers and
+        # per-regime base imputers) trains on the same weighting.
+        sample_weight = self._resolve_sample_weights(X_train, weight_col)
 
         # Classify target variables as numeric / categorical / boolean /
         # constant using the base imputer's detector.
@@ -277,6 +303,7 @@ class Imputer(BaseImputer):
                 variable=var,
                 regime=regime,
                 y=y,
+                sample_weight=sample_weight,
                 not_numeric_categorical=nested_not_numeric_categorical,
             )
             bundle["predictors"] = list(seq_predictors)
@@ -325,9 +352,15 @@ class Imputer(BaseImputer):
         variable: str,
         regime: str,
         y: np.ndarray,
+        sample_weight: Optional[np.ndarray] = None,
         not_numeric_categorical: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         """Fit the gate and base imputer(s) for one numeric target.
+
+        ``sample_weight`` is a per-row weight vector positionally
+        aligned with ``X_train``; it reaches the gate classifier as
+        ``sample_weight`` and each base imputer as ``weight_col``,
+        sliced with the same row mask as the training slice.
 
         Returns a bundle dict with the regime, the gate classifier
         (or None), and the base imputer(s) keyed by their role.
@@ -349,6 +382,7 @@ class Imputer(BaseImputer):
                     X_train,
                     predictors,
                     variable,
+                    sample_weight=sample_weight,
                     not_numeric_categorical=not_numeric_categorical,
                 ),
             }
@@ -356,12 +390,13 @@ class Imputer(BaseImputer):
         if regime == REGIME_ZI_POSITIVE:
             labels = (y > self.zero_atol).astype(int)
             clf = _make_classifier(self.classifier_type, self.seed)
-            clf.fit(X_pred, labels)
+            clf.fit(X_pred, labels, sample_weight=sample_weight)
             pos_mask = y > self.zero_atol
             pos_base = self._fit_base_single(
                 X_train.loc[pos_mask],
                 predictors,
                 variable,
+                sample_weight=_subset_weights(sample_weight, pos_mask),
                 not_numeric_categorical=not_numeric_categorical,
             )
             return {
@@ -373,12 +408,13 @@ class Imputer(BaseImputer):
         if regime == REGIME_ZI_NEGATIVE:
             labels = (y < -self.zero_atol).astype(int)
             clf = _make_classifier(self.classifier_type, self.seed)
-            clf.fit(X_pred, labels)
+            clf.fit(X_pred, labels, sample_weight=sample_weight)
             neg_mask = y < -self.zero_atol
             neg_base = self._fit_base_single(
                 X_train.loc[neg_mask],
                 predictors,
                 variable,
+                sample_weight=_subset_weights(sample_weight, neg_mask),
                 not_numeric_categorical=not_numeric_categorical,
             )
             return {
@@ -392,7 +428,7 @@ class Imputer(BaseImputer):
             # plus a base imputer per sign.
             labels = (y > 0).astype(int)
             clf = _make_classifier(self.classifier_type, self.seed)
-            clf.fit(X_pred, labels)
+            clf.fit(X_pred, labels, sample_weight=sample_weight)
             pos_mask = y > 0
             neg_mask = ~pos_mask
             return {
@@ -402,12 +438,14 @@ class Imputer(BaseImputer):
                     X_train.loc[pos_mask],
                     predictors,
                     variable,
+                    sample_weight=_subset_weights(sample_weight, pos_mask),
                     not_numeric_categorical=not_numeric_categorical,
                 ),
                 "negative_base": self._fit_base_single(
                     X_train.loc[neg_mask],
                     predictors,
                     variable,
+                    sample_weight=_subset_weights(sample_weight, neg_mask),
                     not_numeric_categorical=not_numeric_categorical,
                 ),
             }
@@ -420,7 +458,7 @@ class Imputer(BaseImputer):
                 np.where(y < -self.zero_atol, 0, 1),
             )
             clf = _make_classifier(self.classifier_type, self.seed)
-            clf.fit(X_pred, labels)
+            clf.fit(X_pred, labels, sample_weight=sample_weight)
             pos_mask = y > self.zero_atol
             neg_mask = y < -self.zero_atol
             return {
@@ -430,12 +468,14 @@ class Imputer(BaseImputer):
                     X_train.loc[pos_mask],
                     predictors,
                     variable,
+                    sample_weight=_subset_weights(sample_weight, pos_mask),
                     not_numeric_categorical=not_numeric_categorical,
                 ),
                 "negative_base": self._fit_base_single(
                     X_train.loc[neg_mask],
                     predictors,
                     variable,
+                    sample_weight=_subset_weights(sample_weight, neg_mask),
                     not_numeric_categorical=not_numeric_categorical,
                 ),
             }
@@ -447,9 +487,14 @@ class Imputer(BaseImputer):
         X_train: pd.DataFrame,
         predictors: List[str],
         variable: str,
+        sample_weight: Optional[np.ndarray] = None,
         not_numeric_categorical: Optional[List[str]] = None,
     ) -> ImputerResults:
-        """Fit a single base imputer on a (possibly filtered) slice."""
+        """Fit a single base imputer on a (possibly filtered) slice.
+
+        ``sample_weight`` must already be sliced to ``X_train``'s rows;
+        it is forwarded to the base imputer's ``weight_col``.
+        """
         imputer = self.base_imputer_class(
             log_level="ERROR",
             **self.base_imputer_kwargs,
@@ -458,6 +503,7 @@ class Imputer(BaseImputer):
             X_train=X_train,
             predictors=predictors,
             imputed_variables=[variable],
+            weight_col=sample_weight,
             not_numeric_categorical=not_numeric_categorical,
         )
 

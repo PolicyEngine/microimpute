@@ -305,6 +305,104 @@ class TestBaseImputerParity:
         )
 
 
+class TestWeightedFit:
+    """``weight_col`` must reach every nested numeric-target fit.
+
+    Regression tests for the silent weight-discard bug: ``fit`` only
+    forwarded ``weight_col`` to the auxiliary non-numeric base imputer,
+    so gate classifiers and per-regime base imputers for numeric
+    targets all trained unweighted and ``weight_col`` had no effect on
+    numeric imputations.
+    """
+
+    def test_weight_col_shifts_numeric_base_imputer(self) -> None:
+        """Weighted draws must track the weighted training distribution.
+
+        Donor data mixes a heavily-downweighted high-value block
+        (weight 0.001, y ~ 1e6) into a dominant low-value block
+        (weight 1, y ~ 1e4), so the weighted and unweighted means
+        differ by ~20x. An unweighted fit imputes means near the
+        unweighted training mean; a weighted fit must not.
+        """
+        from microimpute.models.regime_gated import Imputer
+
+        rng = np.random.default_rng(0)
+        n = 5000
+        weights = np.where(rng.random(n) < 0.2, 0.001, 1.0)
+        y = np.where(weights < 0.5, 1_000_000.0, 10_000.0) * (1 + 0.1 * rng.random(n))
+        donor = pd.DataFrame({"x": rng.normal(size=n), "y": y, "weight": weights})
+        target = pd.DataFrame({"x": rng.normal(size=2000)})
+
+        unweighted_mean = y.mean()
+        weighted_mean = np.average(y, weights=weights)
+
+        means = {}
+        for weight_col in (None, "weight"):
+            imputer = Imputer(seed=0, log_level="WARNING")
+            fitted = imputer.fit(
+                X_train=donor,
+                predictors=["x"],
+                imputed_variables=["y"],
+                weight_col=weight_col,
+            )
+            means[weight_col] = fitted.predict(target.copy())["y"].mean()
+
+        assert abs(means["weight"] - weighted_mean) / weighted_mean < 0.2, (
+            f"Weighted fit imputed mean {means['weight']:.0f}, expected "
+            f"within 20% of the weighted training mean {weighted_mean:.0f}."
+        )
+        assert abs(means[None] - unweighted_mean) / unweighted_mean < 0.2, (
+            f"Unweighted fit imputed mean {means[None]:.0f}, expected "
+            f"within 20% of the unweighted training mean "
+            f"{unweighted_mean:.0f}."
+        )
+        assert means[None] / means["weight"] > 5.0, (
+            "Weighted and unweighted fits imputed similar means "
+            f"({means[None]:.0f} vs {means['weight']:.0f}); weight_col "
+            "appears to be silently ignored for numeric targets."
+        )
+
+    def test_weight_col_shifts_gate_classifier(self) -> None:
+        """Weights must also reach the zero-gate classifier fit.
+
+        Donor data is 50/50 zero vs positive, but the positive rows
+        are downweighted 20x, so the weighted positive share is ~4.8%.
+        A weighted ZI_POSITIVE fit must draw far fewer positives than
+        an unweighted one.
+        """
+        from microimpute.models.regime_gated import Imputer
+
+        rng = np.random.default_rng(0)
+        n = 4000
+        positive = rng.random(n) < 0.5
+        weights = np.where(positive, 0.05, 1.0)
+        y = np.where(positive, 100.0 + 50.0 * rng.random(n), 0.0)
+        donor = pd.DataFrame({"x": rng.normal(size=n), "y": y, "weight": weights})
+        target = pd.DataFrame({"x": rng.normal(size=2000)})
+
+        shares = {}
+        for weight_col in (None, "weight"):
+            imputer = Imputer(seed=0, log_level="WARNING")
+            fitted = imputer.fit(
+                X_train=donor,
+                predictors=["x"],
+                imputed_variables=["y"],
+                weight_col=weight_col,
+            )
+            assert fitted.regimes_["y"] == "ZI_POSITIVE"
+            preds = fitted.predict(target.copy())["y"]
+            shares[weight_col] = float((preds > 0).mean())
+
+        # Unweighted positive share is ~0.5; weighted is ~0.048.
+        assert shares[None] > 0.35, (
+            f"Unweighted fit drew {shares[None]:.3f} positive; expected ~0.5."
+        )
+        assert shares["weight"] < 0.15, (
+            f"Weighted fit drew {shares['weight']:.3f} positive; expected "
+            "~0.05 — the gate classifier appears to ignore weights."
+        )
+
+
 class TestSequentialPredictorTyping:
     """Numeric overrides must reach nested per-regime base imputers."""
 
