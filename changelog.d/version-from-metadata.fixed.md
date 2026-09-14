@@ -1,0 +1,1 @@
+- Fixed `microimpute.__version__` reporting 1.1.2 while the package was at 3.1.1, by reading the version from installed package metadata.
