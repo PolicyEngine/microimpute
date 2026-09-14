@@ -1,5 +1,5 @@
 ---
-title: "microimpute: Benchmarking and selecting imputation methods for survey microdata"
+title: "microimpute: a model-agnostic tool for cross-survey imputation"
 tags:
   - Python
   - imputation
@@ -8,17 +8,17 @@ tags:
   - quantile regression
   - microsimulation
 authors:
-  - name: María Juaristi
+  - name: Vahid Ahmadi
+    orcid: 0009-0004-1093-6272
     affiliation: '1'
     corresponding: true
+  - name: María Juaristi
+    affiliation: '1'
   - name: Max Ghenis
     orcid: 0000-0002-1335-8277
     affiliation: '1'
   - name: Nikhil Woodruff
     orcid: 0009-0009-5004-4910
-    affiliation: '1'
-  - name: Vahid Ahmadi
-    orcid: 0009-0004-1093-6272
     affiliation: '1'
 affiliations:
   - name: PolicyEngine, Washington, DC, United States
