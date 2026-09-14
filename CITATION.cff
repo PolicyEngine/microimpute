@@ -1,11 +1,15 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
-title: "microimpute: Benchmarking and selecting imputation methods for survey microdata"
+title: "microimpute: a model-agnostic tool for cross-survey imputation"
 url: "https://github.com/PolicyEngine/microimpute"
 repository-code: "https://github.com/PolicyEngine/microimpute"
 abstract: "A Python package for imputing variables from one survey onto another, implementing five imputation methods behind a common interface with cross-validated automatic method selection."
 authors:
+  - family-names: Ahmadi
+    given-names: Vahid
+    orcid: "https://orcid.org/0009-0004-1093-6272"
+    affiliation: "PolicyEngine, Washington, DC, United States"
   - family-names: Juaristi
     given-names: María
     affiliation: "PolicyEngine, Washington, DC, United States"
@@ -16,10 +20,6 @@ authors:
   - family-names: Woodruff
     given-names: Nikhil
     orcid: "https://orcid.org/0009-0009-5004-4910"
-    affiliation: "PolicyEngine, Washington, DC, United States"
-  - family-names: Ahmadi
-    given-names: Vahid
-    orcid: "https://orcid.org/0009-0004-1093-6272"
     affiliation: "PolicyEngine, Washington, DC, United States"
 keywords:
   - imputation
