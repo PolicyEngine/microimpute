@@ -241,6 +241,18 @@ class MatchingResults(ImputerResults):
             combined_results = pd.concat(all_results)
             combined_results = combined_results.loc[X_test_copy.index]
 
+            # A failed chunk leaves NaN blocks in the output. Report the total
+            # so a caller knows what share of the result is missing without
+            # having to check for it themselves.
+            n_failed = int(combined_results.isna().any(axis=1).sum())
+            if n_failed:
+                self.logger.warning(
+                    f"{n_failed} of {len(combined_results)} records "
+                    f"({n_failed / len(combined_results):.1%}) could not be "
+                    "matched and are NaN in the result."
+                )
+            self.n_failed_records = n_failed
+
             return self._process_matching_results(
                 combined_results, X_test_copy, quantiles, return_probs
             )
@@ -639,11 +651,18 @@ class Matching(Imputer):
                                 )
                                 y_pred_chunks.append(fused0[var].values)
                                 y_val_chunks.append(chunk_y_val.values)
-                            except Exception:
-                                # If chunk fails, use mean of training data as prediction
-                                mean_val = X_train_fold[var].mean()
-                                y_pred_chunks.append(np.full(len(chunk_data), mean_val))
-                                y_val_chunks.append(chunk_y_val.values)
+                            except Exception as e:
+                                # Substituting the training mean here would
+                                # score this trial as a mean-predictor, which
+                                # can beat a genuine matching fit on a
+                                # low-signal target. Prune instead, so a
+                                # parameter set that cannot match is never
+                                # selected as best.
+                                self.logger.warning(
+                                    f"Matching failed for '{var}' on fold "
+                                    f"{fold_idx} chunk {i}: {e}. Pruning trial."
+                                )
+                                raise optuna.TrialPruned() from e
 
                         # Combine chunk results
                         y_pred = np.concatenate(y_pred_chunks)
@@ -660,11 +679,14 @@ class Matching(Imputer):
                             )
                             y_pred = fused0[var].values
                             y_val_combined = y_val.values
-                        except Exception:
-                            # If matching fails, use mean of training data as prediction
-                            mean_val = X_train_fold[var].mean()
-                            y_pred = np.full(len(X_val_var), mean_val)
-                            y_val_combined = y_val.values
+                        except Exception as e:
+                            # See above: score the trial on matching, or not at
+                            # all.
+                            self.logger.warning(
+                                f"Matching failed for '{var}' on fold "
+                                f"{fold_idx}: {e}. Pruning trial."
+                            )
+                            raise optuna.TrialPruned() from e
 
                     # Use appropriate metric based on variable type
                     metric = variable_metrics[var]
