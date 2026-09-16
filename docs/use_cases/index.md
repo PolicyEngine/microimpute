@@ -23,7 +23,7 @@ Before imputation, make sure both datasets have compatible variables. Identify c
 
 ```python
 # Identify common variables
-common_variables = ['age', 'income', 'education', 'marital_status', 'region']
+common_variables = ["age", "income", "education", "marital_status", "region"]
 
 # Ensure variable formats match (example: education coding)
 education_mapping = {
@@ -31,19 +31,19 @@ education_mapping = {
     2: "high_school",
     3: "some_college",
     4: "bachelor",
-    5: "graduate"
+    5: "graduate",
 }
 
 # Apply standardization to both datasets
 for dataset in [scf_data, cps_data]:
-    dataset['education'] = dataset['education'].map(education_mapping)
+    dataset["education"] = dataset["education"].map(education_mapping)
 
     # Convert income to same units (thousands)
-    if 'income' in dataset.columns:
-        dataset['income'] = dataset['income'] / 1000
+    if "income" in dataset.columns:
+        dataset["income"] = dataset["income"] / 1000
 
 # Identify target variable in donor dataset
-target_variable = ['networth']
+target_variable = ["networth"]
 ```
 
 ## Performing imputation
