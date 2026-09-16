@@ -62,7 +62,14 @@ from microimpute.evaluations.predictor_analysis import (
 )
 
 # Import main models and utilities
-from microimpute.models import OLS, QRF, Imputer, ImputerResults, QuantReg
+from microimpute.models import (
+    OLS,
+    QRF,
+    Imputer,
+    ImputerResults,
+    QuantReg,
+    ZeroInflatedImputer,
+)
 
 # Import data handling functions
 from microimpute.utils.data import preprocess_data, unnormalize_predictions
