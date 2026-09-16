@@ -41,23 +41,23 @@ Returns a dictionary containing separate results for each metric type:
 ```python
 {
     "quantile_loss": {
-        "results": pd.DataFrame,      # rows: ["train", "test"], cols: quantiles (mean across folds)
+        "results": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles (mean across folds)
         "results_std": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles (std across folds)
         "mean_train": float,
         "mean_test": float,
         "std_train": float,
         "std_test": float,
-        "variables": List[str]        # numerical variables evaluated
+        "variables": List[str],  # numerical variables evaluated
     },
     "log_loss": {
-        "results": pd.DataFrame,      # rows: ["train", "test"], cols: quantiles
+        "results": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles
         "results_std": pd.DataFrame,  # rows: ["train", "test"], cols: quantiles (std across folds)
         "mean_train": float,
         "mean_test": float,
         "std_train": float,
         "std_test": float,
-        "variables": List[str]        # categorical variables evaluated
-    }
+        "variables": List[str],  # categorical variables evaluated
+    },
 }
 ```
 
@@ -77,7 +77,7 @@ results = cross_validate_model(
     data=diabetes_df,
     predictors=["age", "sex", "bmi", "bp"],
     imputed_variables=["s1", "s4"],
-    n_splits=5
+    n_splits=5,
 )
 
 # Check performance for numerical variables
