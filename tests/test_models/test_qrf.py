@@ -1649,3 +1649,51 @@ def test_qrf_fit_predict_with_max_train_samples() -> None:
 
     assert result.shape == (n_test, 1)
     assert not result.isna().any().any()
+
+
+def test_per_variable_models_draw_independently() -> None:
+    """Variables imputed together must not share one random quantile per row.
+
+    Every per-variable model builds its own generator from the seed it is
+    given. When they all receive the same seed they draw the same quantiles in
+    the same row order, so the imputed variables come out comonotonic whatever
+    their dependence in the donor.
+    """
+    rng = np.random.default_rng(7)
+    n = 1500
+    predictors = pd.DataFrame(
+        {"inc": rng.normal(30, 8, n), "age": rng.normal(45, 12, n)}
+    )
+    targets = ["savings", "property_wealth", "corporate_wealth"]
+    train = predictors.copy()
+    for variable in targets:
+        # Shared signal, independent shocks: the conditional dependence is nil.
+        train[variable] = 0.5 * predictors["inc"] + rng.normal(0, 10, n)
+
+    test = pd.DataFrame({"inc": rng.normal(30, 8, 600), "age": rng.normal(45, 12, 600)})
+
+    model = QRF(log_level="WARNING")
+    imputations = model.fit(train, ["inc", "age"], targets).predict(test)
+
+    ranks = imputations[targets].rank().corr()
+    off_diagonal = [
+        abs(ranks.loc[a, b]) for i, a in enumerate(targets) for b in targets[i + 1 :]
+    ]
+    assert max(off_diagonal) < 0.4, (
+        "imputed variables are comonotonic; per-variable models are sharing "
+        f"a seed (rank correlations {off_diagonal})"
+    )
+
+
+def test_seed_is_configurable_and_reproducible() -> None:
+    """QRF should accept a seed, and the same seed should reproduce draws."""
+    rng = np.random.default_rng(3)
+    n = 400
+    train = pd.DataFrame({"x": rng.normal(size=n)})
+    train["y"] = train["x"] + rng.normal(0, 1, n)
+    test = pd.DataFrame({"x": rng.normal(size=120)})
+
+    first = QRF(log_level="WARNING", seed=1234).fit(train, ["x"], ["y"]).predict(test)
+    second = QRF(log_level="WARNING", seed=1234).fit(train, ["x"], ["y"]).predict(test)
+
+    np.testing.assert_allclose(first["y"], second["y"])

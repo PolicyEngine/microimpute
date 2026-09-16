@@ -10,7 +10,7 @@ from pydantic import validate_call
 from quantile_forest import RandomForestQuantileRegressor
 from sklearn.ensemble import RandomForestClassifier
 
-from microimpute.config import VALIDATE_CONFIG
+from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
 from microimpute.models.imputer import Imputer, ImputerResults
 
 try:
@@ -607,6 +607,7 @@ class QRF(Imputer):
         batch_size: Optional[int] = None,
         cleanup_interval: int = 10,
         max_train_samples: Optional[int] = None,
+        seed: Optional[int] = RANDOM_STATE,
     ) -> None:
         """Initialize the QRF model.
 
@@ -618,8 +619,11 @@ class QRF(Imputer):
             max_train_samples: If set, subsample X_train to at most this many
                 rows before fitting. Reduces memory and training time while
                 preserving sequential covariance structure.
+            seed: Base random seed. Each imputed variable is given a distinct
+                seed derived from it, so variables imputed together draw
+                independently. Pass None for non-reproducible draws.
         """
-        super().__init__(log_level=log_level)
+        super().__init__(log_level=log_level, seed=seed)
         self.models = {}
         self.log_level = log_level
         self.memory_efficient = memory_efficient
@@ -695,20 +699,38 @@ class QRF(Imputer):
 
         return data
 
+    def _seed_for_variable(self, variable: str) -> Optional[int]:
+        """Derive a distinct seed for one imputed variable.
+
+        Each per-variable model builds its own generator from the seed it is
+        given. Handing every variable the same seed makes them draw the same
+        random quantiles in the same row order, so variables imputed together
+        come out comonotonic regardless of their dependence in the donor. The
+        offset follows the same convention as the subsampling seed below.
+        """
+        if self.seed is None:
+            return None
+        try:
+            variable_offset = (self.imputed_variables or []).index(variable)
+        except ValueError:
+            variable_offset = 0
+        return self.seed + variable_offset
+
     def _create_model_for_variable(self, variable: str, **kwargs) -> Any:
         """Create the appropriate model (classifier or regressor) based on variable type."""
         categorical_targets = getattr(self, "categorical_targets", {})
         boolean_targets = getattr(self, "boolean_targets", {})
+        seed = self._seed_for_variable(variable)
 
         if variable in categorical_targets:
             # Use classifier for categorical targets
-            return _RandomForestClassifierModel(seed=self.seed, logger=self.logger)
+            return _RandomForestClassifierModel(seed=seed, logger=self.logger)
         elif variable in boolean_targets:
             # Use classifier for boolean targets
-            return _RandomForestClassifierModel(seed=self.seed, logger=self.logger)
+            return _RandomForestClassifierModel(seed=seed, logger=self.logger)
         else:
             # Use QRF for numeric targets
-            return _QRFModel(seed=self.seed, logger=self.logger)
+            return _QRFModel(seed=seed, logger=self.logger)
 
     def _fit_model(
         self,
