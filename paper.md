@@ -1,5 +1,5 @@
 ---
-title: "microimpute: a model-agnostic tool for cross-survey imputation"
+title: "microimpute: A Model-Agnostic Tool for Cross-Survey Imputation"
 tags:
   - Python
   - imputation
