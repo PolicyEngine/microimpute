@@ -22,8 +22,8 @@ class TestNormalize:
         data = pd.DataFrame(
             {
                 "numeric_col": [1.0, 2.5, 3.7, 4.2, 5.9],  # Non-equally spaced
-                "categorical_col": [1, 2, 3, 1, 2],
-                "boolean_col": [0, 1, 0, 1, 0],
+                "categorical_col": pd.Categorical([1, 2, 3, 1, 2]),
+                "boolean_col": np.array([0, 1, 0, 1, 0], dtype=bool),
             }
         )
 
@@ -52,8 +52,8 @@ class TestNormalize:
         data = pd.DataFrame(
             {
                 "age": [25, 30, 35, 40, 45],
-                "race": [1, 2, 3, 1, 2],
-                "is_female": [0, 1, 0, 1, 0],
+                "race": pd.Categorical([1, 2, 3, 1, 2]),
+                "is_female": np.array([0, 1, 0, 1, 0], dtype=bool),
                 "income": [50000, 60000, 70000, 80000, 90000],
             }
         )
@@ -79,7 +79,7 @@ class TestNormalize:
                     410.0,
                     505.0,
                 ],  # Non-equally spaced
-                "category": [1, 2, 1, 2, 1],
+                "category": pd.Categorical([1, 2, 1, 2, 1]),
             }
         )
 
@@ -108,12 +108,9 @@ class TestNormalize:
 
         normalized_data, norm_params = normalize_data(data)
 
-        # Constant columns are detected as numeric_categorical and excluded
-        # So they should remain unchanged
-        pd.testing.assert_series_equal(normalized_data["constant"], data["constant"])
-
-        # Only varying column should have normalization params
-        assert "constant" not in norm_params
+        # A constant numeric column stays numeric and uses unit scale.
+        np.testing.assert_array_equal(normalized_data["constant"], np.zeros(5))
+        assert norm_params["constant"] == {"mean": 5.0, "std": 1.0}
         assert "varying" in norm_params
 
     def test_normalize_returns_copy(self):
@@ -121,7 +118,7 @@ class TestNormalize:
         data = pd.DataFrame(
             {
                 "value": [1.3, 2.7, 3.2, 4.8, 5.1],  # Non-equally spaced
-                "category": [1, 2, 1, 2, 1],
+                "category": pd.Categorical([1, 2, 1, 2, 1]),
             }
         )
         original_data = data.copy()
@@ -136,7 +133,12 @@ class TestNormalize:
 
     def test_normalize_with_no_numeric_columns(self):
         """Test normalize with only categorical columns."""
-        data = pd.DataFrame({"cat1": [1, 2, 3, 1, 2], "cat2": [0, 1, 0, 1, 0]})
+        data = pd.DataFrame(
+            {
+                "cat1": pd.Categorical([1, 2, 3, 1, 2]),
+                "cat2": pd.Categorical([0, 1, 0, 1, 0]),
+            }
+        )
 
         normalized_data, norm_params = normalize_data(data)
 
@@ -161,8 +163,8 @@ class TestPreprocessDataWithNormalize:
                     40.9,
                     45.1,
                 ],  # Non-equally spaced floats
-                "race": [1, 2, 3, 1, 2],
-                "is_female": [0, 1, 0, 1, 0],
+                "race": pd.Categorical([1, 2, 3, 1, 2]),
+                "is_female": np.array([0, 1, 0, 1, 0], dtype=bool),
                 "income": [
                     50123.45,
                     60987.23,
@@ -203,7 +205,7 @@ class TestPreprocessDataWithNormalize:
         """
         data = pd.DataFrame(
             {
-                "race": [1, 2, 3, 1, 2, 3, 1, 2],
+                "race": pd.Categorical([1, 2, 3, 1, 2, 3, 1, 2]),
                 "income": [
                     50000,
                     60000,
@@ -247,8 +249,8 @@ class TestLogTransform:
         data = pd.DataFrame(
             {
                 "numeric_col": [1.0, 2.5, 3.7, 4.2, 5.9],
-                "categorical_col": [1, 2, 3, 1, 2],
-                "boolean_col": [0, 1, 0, 1, 0],
+                "categorical_col": pd.Categorical([1, 2, 3, 1, 2]),
+                "boolean_col": np.array([0, 1, 0, 1, 0], dtype=bool),
             }
         )
 
@@ -298,7 +300,7 @@ class TestLogTransform:
                     96.1,
                     102.4,
                 ],
-                "category": [1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+                "category": pd.Categorical([1, 2, 1, 2, 1, 2, 1, 2, 1, 2]),
             }
         )
 
@@ -340,7 +342,7 @@ class TestLogTransform:
         data = pd.DataFrame(
             {
                 "value": [1.5, 2.7, 3.2, 4.8, 5.1, 6.3, 7.9, 8.4, 9.6, 10.2],
-                "category": [1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+                "category": pd.Categorical([1, 2, 1, 2, 1, 2, 1, 2, 1, 2]),
             }
         )
         original_data = data.copy()
@@ -355,7 +357,12 @@ class TestLogTransform:
 
     def test_log_transform_with_no_numeric_columns(self):
         """Test log transform with only categorical columns."""
-        data = pd.DataFrame({"cat1": [1, 2, 3, 1, 2], "cat2": [0, 1, 0, 1, 0]})
+        data = pd.DataFrame(
+            {
+                "cat1": pd.Categorical([1, 2, 3, 1, 2]),
+                "cat2": pd.Categorical([0, 1, 0, 1, 0]),
+            }
+        )
 
         log_data, log_params = log_transform_data(data)
 
@@ -451,8 +458,8 @@ class TestPreprocessDataWithLogTransform:
                     65.7,
                     70.2,
                 ],
-                "race": [1, 2, 3, 1, 2, 3, 1, 2, 3, 1],
-                "is_female": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+                "race": pd.Categorical([1, 2, 3, 1, 2, 3, 1, 2, 3, 1]),
+                "is_female": np.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1], dtype=bool),
                 "income": [
                     50123.45,
                     60987.23,
@@ -894,8 +901,8 @@ class TestAsinhTransform:
         data = pd.DataFrame(
             {
                 "numeric_col": [1.0, 2.5, 3.7, 4.2, 5.9],
-                "categorical_col": [1, 2, 3, 1, 2],
-                "boolean_col": [0, 1, 0, 1, 0],
+                "categorical_col": pd.Categorical([1, 2, 3, 1, 2]),
+                "boolean_col": np.array([0, 1, 0, 1, 0], dtype=bool),
             }
         )
 
@@ -945,7 +952,7 @@ class TestAsinhTransform:
                     100000.1,
                     1000000.7,
                 ],
-                "category": [1, 2, 1, 2, 1, 2, 1, 2, 1, 2],
+                "category": pd.Categorical([1, 2, 1, 2, 1, 2, 1, 2, 1, 2]),
             }
         )
 
@@ -988,7 +995,7 @@ class TestAsinhTransform:
         data = pd.DataFrame(
             {
                 "value": [-10.5, -2.7, 0.0, 2.8, 10.1, 100.3, 1000.9, 10000.4],
-                "category": [1, 2, 1, 2, 1, 2, 1, 2],
+                "category": pd.Categorical([1, 2, 1, 2, 1, 2, 1, 2]),
             }
         )
         original_data = data.copy()
@@ -1079,8 +1086,8 @@ class TestPreprocessDataWithAsinhTransform:
                     65.7,
                     70.2,
                 ],
-                "race": [1, 2, 3, 1, 2, 3, 1, 2, 3, 1],
-                "is_female": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1],
+                "race": pd.Categorical([1, 2, 3, 1, 2, 3, 1, 2, 3, 1]),
+                "is_female": np.array([0, 1, 0, 1, 0, 1, 0, 1, 0, 1], dtype=bool),
                 "income": [
                     -10000.0,
                     0.0,

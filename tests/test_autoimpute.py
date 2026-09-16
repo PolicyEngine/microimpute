@@ -25,6 +25,10 @@ try:
 except ImportError:
     HAS_MDN = False
 
+# These tests exercise the core API on every installation. Optional backends
+# have dedicated test modules and must not gate core coverage.
+CORE_MODELS = [QRF, QuantReg, OLS]
+
 # === Fixtures ===
 
 
@@ -87,7 +91,7 @@ def test_autoimpute_basic_structure(
         receiver_data=diabetes_receiver,
         predictors=predictors,
         imputed_variables=imputed_variables,
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=CORE_MODELS,
         hyperparameters={
             "QRF": {"n_estimators": 50},
             "Matching": {"constrained": True},
@@ -137,7 +141,7 @@ def test_autoimpute_all_models(
         receiver_data=diabetes_receiver,
         predictors=predictors,
         imputed_variables=imputed_variables,
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=CORE_MODELS,
         impute_all=True,  # Return results for all models
         log_level="WARNING",
     )
@@ -202,7 +206,7 @@ def test_autoimpute_with_hyperparameters(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=CORE_MODELS,
         hyperparameters=hyperparameters,
         log_level="WARNING",
     )
@@ -224,7 +228,7 @@ def test_autoimpute_multiple_imputed_variables(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1", "y2"],  # Multiple variables
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=CORE_MODELS,
         log_level="WARNING",
     )
 
@@ -246,7 +250,7 @@ def test_autoimpute_large_receiver() -> None:
         receiver_data=receiver,
         predictors=["x"],
         imputed_variables=["y"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=CORE_MODELS,
         log_level="WARNING",
     )
 
@@ -267,7 +271,7 @@ def test_autoimpute_best_method_selection(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=CORE_MODELS,
         log_level="WARNING",
     )
 
@@ -326,7 +330,7 @@ def test_autoimpute_cv_results_structure(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=CORE_MODELS,
         log_level="WARNING",
     )
 
@@ -378,7 +382,7 @@ def test_autoimpute_missing_predictors() -> None:
             receiver_data=receiver,
             predictors=["x1", "x2"],  # x2 not in receiver
             imputed_variables=["y"],
-            models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+            models=CORE_MODELS,
             log_level="WARNING",
         )
 
@@ -461,7 +465,7 @@ def test_autoimpute_consistency(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=CORE_MODELS,
         log_level="WARNING",
     )
 
@@ -470,7 +474,7 @@ def test_autoimpute_consistency(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=CORE_MODELS,
         log_level="WARNING",
     )
 

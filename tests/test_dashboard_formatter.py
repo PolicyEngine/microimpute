@@ -974,14 +974,14 @@ class TestDistributionBins:
         """Test numeric categorical variables produce categorical distributions."""
         donor_data = pd.DataFrame(
             {
-                "rating": [1, 1, 2, 2, 3, 3],
-                "flag": [0, 1, 1, 0, 1, 0],
+                "rating": pd.Categorical([1, 1, 2, 2, 3, 3]),
+                "flag": np.array([0, 1, 1, 0, 1, 0], dtype=bool),
             }
         )
         receiver_data = pd.DataFrame(
             {
-                "rating": [1, 2, 2, 3],
-                "flag": [1, 1, 0, 0],
+                "rating": pd.Categorical([1, 2, 2, 3]),
+                "flag": np.array([1, 1, 0, 0], dtype=bool),
             }
         )
 

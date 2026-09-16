@@ -170,8 +170,6 @@ def test_multiple_imputed_variables(split_data: tuple) -> None:
     Y_test = X_test[imputed_variables]
 
     model_classes = [OLS, QRF, QuantReg]
-    if HAS_MATCHING:
-        model_classes.append(Matching)
     method_imputations = get_imputations(
         model_classes, X_train, X_test, predictors, imputed_variables
     )
@@ -367,9 +365,9 @@ def test_log_loss_for_categorical_variables() -> None:
             "x1": np.random.randn(n_train),
             "x2": np.random.randn(n_train),
             # Binary categorical variable
-            "binary_cat": np.random.choice([0, 1], size=n_train),
+            "binary_cat": np.random.choice([False, True], size=n_train),
             # Multi-class categorical variable (3 classes)
-            "multi_cat": np.random.choice([0, 1, 2], size=n_train),
+            "multi_cat": pd.Categorical(np.random.choice([0, 1, 2], size=n_train)),
             # String categorical variable
             "string_cat": np.random.choice(["A", "B", "C"], size=n_train),
             # Numerical variable for comparison
@@ -382,8 +380,8 @@ def test_log_loss_for_categorical_variables() -> None:
         {
             "x1": np.random.randn(n_test),
             "x2": np.random.randn(n_test),
-            "binary_cat": np.random.choice([0, 1], size=n_test),
-            "multi_cat": np.random.choice([0, 1, 2], size=n_test),
+            "binary_cat": np.random.choice([False, True], size=n_test),
+            "multi_cat": pd.Categorical(np.random.choice([0, 1, 2], size=n_test)),
             "string_cat": np.random.choice(["A", "B", "C"], size=n_test),
             "numerical": np.random.randn(n_test),
         }
@@ -471,7 +469,7 @@ def test_mixed_variable_types() -> None:
             "predictor1": np.random.randn(n_train),
             "predictor2": np.random.choice(["X", "Y", "Z"], size=n_train),
             "numerical_target": np.random.randn(n_train),
-            "categorical_target": np.random.choice([0, 1], size=n_train),
+            "categorical_target": np.random.choice([False, True], size=n_train),
         }
     )
 
@@ -480,7 +478,7 @@ def test_mixed_variable_types() -> None:
             "predictor1": np.random.randn(n_test),
             "predictor2": np.random.choice(["X", "Y", "Z"], size=n_test),
             "numerical_target": np.random.randn(n_test),
-            "categorical_target": np.random.choice([0, 1], size=n_test),
+            "categorical_target": np.random.choice([False, True], size=n_test),
         }
     )
 

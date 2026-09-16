@@ -1,0 +1,1 @@
+Validate and propagate numeric zero-inflated sample weights to gate classifiers and sign-specific component fits, including aligned Series and array weights. Give numeric components reproducible independent random seeds and forward component fit parameters.
