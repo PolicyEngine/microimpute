@@ -719,8 +719,11 @@ def test_missing_predictors_in_test(model_class: Type[Imputer]) -> None:
     else:
         fitted = model.fit(train_data, ["x1", "x2"], ["y"])
 
-    # Should raise an error when predictor is missing
-    with pytest.raises(Exception, match=r"not in index|Missing columns"):
+    # Should raise an error when predictor is missing. Matching surfaces this
+    # from R rather than from pandas, so its message differs.
+    with pytest.raises(
+        Exception, match=r"not in index|Missing columns|matching failed"
+    ):
         fitted.predict(test_data, quantiles=[0.5])
 
 
