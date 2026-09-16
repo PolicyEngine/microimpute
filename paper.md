@@ -12,11 +12,11 @@ authors:
     orcid: 0009-0004-1093-6272
     affiliation: '1'
     corresponding: true
-  - name: María Juaristi
-    orcid: 0009-0007-4946-2248
-    affiliation: '1'
   - name: Max Ghenis
     orcid: 0000-0002-1335-8277
+    affiliation: '1'
+  - name: María Juaristi
+    orcid: 0009-0007-4946-2248
     affiliation: '1'
   - name: Nikhil Woodruff
     orcid: 0009-0009-5004-4910
@@ -60,7 +60,8 @@ The gap `microimpute` fills is comparison. Its contribution is not a new estimat
 
 # Software Design
 
-Every model implements `fit(X_train, predictors, imputed_variables, weight_col=None)` and `predict(X_test, quantiles)`, returning quantiles of the conditional distribution. That uniformity is what makes the comparison possible: a regression and a donor-matching procedure are not obviously comparable until both are expressed as predictive distributions.
+Every model implements `fit(X_train, predictors, imputed_variables, weight_col=None)` and `predict(X_test, quantiles)`, returning quantiles of the conditional distribution. That uniformity is what makes the comparison possible: a regression and a donor-matching procedure are not obviously comparable until both are expressed as predictive distributions. Imputation is framed throughout as a donor-to-receiver problem: the donor survey observes both the predictors and the target variables, the receiver survey observes only the predictors, and the two share no records. Categorical predictors are encoded and numeric predictors standardised consistently across the two frames, so a model fitted on the donor can be applied to the receiver without the analyst reconciling schemas by hand.
+
 
 ```python
 from microimpute.comparisons import autoimpute
@@ -73,13 +74,15 @@ result = autoimpute(
 )
 ```
 
-`autoimpute` runs each method under cross-validation, scores it by average quantile loss across a grid of quantiles, and returns imputed values from the winner along with the comparison that justified it. Categorical and boolean targets are handled with log loss. The zero-inflated wrapper composes a model for the probability of a zero with a model for the positive part, which matters for variables such as asset holdings where a large share of the population is at zero.
+`autoimpute` runs each available method under five-fold cross-validation on the donor data, scores it by average quantile loss across a grid of quantiles, refits the winner on the full donor sample, and applies it to the receiver, returning the imputed values together with the comparison that justified them. Categorical and boolean targets are handled with log loss, and the target type is inferred rather than declared. Because the result carries the full per-method cross-validation table, the selection is auditable after the fact rather than buried in the run.
+
+Alongside the imputers, the package provides diagnostics for the step that usually determines imputation quality more than the estimator does: the choice of predictors. `compute_predictor_correlations`, `leave_one_out_analysis`, and `progressive_predictor_inclusion` measure how much each candidate predictor contributes and in what order, so a predictor set can be defended rather than assumed. The zero-inflated wrapper composes a model for the probability of a zero with a model for the positive part, which matters for variables such as asset holdings where a large share of the population is at zero.
 
 Results are inspectable rather than final: the package reports per-method losses so an analyst can see how close the decision was, and a companion web dashboard, distributed separately, renders the comparison for exploration.
 
 # Research Impact Statement
 
-`microimpute` is used in `policyengine-uk-data`, which builds the microdata behind PolicyEngine's UK analyses, and in standalone studies including a UK trade shock study and an analysis of a National Insurance contributions exemption. Its SCF-to-CPS wealth imputation is a dependency of PolicyEngine's US asset-tested programme modelling.
+`microimpute` builds the imputed variables in the microdata underlying `policyengine` [@policyengine_py], the microsimulation model behind the analyses published at [policyengine.org](https://policyengine.org). Its SCF-to-CPS wealth imputation supplies the countable-resource inputs on which US asset-tested programme modelling depends, and its quantile regression forests impute variables into the UK microdata. It is also used in standalone studies, including a UK trade shock study and an analysis of a National Insurance contributions exemption.
 
 The accompanying research paper documents the benchmarking exercise and the SSI application in full [@juaristi2026microimpute]; this paper describes the software.
 
