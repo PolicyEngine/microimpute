@@ -13,6 +13,7 @@ authors:
     affiliation: '1'
     corresponding: true
   - name: María Juaristi
+    orcid: 0009-0007-4946-2248
     affiliation: '1'
   - name: Max Ghenis
     orcid: 0000-0002-1335-8277
