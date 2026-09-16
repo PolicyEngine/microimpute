@@ -1,0 +1,1 @@
+Numeric columns, including integer counts and 0/1 integers, now remain numeric regardless of cardinality or the values present in a fold. Declare categorical targets with target_types={"column": "categorical"}, pandas categorical dtype, or boolean dtype for binary categories. Log-loss comparisons require the probabilities returned by predict(return_probs=True).

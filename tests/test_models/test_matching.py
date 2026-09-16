@@ -13,13 +13,17 @@ from microimpute.evaluations import *
 from microimpute.utils.data import preprocess_data
 from microimpute.visualizations import *
 
-try:
-    from microimpute.models.matching import Matching
+# The Matching class can load without R for injected Python callbacks;
+# these integration tests specifically require the optional R bridge.
+pytest.importorskip("rpy2.robjects")
+from microimpute.models.matching import Matching
+from microimpute.utils.statmatch_hotdeck import _get_statmatch
+from rpy2.robjects.packages import PackageNotInstalledError
 
-    MATCHING_AVAILABLE = True
-except ImportError:
-    MATCHING_AVAILABLE = False
-    pytest.skip("Matching model not available", allow_module_level=True)
+try:
+    _get_statmatch()
+except PackageNotInstalledError:
+    pytest.skip("R StatMatch package not available", allow_module_level=True)
 
 
 # === Fixtures ===
@@ -76,36 +80,20 @@ def test_matching_basic_fit_predict(diabetes_data: pd.DataFrame) -> None:
     model = Matching()
     fitted_model = model.fit(X_train, predictors, imputed_variables)
 
-    # Predict (matching uses same value for all quantiles)
-    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+    # Predict a donor draw for each recipient.
+    predictions = fitted_model.predict(X_test)
 
     # Validate predictions
-    assert isinstance(predictions, dict)
-    assert 0.5 in predictions
-    assert isinstance(predictions[0.5], pd.DataFrame)
-    assert predictions[0.5].shape == (len(X_test), len(imputed_variables))
-    assert not predictions[0.5].isna().any().any()
+    assert isinstance(predictions, pd.DataFrame)
+    assert predictions.shape == (len(X_test), len(imputed_variables))
+    assert not predictions.isna().any().any()
 
 
-def test_matching_quantile_invariance(simple_data: pd.DataFrame) -> None:
-    """Test that Matching returns same values for different quantiles."""
-    X_train, X_test = preprocess_data(simple_data)
-
-    model = Matching()
-    fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
-
-    # Get predictions at different quantiles
-    predictions = fitted_model.predict(X_test, quantiles=[0.1, 0.5, 0.9])
-
-    # Matching should return same values for all quantiles
-    # (it doesn't model uncertainty)
-    for i in range(len(X_test)):
-        val_01 = predictions[0.1]["y"].iloc[i]
-        val_05 = predictions[0.5]["y"].iloc[i]
-        val_09 = predictions[0.9]["y"].iloc[i]
-        assert val_01 == val_05 == val_09, (
-            "Matching should return same value for all quantiles"
-        )
+def test_matching_rejects_conditional_quantiles(simple_data: pd.DataFrame) -> None:
+    """A donor draw must not be mislabeled as several conditional quantiles."""
+    fitted = Matching().fit(simple_data, ["x1", "x2"], ["y"])
+    with pytest.raises(NotImplementedError, match="conditional quantiles"):
+        fitted.predict(simple_data, quantiles=[0.1, 0.5, 0.9])
 
 
 def test_matching_donor_preservation(simple_data: pd.DataFrame) -> None:
@@ -115,10 +103,10 @@ def test_matching_donor_preservation(simple_data: pd.DataFrame) -> None:
     model = Matching()
     fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
 
-    predictions = fitted_model.predict(X_test[:1], quantiles=[0.5])
+    predictions = fitted_model.predict(X_test[:1])
 
     # The predicted value should be from the training set
-    predicted_value = predictions[0.5]["y"].iloc[0]
+    predicted_value = predictions["y"].iloc[0]
     assert predicted_value in X_train["y"].values, (
         "Matched value should be from donor pool"
     )
@@ -146,14 +134,13 @@ def test_matching_different_distance_functions() -> None:
         model = Matching()
         fitted_model = model.fit(X_train, ["x1", "x2"], ["y"], dist_fun=dist_fun)
 
-        predictions = fitted_model.predict(X_test[:5], quantiles=[0.5])
+        predictions = fitted_model.predict(X_test[:5])
 
-        assert 0.5 in predictions
-        assert not predictions[0.5]["y"].isna().any()
+        assert not predictions["y"].isna().any()
 
 
-def test_matching_k_neighbors() -> None:
-    """Test Matching with different k values."""
+def test_matching_donor_reuse_limit() -> None:
+    """NND k constrains donor reuse; it does not count nearest neighbors."""
     np.random.seed(42)
     data = pd.DataFrame(
         {
@@ -168,12 +155,13 @@ def test_matching_k_neighbors() -> None:
     # Test different k values
     for k in [1, 3, 5]:
         model = Matching()
-        fitted_model = model.fit(X_train, ["x1", "x2"], ["y"], k=k)
+        fitted_model = model.fit(
+            X_train, ["x1", "x2"], ["y"], k=k, constrained=True, constr_alg="lpSolve"
+        )
 
-        predictions = fitted_model.predict(X_test[:5], quantiles=[0.5])
+        predictions = fitted_model.predict(X_test[:5])
 
-        assert 0.5 in predictions
-        assert not predictions[0.5]["y"].isna().any()
+        assert not predictions["y"].isna().any()
 
 
 # === Categorical Variables ===
@@ -203,10 +191,10 @@ def test_matching_mixed_types() -> None:
         ["target_numeric", "target_category"],
     )
 
-    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+    predictions = fitted_model.predict(X_test)
 
-    assert predictions[0.5]["target_numeric"].dtype == np.float64
-    assert pd.api.types.is_string_dtype(predictions[0.5]["target_category"])
+    assert predictions["target_numeric"].dtype == np.float64
+    assert pd.api.types.is_string_dtype(predictions["target_category"])
 
 
 # === Edge Cases ===
@@ -221,13 +209,12 @@ def test_matching_single_donor(simple_data: pd.DataFrame) -> None:
     model = Matching()
     fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
 
-    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+    predictions = fitted_model.predict(X_test)
 
-    assert 0.5 in predictions
-    assert not predictions[0.5]["y"].isna().any()
+    assert not predictions["y"].isna().any()
 
     # All predictions should be from the small donor pool
-    for val in predictions[0.5]["y"]:
+    for val in predictions["y"]:
         assert val in X_train["y"].values
 
 
@@ -250,11 +237,10 @@ def test_matching_exact_match() -> None:
     model = Matching()
     fitted_model = model.fit(X_train, ["x1", "x2"], ["y"])
 
-    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+    predictions = fitted_model.predict(X_test)
 
     # Check that predictions exist
-    assert 0.5 in predictions
-    assert not predictions[0.5].empty
+    assert predictions["y"].iloc[0] == 30
 
 
 # === Constrained Matching ===
@@ -277,10 +263,9 @@ def test_matching_constrained_mode() -> None:
     model = Matching()
     fitted_model = model.fit(X_train, ["x1", "x2"], ["y"], constrained=True)
 
-    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+    predictions = fitted_model.predict(X_test)
 
-    assert 0.5 in predictions
-    assert not predictions[0.5]["y"].isna().any()
+    assert not predictions["y"].isna().any()
 
 
 # === Cross-Validation ===
@@ -303,14 +288,10 @@ def test_matching_cross_validation(diabetes_data: pd.DataFrame) -> None:
     assert "quantile_loss" in matching_results
     assert "log_loss" in matching_results
 
-    # Check quantile_loss results (for numerical variables)
-    ql_results = matching_results["quantile_loss"]
-    assert "results" in ql_results
-    assert isinstance(ql_results["results"], pd.DataFrame)
-    assert "train" in ql_results["results"].index
-    assert "test" in ql_results["results"].index
-    assert not ql_results["results"].isna().all().all()
-    assert ql_results["mean_test"] > 0
+    # Matching does not estimate conditional distributions and cannot be
+    # ranked by the quantile/log-loss comparison API.
+    for metric in ["quantile_loss", "log_loss"]:
+        assert np.isnan(matching_results[metric]["mean_test"])
 
 
 # === Hyperparameter Tuning ===
@@ -344,16 +325,16 @@ def test_matching_hyperparameter_tuning(diabetes_data: pd.DataFrame) -> None:
     )
 
     # Make predictions
-    default_preds = default_fitted.predict(X_valid, quantiles=[0.5])
-    tuned_preds = tuned_fitted.predict(X_valid, quantiles=[0.5])
+    default_preds = default_fitted.predict(X_valid)
+    tuned_preds = tuned_fitted.predict(X_valid)
 
     # Calculate MSE
     default_mse = {}
     tuned_mse = {}
 
     for var in imputed_variables:
-        default_mse[var] = mean_squared_error(X_valid[var], default_preds[0.5][var])
-        tuned_mse[var] = mean_squared_error(X_valid[var], tuned_preds[0.5][var])
+        default_mse[var] = mean_squared_error(X_valid[var], default_preds[var])
+        tuned_mse[var] = mean_squared_error(X_valid[var], tuned_preds[var])
 
     # Both should produce valid results
     assert all(mse < np.inf for mse in default_mse.values())
@@ -391,12 +372,12 @@ def test_matching_multiple_targets(diabetes_data: pd.DataFrame) -> None:
     model = Matching()
     fitted_model = model.fit(X_train, predictors, imputed_variables)
 
-    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+    predictions = fitted_model.predict(X_test)
 
-    assert predictions[0.5].shape[1] == len(imputed_variables)
+    assert predictions.shape[1] == len(imputed_variables)
     for var in imputed_variables:
-        assert var in predictions[0.5].columns
-        assert not predictions[0.5][var].isna().any()
+        assert var in predictions.columns
+        assert not predictions[var].isna().any()
 
 
 def test_matching_preserves_relationships() -> None:
@@ -420,15 +401,40 @@ def test_matching_preserves_relationships() -> None:
     model = Matching()
     fitted_model = model.fit(X_train, ["x"], ["y1", "y2"])
 
-    predictions = fitted_model.predict(X_test, quantiles=[0.5])
+    predictions = fitted_model.predict(X_test)
 
     # Check that the relationship between y1 and y2 is preserved
     # Since we're matching entire rows, y1 and y2 should maintain their relationship
-    pred_y1 = predictions[0.5]["y1"].values
-    pred_y2 = predictions[0.5]["y2"].values
+    pred_y1 = predictions["y1"].values
+    pred_y2 = predictions["y2"].values
 
     # Each prediction should come from the same donor row
     for i in range(len(pred_y1)):
         # Find which donor row was matched
         donor_mask = (X_train["y1"] == pred_y1[i]) & (X_train["y2"] == pred_y2[i])
         assert donor_mask.any(), "Predictions should come from same donor row"
+
+
+def test_matching_weights_change_tied_donor_selection():
+    """Optional live-R check of RANDwNND's documented weighted tie selection."""
+    donor = pd.DataFrame({"x": [1.0, 1.0], "y": [10.0, 20.0], "w": [1000.0, 1.0]})
+    fitted = Matching().fit(donor, ["x"], ["y"], weight_col="w")
+    output = fitted.predict(pd.DataFrame({"x": np.ones(500)}))
+    assert (output.y == 10.0).mean() > 0.97
+
+
+def test_matching_seeded_draws_preserve_r_random_stream():
+    """Optional live-R reproducibility and global RNG-isolation integration check."""
+    import rpy2.robjects as ro
+
+    donor = pd.DataFrame({"x": [1.0, 1.0], "y": [10.0, 20.0], "w": [1.0, 2.0]})
+    receiver = pd.DataFrame({"x": np.ones(200)})
+    first = Matching(seed=17).fit(donor, ["x"], ["y"], weight_col="w")
+    second = Matching(seed=17).fit(donor, ["x"], ["y"], weight_col="w")
+    ro.r["set.seed"](31)
+    expected_next_draws = np.asarray(ro.r["runif"](3))
+    ro.r["set.seed"](31)
+    first_draw = first.predict(receiver)
+    np.testing.assert_array_equal(np.asarray(ro.r["runif"](3)), expected_next_draws)
+    pd.testing.assert_frame_equal(first_draw, second.predict(receiver))
+    assert not first_draw.equals(first.predict(receiver))

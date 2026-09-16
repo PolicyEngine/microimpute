@@ -112,7 +112,7 @@ def normalize_data(
         std = data[numeric_cols].std(axis=0)
 
         # Check for constant columns (std=0)
-        constant_cols = std[std == 0].index.tolist()
+        constant_cols = std[(std == 0) | std.isna()].index.tolist()
         if constant_cols:
             logger.warning(f"Found constant columns (std=0): {constant_cols}")
             # Handle constant columns by setting std to 1 to avoid division by zero
@@ -466,6 +466,22 @@ def preprocess_data(
     if missing_count > 0:
         logger.warning(f"Data contains {missing_count} missing values")
 
+    if not full_data:
+        train, test = train_test_split(
+            data, train_size=train_size, test_size=test_size, random_state=random_state
+        )
+        transformed = preprocess_data(
+            train,
+            full_data=True,
+            normalize=normalize,
+            log_transform=log_transform,
+            asinh_transform=asinh_transform,
+        )
+        if normalize_requested or log_transform_requested or asinh_transform_requested:
+            train, params = transformed
+            return train, apply_transformations(test, params), params
+        return train, test
+
     # Apply normalization if requested
     normalization_params = {}
     if normalize_requested:
@@ -679,3 +695,35 @@ def un_asinh_transform_predictions(
         )
 
     return untransformed
+
+
+def apply_transformations(data: pd.DataFrame, params: dict) -> pd.DataFrame:
+    """Apply transformations fitted on training data to any new rows."""
+    result = data.copy()
+    for column, values in params.get("normalization", {}).items():
+        if column in result:
+            result[column] = (result[column] - values["mean"]) / values["std"]
+    for column in params.get("log_transform", {}):
+        if column in result:
+            if (result[column] <= 0).any():
+                raise ValueError(f"Column '{column}' contains non-positive values")
+            result[column] = np.log(result[column])
+    for column in params.get("asinh_transform", {}):
+        if column in result:
+            result[column] = np.arcsinh(result[column])
+    return result
+
+
+def reverse_transformations(data: pd.DataFrame, params: dict) -> pd.DataFrame:
+    """Reverse fitted transformations only for the supplied columns."""
+    result = data.copy()
+    for column, values in params.get("normalization", {}).items():
+        if column in result:
+            result[column] = result[column] * values["std"] + values["mean"]
+    for column in params.get("log_transform", {}):
+        if column in result:
+            result[column] = np.exp(result[column])
+    for column in params.get("asinh_transform", {}):
+        if column in result:
+            result[column] = np.sinh(result[column])
+    return result

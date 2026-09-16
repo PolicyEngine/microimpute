@@ -25,6 +25,8 @@ def validate_quantiles(quantiles: List[float]) -> None:
     Raises:
         ValueError: If any quantile is outside [0, 1] range.
     """
+    if not quantiles:
+        raise ValueError("At least one quantile is required")
     invalid_quantiles = [q for q in quantiles if not 0 <= q <= 1]
     if invalid_quantiles:
         error_msg = f"Invalid quantiles (must be between 0 and 1): {invalid_quantiles}"
@@ -101,12 +103,31 @@ def validate_imputation_inputs(
     Raises:
         ValueError: If validation fails.
     """
+    for name, columns in [
+        ("predictors", predictors),
+        ("imputed_variables", imputed_variables),
+    ]:
+        if len(columns) != len(set(columns)):
+            raise ValueError(f"Duplicate column names in {name}")
+    overlap = set(predictors) & set(imputed_variables)
+    if overlap:
+        raise ValueError(f"Predictors and imputed_variables overlap: {sorted(overlap)}")
+    if not donor_data.columns.is_unique or not receiver_data.columns.is_unique:
+        raise ValueError("Duplicate DataFrame column names are not supported")
     # Validate donor data has all required columns
     validate_columns_exist(donor_data, predictors, "donor data")
     validate_columns_exist(donor_data, imputed_variables, "donor data")
 
     # Validate receiver data has predictor columns
     validate_columns_exist(receiver_data, predictors, "receiver data")
+
+    for column in predictors:
+        donor_numeric = pd.api.types.is_numeric_dtype(donor_data[column])
+        receiver_numeric = pd.api.types.is_numeric_dtype(receiver_data[column])
+        if donor_numeric != receiver_numeric:
+            raise ValueError(
+                f"Incompatible predictor dtype for '{column}': donor {donor_data[column].dtype}, receiver {receiver_data[column].dtype}"
+            )
 
     # Validate weight column if provided
     if weight_col:
