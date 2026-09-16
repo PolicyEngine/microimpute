@@ -11,8 +11,15 @@ version = "3.1.2"
 description = "Benchmarking imputation methods for microdata"
 readme = "README.md"
 authors = [
+    { name = "Vahid Ahmadi" },
+    { name = "Max Ghenis", email = "max@policyengine.org" },
     { name = "María Juaristi", email = "juaristi@uni.minerva.edu" },
     { name = "Nikhil Woodruff", email = "nikhil.woodruff@outlook.com" }
+]
+classifiers = [
+    "Intended Audience :: Science/Research",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Information Analysis",
 ]
 requires-python = ">=3.12,<3.15"
 dependencies = [
@@ -62,12 +69,16 @@ images = [
     "kaleido>=0.2.1,<0.3.0",  # For exporting plots as PNG/JPG
 ]
 
-[tool.setuptools]
-packages = ["microimpute"]
-include-package-data = true
+[project.urls]
+Repository = "https://github.com/PolicyEngine/microimpute"
+Documentation = "https://policyengine.github.io/microimpute"
+Issues = "https://github.com/PolicyEngine/microimpute/issues"
+
+[tool.setuptools.packages.find]
+include = ["microimpute*"]
 
 [tool.setuptools.package-data]
-"microimpute" = ["**/*"]
+"microimpute" = ["py.typed"]
 
 [tool.towncrier]
 package = "microimpute"
