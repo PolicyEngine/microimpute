@@ -720,8 +720,8 @@ def test_missing_predictors_in_test(model_class: Type[Imputer]) -> None:
         fitted = model.fit(train_data, ["x1", "x2"], ["y"])
 
     # Should raise an error when predictor is missing
-    with pytest.raises(Exception):
-        predictions = fitted.predict(test_data, quantiles=[0.5])
+    with pytest.raises(Exception, match=r"not in index|Missing columns"):
+        fitted.predict(test_data, quantiles=[0.5])
 
 
 # === Reproducibility Tests ===
