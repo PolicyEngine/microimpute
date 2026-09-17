@@ -445,6 +445,10 @@ def declare_target_types(
                     f"Boolean target '{variable}' must contain only 0 and 1"
                 )
             result[variable] = result[variable].astype(bool)
+        elif pd.api.types.is_bool_dtype(result[variable]):
+            # A numeric declaration must survive dtype-based routing in every
+            # public caller, including preprocessing and metric selection.
+            result[variable] = result[variable].astype(float)
         elif not pd.api.types.is_numeric_dtype(result[variable]):
             if isinstance(
                 result[variable].dtype, pd.CategoricalDtype

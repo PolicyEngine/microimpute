@@ -513,7 +513,9 @@ class Matching(Imputer):
                     if var in discrete_targets:
                         errors.append(float(np.mean(actual != estimate)))
                     else:
-                        if not np.isfinite(estimate.astype(float)).all():
+                        actual = actual.astype(float)
+                        estimate = estimate.astype(float)
+                        if not np.isfinite(estimate).all():
                             raise optuna.TrialPruned(
                                 "Matching returned nonfinite numeric predictions"
                             )

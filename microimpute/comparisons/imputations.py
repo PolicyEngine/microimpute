@@ -98,10 +98,16 @@ def get_imputations(
                         predictors,
                         imputed_variables,
                         quantiles=quantiles,
+                        target_types=target_types,
                     )
                 else:
                     log.info(f"Fitting {model_name}")
-                    fitted_model = model.fit(X_train, predictors, imputed_variables)
+                    fitted_model = model.fit(
+                        X_train,
+                        predictors,
+                        imputed_variables,
+                        target_types=target_types,
+                    )
 
                 # Get predictions
                 log.info(f"Generating predictions with {model_name}")
@@ -118,6 +124,11 @@ def get_imputations(
                         get_metric_for_variable_type(X_train[variable], variable)
                         == "log_loss"
                     ):
+                        # Default point predictions may be returned as a frame.
+                        # Probability metadata uses the same median-keyed
+                        # container as nonconstant categorical predictions.
+                        if isinstance(imputations, pd.DataFrame):
+                            imputations = {0.5: imputations}
                         imputations.setdefault("probabilities", {})[variable] = {
                             "probabilities": np.ones((len(X_test), 1)),
                             "classes": np.asarray([info["value"]]),
