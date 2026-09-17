@@ -117,10 +117,10 @@ result = autoimpute(
     predictors=["age", "education"],
     imputed_variables=["income", "wealth"],
     preprocessing={
-        "income": "log",       # Log transform (positive values only)
-        "wealth": "asinh",     # Asinh transform (handles zeros/negatives)
-        "age": "normalize"     # Z-score normalization
-    }
+        "income": "log",  # Log transform (positive values only)
+        "wealth": "asinh",  # Asinh transform (handles zeros/negatives)
+        "age": "normalize",  # Z-score normalization
+    },
 )
 ```
 
