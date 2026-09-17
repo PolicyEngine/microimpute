@@ -74,6 +74,7 @@ class MatchingResults(ImputerResults):
         self.categorical_targets = categorical_targets or {}
         self.boolean_targets = boolean_targets or {}
         self.dummy_processor = dummy_processor
+        self.n_failed_records = 0
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
@@ -241,18 +242,6 @@ class MatchingResults(ImputerResults):
             combined_results = pd.concat(all_results)
             combined_results = combined_results.loc[X_test_copy.index]
 
-            # A failed chunk leaves NaN blocks in the output. Report the total
-            # so a caller knows what share of the result is missing without
-            # having to check for it themselves.
-            n_failed = int(combined_results.isna().any(axis=1).sum())
-            if n_failed:
-                self.logger.warning(
-                    f"{n_failed} of {len(combined_results)} records "
-                    f"({n_failed / len(combined_results):.1%}) could not be "
-                    "matched and are NaN in the result."
-                )
-            self.n_failed_records = n_failed
-
             return self._process_matching_results(
                 combined_results, X_test_copy, quantiles, return_probs
             )
@@ -336,6 +325,18 @@ class MatchingResults(ImputerResults):
                 f"Error converting matching results: {str(convert_error)}"
             )
             raise RuntimeError("Failed to process matching results") from convert_error
+
+        # Both single-call and chunked predictions replace the previous count.
+        # Only missing target values represent unmatched output records.
+        self.n_failed_records = int(
+            fused0[self.imputed_variables].isna().any(axis=1).sum()
+        )
+        if self.n_failed_records:
+            self.logger.warning(
+                f"{self.n_failed_records} of {len(fused0)} records "
+                f"({self.n_failed_records / len(fused0):.1%}) could not be "
+                "matched and are NaN in the result."
+            )
 
         # Create output dictionary with results
         imputations: Dict[float, pd.DataFrame] = {}
@@ -730,6 +731,11 @@ class Matching(Imputer):
         os.environ["PYTHONWARNINGS"] = "ignore"
 
         study.optimize(objective, n_trials=n_trials)
+
+        if not any(
+            trial.state == optuna.trial.TrialState.COMPLETE for trial in study.trials
+        ):
+            raise ValueError("No matching hyperparameter trial succeeded")
 
         best_value = study.best_value
         self.logger.info(
