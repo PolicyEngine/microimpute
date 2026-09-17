@@ -8,6 +8,7 @@ and organize results in a consistent format for comparison.
 import logging
 from typing import Any, Dict, List, Optional, Type
 
+import numpy as np
 import pandas as pd
 from pydantic import validate_call
 
@@ -16,7 +17,10 @@ from microimpute.comparisons.validation import (
     validate_quantiles,
 )
 from microimpute.config import QUANTILES, VALIDATE_CONFIG
+from microimpute.comparisons.metrics import get_metric_for_variable_type
 from microimpute.models.quantreg import QuantReg
+from microimpute.models.imputer import create_distributional_model
+from microimpute.utils.type_handling import declare_target_types
 
 log = logging.getLogger(__name__)
 
@@ -29,7 +33,8 @@ def get_imputations(
     predictors: List[str],
     imputed_variables: List[str],
     quantiles: Optional[List[float]] = QUANTILES,
-) -> Dict[str, Dict[float, pd.DataFrame]]:
+    target_types: Optional[Dict[str, str]] = None,
+) -> Dict[str, dict]:
     """Generate imputations using multiple model classes for the specified variables.
 
     Args:
@@ -63,6 +68,7 @@ def get_imputations(
         if quantiles:
             validate_quantiles(quantiles)
 
+        X_train = declare_target_types(X_train, imputed_variables, target_types)
         log.info(f"Generating imputations for {len(model_classes)} model classes")
         log.info(
             f"Training data shape: {X_train.shape}, Test data shape: {X_test.shape}"
@@ -82,7 +88,7 @@ def get_imputations(
 
             try:
                 # Instantiate the model
-                model = model_class()
+                model = create_distributional_model(model_class)
 
                 # Handle QuantReg which needs quantiles during fitting
                 if model_class == QuantReg:
@@ -92,14 +98,41 @@ def get_imputations(
                         predictors,
                         imputed_variables,
                         quantiles=quantiles,
+                        target_types=target_types,
                     )
                 else:
                     log.info(f"Fitting {model_name}")
-                    fitted_model = model.fit(X_train, predictors, imputed_variables)
+                    fitted_model = model.fit(
+                        X_train,
+                        predictors,
+                        imputed_variables,
+                        target_types=target_types,
+                    )
 
                 # Get predictions
                 log.info(f"Generating predictions with {model_name}")
-                imputations = fitted_model.predict(X_test, quantiles)
+                imputations = fitted_model.predict(
+                    X_test,
+                    quantiles,
+                    return_probs=any(
+                        get_metric_for_variable_type(X_train[var], var) == "log_loss"
+                        for var in imputed_variables
+                    ),
+                )
+                for variable, info in model.constant_targets.items():
+                    if (
+                        get_metric_for_variable_type(X_train[variable], variable)
+                        == "log_loss"
+                    ):
+                        # Default point predictions may be returned as a frame.
+                        # Probability metadata uses the same median-keyed
+                        # container as nonconstant categorical predictions.
+                        if isinstance(imputations, pd.DataFrame):
+                            imputations = {0.5: imputations}
+                        imputations.setdefault("probabilities", {})[variable] = {
+                            "probabilities": np.ones((len(X_test), 1)),
+                            "classes": np.asarray([info["value"]]),
+                        }
                 method_imputations[model_name] = imputations
 
             except (TypeError, AttributeError, ValueError) as model_error:

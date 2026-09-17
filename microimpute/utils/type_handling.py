@@ -17,27 +17,8 @@ class VariableTypeDetector:
 
     @staticmethod
     def is_boolean_variable(series: pd.Series) -> bool:
-        """Check if a series represents boolean data.
-
-        A float series that happens to contain only {0.0, 1.0} is NOT
-        treated as boolean (#9); it could be a probability, a rescaled
-        indicator, or simply an accident of a small sample. Routing a
-        float column through a classifier would silently flip the model
-        type and destroy regression behaviour. Only genuine boolean
-        dtypes and integer columns with values in {0, 1} are classified
-        as boolean.
-        """
-        if pd.api.types.is_bool_dtype(series):
-            return True
-
-        unique_vals = set(series.dropna().unique())
-        if pd.api.types.is_integer_dtype(series) and unique_vals <= {0, 1}:
-            return True
-
-        # Deliberately NOT recognising floats with values {0.0, 1.0} as
-        # booleans — see docstring. Callers who really want a float
-        # 0/1 column treated as a boolean should cast it explicitly.
-        return False
+        """Recognize explicit boolean dtypes without reclassifying integer counts."""
+        return pd.api.types.is_bool_dtype(series)
 
     @staticmethod
     def is_categorical_variable(series: pd.Series) -> bool:
@@ -87,30 +68,22 @@ class VariableTypeDetector:
             variable_type: 'bool', 'categorical', 'numeric_categorical', or 'numeric'
             categories: List of unique values for categorical types, None for numeric
         """
+        if force_numeric:
+            if not pd.api.types.is_numeric_dtype(series):
+                raise ValueError(
+                    f"Variable '{col_name}' declared numeric has nonnumeric dtype"
+                )
+            return "numeric", None
         if VariableTypeDetector.is_boolean_variable(series):
             return "bool", None
+        if isinstance(series.dtype, pd.CategoricalDtype):
+            return "categorical", series.cat.categories.tolist()
 
         if VariableTypeDetector.is_categorical_variable(series):
             return "categorical", series.unique().tolist()
 
-        # Check if it would normally be numeric_categorical
-        if not force_numeric and VariableTypeDetector.is_numeric_categorical_variable(
-            series
-        ):
-            categories = [float(i) for i in series.unique().tolist()]
-            logger.info(
-                f"Treating numeric variable '{col_name}' as categorical due to low unique count and equal spacing"
-            )
-            return "numeric_categorical", categories
-
-        # If force_numeric is True or it's not numeric_categorical, treat as numeric
-        if force_numeric and VariableTypeDetector.is_numeric_categorical_variable(
-            series
-        ):
-            logger.info(
-                f"Variable '{col_name}' forced to be treated as numeric (override numeric_categorical detection)"
-            )
-
+        # Cardinality is not a semantic type: counts and continuous values remain
+        # numeric even when a training fold contains only a few distinct values.
         return "numeric", None
 
 
@@ -151,6 +124,9 @@ class DummyVariableProcessor:
         Returns:
             Tuple of (processed_data, updated_predictors)
         """
+        self.predictor_numeric = {
+            col: pd.api.types.is_numeric_dtype(data[col]) for col in predictors
+        }
         # Start with a copy containing all needed columns
         all_columns = list(set(predictors + imputed_variables))
         data = data[all_columns].copy()
@@ -373,6 +349,13 @@ class DummyVariableProcessor:
         data = data.copy()
         updated_predictors = predictors.copy()
 
+        if not data.columns.is_unique:
+            raise ValueError("Duplicate DataFrame column names are not supported")
+        for column, numeric in getattr(self, "predictor_numeric", {}).items():
+            if column not in data:
+                raise ValueError(f"Missing predictor column: {column}")
+            if pd.api.types.is_numeric_dtype(data[column]) != numeric:
+                raise ValueError(f"Incompatible predictor dtype for '{column}'")
         # Apply dummy encoding based on stored mapping
         for orig_col, dummy_cols in self.dummy_mapping.items():
             if orig_col in predictors and orig_col in data.columns:
@@ -433,3 +416,46 @@ class DummyVariableProcessor:
                     data[col] = data[col].astype("float64")
 
         return data, updated_predictors
+
+
+def declare_target_types(
+    data: pd.DataFrame,
+    targets: List[str],
+    target_types: Optional[Dict[str, str]] = None,
+) -> pd.DataFrame:
+    """Validate explicit target semantics before preprocessing or splitting."""
+    target_types = target_types or {}
+    if set(target_types) - set(targets):
+        raise ValueError("target_types contains unknown imputed variables")
+    if any(
+        value not in {"numeric", "categorical", "bool"}
+        for value in target_types.values()
+    ):
+        raise ValueError("target_types values must be numeric, categorical, or bool")
+    result = data.copy()
+    for variable, declared_type in target_types.items():
+        if declared_type == "categorical":
+            result[variable] = result[variable].astype("category")
+        elif declared_type == "bool":
+            if (
+                result[variable].isna().any()
+                or not result[variable].isin([0, 1, False, True]).all()
+            ):
+                raise ValueError(
+                    f"Boolean target '{variable}' must contain only 0 and 1"
+                )
+            result[variable] = result[variable].astype(bool)
+        elif pd.api.types.is_bool_dtype(result[variable]):
+            # A numeric declaration must survive dtype-based routing in every
+            # public caller, including preprocessing and metric selection.
+            result[variable] = result[variable].astype(float)
+        elif not pd.api.types.is_numeric_dtype(result[variable]):
+            if isinstance(
+                result[variable].dtype, pd.CategoricalDtype
+            ) and pd.api.types.is_numeric_dtype(result[variable].cat.categories):
+                result[variable] = pd.to_numeric(result[variable])
+            else:
+                raise ValueError(
+                    f"Variable '{variable}' declared numeric has nonnumeric dtype"
+                )
+    return result

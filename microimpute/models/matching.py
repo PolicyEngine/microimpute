@@ -8,7 +8,14 @@ from pydantic import validate_call
 
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
 from microimpute.models.imputer import Imputer, ImputerResults
-from microimpute.utils.statmatch_hotdeck import nnd_hotdeck_using_rpy2
+
+
+def nnd_hotdeck_using_rpy2(*args, **kwargs):
+    """Load the optional R bridge only when the default matcher is called."""
+    from microimpute.utils.statmatch_hotdeck import nnd_hotdeck_using_rpy2 as match
+
+    return match(*args, **kwargs)
+
 
 MatchingHotdeckFn = Callable[
     [
@@ -71,9 +78,17 @@ class MatchingResults(ImputerResults):
         self.matching_hotdeck = matching_hotdeck
         self.donor_data = donor_data
         self.hyperparameters = hyperparameters
+        self._rng = np.random.default_rng(seed)
         self.categorical_targets = categorical_targets or {}
         self.boolean_targets = boolean_targets or {}
         self.dummy_processor = dummy_processor
+
+    def _matching_kwargs(self) -> Dict[str, Any]:
+        """Advance a reproducible child-seed stream for the optional R bridge."""
+        kwargs = dict(self.hyperparameters or {})
+        if self.matching_hotdeck is nnd_hotdeck_using_rpy2:
+            kwargs["random_state"] = int(self._rng.integers(0, np.iinfo(np.int32).max))
+        return kwargs
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
@@ -81,23 +96,32 @@ class MatchingResults(ImputerResults):
         X_test: pd.DataFrame,
         quantiles: Optional[List[float]] = None,
         return_probs: bool = False,
-    ) -> Dict[float, pd.DataFrame]:
+    ) -> pd.DataFrame:
         """Predict imputed values using the matching model.
 
         Args:
             X_test: DataFrame containing the recipient data.
-            quantiles: List of quantiles to predict.
-            return_probs: If True, return one-hot probability vectors for matched categories.
+            quantiles: Unsupported; Matching returns donor draws.
+            return_probs: Unsupported; Matching does not estimate probabilities.
 
         Returns:
-            Dictionary mapping quantiles to imputed values.
-            If return_probs=True, includes 'probabilities' key with one-hot encodings.
+            DataFrame of donor draws, with n_failed_records in its attrs.
 
         Raises:
             ValueError: If model is not properly set up or
                 input data is invalid.
             RuntimeError: If matching or prediction fails.
+            NotImplementedError: If quantiles or probabilities are requested.
         """
+        if quantiles is not None:
+            raise NotImplementedError(
+                "Matching returns donor draws, not conditional quantiles. "
+                "Call predict without quantiles, or use QRF, OLS, or QuantReg."
+            )
+        if return_probs:
+            raise NotImplementedError(
+                "Matching does not estimate class probabilities. Use QRF or OLS."
+            )
         try:
             self.logger.info(f"Performing matching for {len(X_test)} recipient records")
 
@@ -153,29 +177,24 @@ class MatchingResults(ImputerResults):
         X_test_copy: pd.DataFrame,
         quantiles: Optional[List[float]] = None,
         return_probs: bool = False,
-    ) -> Dict[float, pd.DataFrame]:
+    ) -> pd.DataFrame:
         """Perform matching on the full dataset without chunking."""
         try:
             self.logger.info("Calling R-based hot deck matching function")
-            if self.hyperparameters:
-                fused0, fused1 = self.matching_hotdeck(
-                    receiver=X_test_copy,
-                    donor=self.donor_data,
-                    matching_variables=self.predictors,
-                    z_variables=self.imputed_variables,
-                    **self.hyperparameters,
-                )
-            else:
-                fused0, fused1 = self.matching_hotdeck(
-                    receiver=X_test_copy,
-                    donor=self.donor_data,
-                    matching_variables=self.predictors,
-                    z_variables=self.imputed_variables,
-                )
+            fused0, fused1 = self.matching_hotdeck(
+                receiver=X_test_copy,
+                donor=self.donor_data,
+                matching_variables=self.predictors,
+                z_variables=self.imputed_variables,
+                **self._matching_kwargs(),
+            )
         except Exception as matching_error:
             self.logger.error(f"Error in hot deck matching: {str(matching_error)}")
             raise RuntimeError("Hot deck matching failed") from matching_error
 
+        self.n_failed_records = int(
+            fused0[self.imputed_variables].isna().any(axis=1).sum()
+        )
         return self._process_matching_results(
             fused0, X_test_copy, quantiles, return_probs
         )
@@ -186,7 +205,7 @@ class MatchingResults(ImputerResults):
         quantiles: Optional[List[float]],
         chunk_size: int,
         return_probs: bool = False,
-    ) -> Dict[float, pd.DataFrame]:
+    ) -> pd.DataFrame:
         """Perform matching using chunking for large datasets."""
         all_results = []
 
@@ -202,21 +221,13 @@ class MatchingResults(ImputerResults):
 
             try:
                 # Perform matching for this chunk
-                if self.hyperparameters:
-                    fused0, fused1 = self.matching_hotdeck(
-                        receiver=chunk_data,
-                        donor=self.donor_data,
-                        matching_variables=self.predictors,
-                        z_variables=self.imputed_variables,
-                        **self.hyperparameters,
-                    )
-                else:
-                    fused0, fused1 = self.matching_hotdeck(
-                        receiver=chunk_data,
-                        donor=self.donor_data,
-                        matching_variables=self.predictors,
-                        z_variables=self.imputed_variables,
-                    )
+                fused0, fused1 = self.matching_hotdeck(
+                    receiver=chunk_data,
+                    donor=self.donor_data,
+                    matching_variables=self.predictors,
+                    z_variables=self.imputed_variables,
+                    **self._matching_kwargs(),
+                )
 
                 # Store results with original indices
                 chunk_results = pd.DataFrame(index=chunk_data.index)
@@ -239,7 +250,18 @@ class MatchingResults(ImputerResults):
         # Combine all chunk results, preserving original order
         if all_results:
             combined_results = pd.concat(all_results)
-            combined_results = combined_results.loc[X_test_copy.index]
+
+            # A failed chunk leaves NaN blocks in the output. Report the total
+            # so a caller knows what share of the result is missing without
+            # having to check for it themselves.
+            n_failed = int(combined_results.isna().any(axis=1).sum())
+            if n_failed:
+                self.logger.warning(
+                    f"{n_failed} of {len(combined_results)} records "
+                    f"({n_failed / len(combined_results):.1%}) could not be "
+                    "matched and are NaN in the result."
+                )
+            self.n_failed_records = n_failed
 
             return self._process_matching_results(
                 combined_results, X_test_copy, quantiles, return_probs
@@ -247,159 +269,32 @@ class MatchingResults(ImputerResults):
         else:
             raise RuntimeError("No chunk results were produced")
 
-    def _generate_one_hot_probabilities(
-        self,
-        variable: str,
-        matched_values: np.ndarray,
-        index: pd.Index,
-        categorical_targets: Dict,
-        boolean_targets: Dict,
-    ) -> Optional[Dict]:
-        """Generate one-hot probability matrix for categorical/boolean variables.
-
-        Args:
-            variable: Name of the variable
-            matched_values: Array of matched category values
-            index: Index for the output DataFrame
-            categorical_targets: Dictionary of categorical target info
-            boolean_targets: Dictionary of boolean target info
-
-        Returns:
-            Dict with 'probabilities' and 'classes' keys
-        """
-        if variable not in categorical_targets and variable not in boolean_targets:
-            return None
-
-        # Determine categories
-        if variable in boolean_targets:
-            categories = [False, True]
-        else:
-            categories = categorical_targets[variable].get("categories", [])
-
-        if not categories:
-            return None
-
-        # Create probability matrix (one-hot encoding)
-        n_samples = len(matched_values)
-        n_categories = len(categories)
-        prob_matrix = np.zeros((n_samples, n_categories))
-
-        # Set 1.0 for matched category
-        for idx, val in enumerate(matched_values):
-            try:
-                cat_idx = categories.index(val)
-                prob_matrix[idx, cat_idx] = 1.0
-            except ValueError:
-                # If value not found in categories, default to first category
-                prob_matrix[idx, 0] = 1.0
-
-        return {"probabilities": prob_matrix, "classes": np.array(categories)}
-
     def _process_matching_results(
         self,
         fused0: pd.DataFrame,
         X_test_copy: pd.DataFrame,
         quantiles: Optional[List[float]],
         return_probs: bool = False,
-    ) -> Dict[float, pd.DataFrame]:
-        """Process matching results into the expected output format."""
-        try:
-            # Verify imputed variables exist in the result
-            missing_imputed = [
-                var for var in self.imputed_variables if var not in fused0.columns
-            ]
-            if missing_imputed:
-                self.logger.error(
-                    f"Imputed variables missing from matching result: {missing_imputed}"
-                )
-                raise ValueError(
-                    f"Matching failed to produce these variables: {missing_imputed}"
-                )
-
-            self.logger.info(
-                f"Matching completed, fused dataset has {len(fused0)} records"
+    ) -> pd.DataFrame:
+        """Return donor draws, with an explicit count of unsuccessful matches."""
+        if quantiles is not None:
+            raise NotImplementedError(
+                "Matching does not estimate conditional quantiles"
             )
-        except Exception as convert_error:
-            self.logger.error(
-                f"Error converting matching results: {str(convert_error)}"
-            )
-            raise RuntimeError("Failed to process matching results") from convert_error
-
-        # Create output dictionary with results
-        imputations: Dict[float, pd.DataFrame] = {}
-        prob_results = {} if return_probs else None
-
-        # Get target type information if available
-        categorical_targets = getattr(self, "categorical_targets", {})
-        boolean_targets = getattr(self, "boolean_targets", {})
-
-        try:
-            if quantiles:
-                self.logger.info(f"Creating imputations for {len(quantiles)} quantiles")
-                # For each quantile, return a DataFrame with all imputed variables
-                for q in quantiles:
-                    imputed_df = pd.DataFrame(index=X_test_copy.index)
-                    for variable in self.imputed_variables:
-                        self.logger.debug(
-                            f"Adding result for imputed variable {variable} at quantile {q}"
-                        )
-                        imputed_df[variable] = fused0[variable].values
-
-                        # Generate one-hot probabilities if requested
-                        if return_probs and prob_results is not None:
-                            prob_df = self._generate_one_hot_probabilities(
-                                variable,
-                                fused0[variable].values,
-                                X_test_copy.index,
-                                categorical_targets,
-                                boolean_targets,
-                            )
-                            if prob_df is not None:
-                                prob_results[variable] = prob_df
-
-                    imputations[q] = imputed_df
-
-                # Add probabilities to results if requested
-                if return_probs and prob_results:
-                    imputations["probabilities"] = prob_results
-
-                return imputations
-            else:
-                # If no quantiles specified, use a default one
-                q_default = 0.5
-                self.logger.info(
-                    f"Creating imputation for default quantile {q_default}"
-                )
-                imputed_df = pd.DataFrame(index=X_test_copy.index)
-                for variable in self.imputed_variables:
-                    self.logger.info(f"Imputing variable {variable}")
-                    imputed_df[variable] = fused0[variable].values
-
-                    # Generate one-hot probabilities if requested
-                    if return_probs and prob_results is not None:
-                        prob_df = self._generate_one_hot_probabilities(
-                            variable,
-                            fused0[variable].values,
-                            X_test_copy.index,
-                            categorical_targets,
-                            boolean_targets,
-                        )
-                        if prob_df is not None:
-                            prob_results[variable] = prob_df
-
-                imputations[q_default] = imputed_df
-
-                # Add probabilities to results if requested
-                if return_probs and prob_results:
-                    # Return dict with both quantile predictions and probabilities
-                    imputations["probabilities"] = prob_results
-                    return imputations
-                else:
-                    # Return just the DataFrame for the single quantile
-                    return imputations[q_default]
-        except Exception as output_error:
-            self.logger.error(f"Error creating output imputations: {str(output_error)}")
-            raise RuntimeError("Failed to create output imputations") from output_error
+        if return_probs:
+            raise NotImplementedError("Matching does not estimate class probabilities")
+        missing = [v for v in self.imputed_variables if v not in fused0]
+        if missing:
+            raise ValueError(f"Matching failed to produce these variables: {missing}")
+        if len(fused0) != len(X_test_copy):
+            raise ValueError("Matching must return one record per receiver")
+        output = pd.DataFrame(
+            {v: fused0[v].to_numpy() for v in self.imputed_variables},
+            index=X_test_copy.index,
+        )
+        self.n_failed_records = int(output.isna().any(axis=1).sum())
+        output.attrs["n_failed_records"] = self.n_failed_records
+        return output
 
 
 class Matching(Imputer):
@@ -415,6 +310,7 @@ class Matching(Imputer):
         self,
         matching_hotdeck: MatchingHotdeckFn = nnd_hotdeck_using_rpy2,
         log_level: Optional[str] = "WARNING",
+        seed: int = RANDOM_STATE,
     ) -> None:
         """Initialize the matching model.
 
@@ -425,7 +321,7 @@ class Matching(Imputer):
         Raises:
             ValueError: If matching_hotdeck is not callable
         """
-        super().__init__(log_level=log_level)
+        super().__init__(seed=seed, log_level=log_level)
         self.log_level = log_level
         self.logger.debug("Initializing Matching imputer")
 
@@ -460,9 +356,9 @@ class Matching(Imputer):
             imputed_variables: List of column names to impute.
             sample_weight: Optional per-row sample weights for the donor
                 dataset. When provided, weights are passed to R StatMatch's
-                ``NND.hotdeck`` via ``weight.don`` so that donor records are
-                matched in proportion to their survey weights rather than
-                uniformly.
+                ``RANDwNND.hotdeck`` via a donor weight column. By default,
+                donors tied at the minimum distance are sampled in proportion
+                to their weights.
             matching_kwargs: Additional keyword arguments for hyperparameter
                 tuning of the matching function.
 
@@ -488,6 +384,9 @@ class Matching(Imputer):
                     data=X_train,
                     predictors=predictors,
                     imputed_variables=imputed_variables,
+                    matching_kwargs=matching_kwargs,
+                    categorical_targets=categorical_targets,
+                    boolean_targets=boolean_targets,
                 )
                 self.logger.info(f"Best hyperparameters: {best_params}")
 
@@ -504,7 +403,7 @@ class Matching(Imputer):
                         dummy_processor=getattr(self, "dummy_processor", None),
                         seed=self.seed,
                         log_level=self.log_level,
-                        hyperparameters=best_params,
+                        hyperparameters={**matching_kwargs, **best_params},
                     ),
                     best_params,
                 )
@@ -541,180 +440,99 @@ class Matching(Imputer):
         data: pd.DataFrame,
         predictors: List[str],
         imputed_variables: List[str],
+        matching_kwargs: Optional[Dict[str, Any]] = None,
+        categorical_targets: Optional[Dict[str, Dict]] = None,
+        boolean_targets: Optional[Dict[str, Dict]] = None,
     ) -> Dict[str, Any]:
-        """Tune hyperparameters for the Matching model using Optuna with CV.
+        """Tune donor-draw accuracy; failed matches prune the entire trial.
 
-        Uses cross-validation and quantile loss for robust hyperparameter selection.
-
-        Args:
-            data: DataFrame containing the training data.
-            predictors: List of column names to use as predictors.
-            imputed_variables: List of column names to impute.
-
-        Returns:
-            Dictionary of tuned hyperparameters.
+        Numeric donor draws are assessed with absolute error normalized by the
+        donor training standard deviation; categorical draws use misclassification
+        rate. These are internal tuning criteria, not predictive distribution scores.
         """
         import optuna
         from sklearn.model_selection import KFold
 
-        from microimpute.comparisons.metrics import compute_loss
-
-        optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-        # Use 3-fold CV with 10 trials
-        n_cv_folds = 3
-        n_trials = 10
-
-        # Set up CV folds
-        kf = KFold(n_splits=n_cv_folds, shuffle=True, random_state=self.seed)
-
-        self.logger.info(
-            f"Tuning Matching hyperparameters with {n_cv_folds}-fold CV and {n_trials} trials"
-        )
+        kf = KFold(n_splits=3, shuffle=True, random_state=self.seed)
+        fixed_kwargs = dict(matching_kwargs or {})
+        weights = fixed_kwargs.pop("donor_sample_weight", None)
+        discrete_targets = set(categorical_targets or {}) | set(boolean_targets or {})
 
         def objective(trial: optuna.Trial) -> float:
+            # NND.hotdeck's k controls donor re-use only under constrained
+            # matching; it is not a nearest-neighbor count. Do not tune a no-op.
             params = {
                 "dist_fun": trial.suggest_categorical(
                     "dist_fun",
-                    [
-                        "Manhattan",
-                        "Euclidean",
-                        "Mahalanobis",
-                        "Gower",
-                        "minimax",
-                    ],
-                ),
-                "k": trial.suggest_int("k", 1, 10),
+                    ["Manhattan", "Euclidean", "Mahalanobis", "Gower", "minimax"],
+                )
             }
-
-            # Detect variable types for appropriate metric selection
-            from microimpute.comparisons.metrics import (
-                get_metric_for_variable_type,
-            )
-
-            variable_metrics = {}
-            for var in imputed_variables:
-                variable_metrics[var] = get_metric_for_variable_type(data[var], var)
-
-            # Track errors across CV folds
             fold_errors = []
-
-            # Perform CV
+            # Common random numbers across trials make parameter comparisons
+            # reproducible without rewarding a different random donor sequence.
+            trial_rng = np.random.default_rng(self.seed)
             for fold_idx, (train_idx, val_idx) in enumerate(kf.split(data)):
-                X_train_fold = data.iloc[train_idx]
-                X_val_fold = data.iloc[val_idx]
-
-                # Track errors for all variables in this fold
-                var_errors = []
-
+                donor = data.iloc[train_idx]
+                receiver = data.iloc[val_idx].drop(columns=imputed_variables)
+                call_kwargs = {**fixed_kwargs, **params}
+                if weights is not None:
+                    call_kwargs["donor_sample_weight"] = np.asarray(weights)[train_idx]
+                predicted = []
+                for start in range(0, len(receiver), 1000):
+                    chunk = receiver.iloc[start : start + 1000]
+                    if self.matching_hotdeck is nnd_hotdeck_using_rpy2:
+                        call_kwargs["random_state"] = int(
+                            trial_rng.integers(0, np.iinfo(np.int32).max)
+                        )
+                    try:
+                        fused, _ = self.matching_hotdeck(
+                            receiver=chunk,
+                            donor=donor,
+                            matching_variables=predictors,
+                            z_variables=imputed_variables,
+                            **call_kwargs,
+                        )
+                        if (
+                            len(fused) != len(chunk)
+                            or fused[imputed_variables].isna().any().any()
+                        ):
+                            raise ValueError("Matching returned incomplete predictions")
+                        predicted.append(
+                            fused[imputed_variables].reset_index(drop=True)
+                        )
+                    except Exception as error:
+                        self.logger.warning(
+                            f"Matching failed on fold {fold_idx} chunk {start}: {error}. Pruning trial."
+                        )
+                        raise optuna.TrialPruned() from error
+                predictions = pd.concat(predicted, ignore_index=True)
+                errors = []
                 for var in imputed_variables:
-                    y_val = X_val_fold[var]
-                    X_val_var = X_val_fold.copy().drop(var, axis=1)
-
-                    # Determine if chunking is needed for hyperparameter tuning
-                    chunk_size = 1000  # Smaller chunks for tuning
-                    total_size = len(X_train_fold) * len(X_val_var)
-                    use_chunking = (
-                        len(X_val_var) > chunk_size
-                        or total_size > 25_000_000  # Lower threshold for tuning
-                    )
-
-                    if use_chunking:
-                        # Perform chunked matching for hyperparameter tuning
-                        y_pred_chunks = []
-                        y_val_chunks = []
-
-                        for i in range(0, len(X_val_var), chunk_size):
-                            chunk_end = min(i + chunk_size, len(X_val_var))
-                            chunk_data = X_val_var.iloc[i:chunk_end]
-                            chunk_y_val = y_val.iloc[i:chunk_end]
-
-                            try:
-                                fused0, fused1 = self.matching_hotdeck(
-                                    receiver=chunk_data,
-                                    donor=X_train_fold,
-                                    matching_variables=predictors,
-                                    z_variables=[var],
-                                    **params,
-                                )
-                                y_pred_chunks.append(fused0[var].values)
-                                y_val_chunks.append(chunk_y_val.values)
-                            except Exception:
-                                # If chunk fails, use mean of training data as prediction
-                                mean_val = X_train_fold[var].mean()
-                                y_pred_chunks.append(np.full(len(chunk_data), mean_val))
-                                y_val_chunks.append(chunk_y_val.values)
-
-                        # Combine chunk results
-                        y_pred = np.concatenate(y_pred_chunks)
-                        y_val_combined = np.concatenate(y_val_chunks)
+                    actual = data.iloc[val_idx][var].to_numpy()
+                    estimate = predictions[var].to_numpy()
+                    if var in discrete_targets:
+                        errors.append(float(np.mean(actual != estimate)))
                     else:
-                        # Perform single matching
-                        try:
-                            fused0, fused1 = self.matching_hotdeck(
-                                receiver=X_val_var,
-                                donor=X_train_fold,
-                                matching_variables=predictors,
-                                z_variables=[var],
-                                **params,
+                        actual = actual.astype(float)
+                        estimate = estimate.astype(float)
+                        if not np.isfinite(estimate).all():
+                            raise optuna.TrialPruned(
+                                "Matching returned nonfinite numeric predictions"
                             )
-                            y_pred = fused0[var].values
-                            y_val_combined = y_val.values
-                        except Exception:
-                            # If matching fails, use mean of training data as prediction
-                            mean_val = X_train_fold[var].mean()
-                            y_pred = np.full(len(X_val_var), mean_val)
-                            y_val_combined = y_val.values
-
-                    # Use appropriate metric based on variable type
-                    metric = variable_metrics[var]
-
-                    if metric == "quantile_loss":
-                        _, loss_value = compute_loss(
-                            y_val_combined.flatten(),
-                            y_pred.flatten(),
-                            "quantile_loss",
-                            q=0.5,
+                        scale = float(donor[var].std(ddof=0))
+                        errors.append(
+                            float(np.mean(np.abs(actual - estimate))) / (scale or 1.0)
                         )
-                        # Normalize by variable's standard deviation
-                        std = np.std(y_val_combined.flatten())
-                        normalized_loss = loss_value / std if std > 0 else loss_value
-                    else:  # log_loss for categorical/boolean
-                        _, loss_value = compute_loss(
-                            y_val_combined.flatten(),
-                            y_pred.flatten(),
-                            "log_loss",
-                        )
-                        # Log loss is already normalized
-                        normalized_loss = loss_value
-
-                    var_errors.append(normalized_loss)
-
-                # Average across variables for this fold
-                if var_errors:
-                    fold_errors.append(np.mean(var_errors))
-
-            # Return mean error across all CV folds
-            return np.mean(fold_errors) if fold_errors else float("inf")
+                fold_errors.append(float(np.mean(errors)))
+            return float(np.mean(fold_errors))
 
         study = optuna.create_study(
-            direction="minimize",
-            sampler=optuna.samplers.TPESampler(seed=self.seed),
+            direction="minimize", sampler=optuna.samplers.TPESampler(seed=self.seed)
         )
-
-        # Suppress warnings during optimization
-        import os
-
-        os.environ["PYTHONWARNINGS"] = "ignore"
-
-        study.optimize(objective, n_trials=n_trials)
-
-        best_value = study.best_value
+        study.optimize(objective, n_trials=10)
+        if not any(t.state == optuna.trial.TrialState.COMPLETE for t in study.trials):
+            raise ValueError("No matching hyperparameter trial succeeded")
         self.logger.info(
-            f"Matching - Lowest average normalized quantile loss ({n_cv_folds}-fold CV): {best_value}"
+            f"Matching best normalized donor-draw error: {study.best_value}"
         )
-
-        best_params = study.best_params
-        self.logger.info(f"Matching - Best hyperparameters found: {best_params}")
-
-        return best_params
+        return study.best_params

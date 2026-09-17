@@ -23,7 +23,7 @@ from microimpute.comparisons.validation import (
     validate_quantiles,
 )
 from microimpute.config import QUANTILES, VALIDATE_CONFIG
-from microimpute.utils.type_handling import VariableTypeDetector
+from microimpute.utils.type_handling import VariableTypeDetector, declare_target_types
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +64,9 @@ def quantile_loss(q: float, y: np.ndarray, f: np.ndarray) -> np.ndarray:
     Returns:
         Array of quantile losses.
     """
-    e = y - f
+    # Integer counts may be unsigned or narrower than their residuals. Promote
+    # both operands before subtraction so neither wrapping nor overflow occurs.
+    e = np.asarray(y, dtype=float) - np.asarray(f, dtype=float)
     return np.maximum(q * e, (q - 1) * e)
 
 
@@ -74,71 +76,46 @@ def log_loss(
     normalize: bool = True,
     labels: Optional[np.ndarray] = None,
 ) -> float:
-    """Calculate log loss for categorical predictions.
+    """Calculate log loss from genuine probabilities, never class labels.
 
-    Args:
-        y_true: True labels (can be class indices or one-hot encoded).
-        y_pred: Predicted probabilities. Shape should be (n_samples,) for binary
-                or (n_samples, n_classes) for multiclass.
-                If class labels are provided instead of probabilities, they will be
-                converted to high-confidence probabilities (0.99/0.01) with a warning.
-        normalize: If True, return the mean loss. If False, return sum.
-        labels: List of labels to include in the loss computation.
-
-    Returns:
-        Log loss value.
-
-    Note:
-        For more accurate metrics, models should provide predicted probabilities
-        rather than class labels. Use model.predict_proba() instead of model.predict()
-        when available.
+    Binary vectors must have floating dtype. Probability matrices must have
+    one column per class, finite values in [0, 1], and rows summing to one.
     """
-    try:
-        # Handle case where predictions are class labels instead of probabilities
-        if len(y_pred.shape) == 1 or (len(y_pred.shape) == 2 and y_pred.shape[1] == 1):
-            # Binary case or class predictions
-            if labels is None:
-                labels = np.unique(y_true)
-
-            # Convert to probabilities if needed
-            if np.all(np.isin(y_pred.flatten(), labels)):
-                # These are class predictions, not probabilities
-                log.info(
-                    "Converting class labels to probabilities for log loss computation. "
-                    "For more accurate metrics, please provide predicted probabilities "
-                    "using model.predict_proba() or equivalent method instead of class predictions. "
-                    "Class labels are being converted to high-confidence probabilities (0.99/0.01)."
-                )
-
-                # Create one-hot encoded probabilities with high confidence
-                n_samples = len(y_true)
-                n_classes = len(labels)
-
-                if n_classes == 2:
-                    # Binary case
-                    y_pred_proba = np.zeros(n_samples)
-                    y_pred_proba[y_pred.flatten() == labels[1]] = 0.99
-                    y_pred_proba[y_pred.flatten() == labels[0]] = 0.01
-                else:
-                    # Multiclass case
-                    y_pred_proba = np.full(
-                        (n_samples, n_classes), 0.01 / (n_classes - 1)
-                    )
-                    for i, label in enumerate(labels):
-                        mask = y_pred.flatten() == label
-                        y_pred_proba[mask, i] = 0.99
-
-                y_pred = y_pred_proba
-
-                log.info(
-                    f"Converted {n_samples} class predictions to probabilities "
-                    f"for {n_classes}-class classification."
-                )
-
-        return sklearn_log_loss(y_true, y_pred, normalize=normalize, labels=labels)
-    except Exception as e:
-        log.error(f"Error computing log loss: {str(e)}")
-        raise RuntimeError(f"Failed to compute log loss: {str(e)}") from e
+    y_pred = np.asarray(y_pred)
+    if not np.issubdtype(y_pred.dtype, np.number):
+        raise ValueError("Log loss requires predicted probabilities, not class labels")
+    if y_pred.ndim == 1 and not np.issubdtype(y_pred.dtype, np.floating):
+        raise ValueError(
+            "Log loss requires floating predicted probabilities, not class labels"
+        )
+    if (
+        y_pred.ndim not in (1, 2)
+        or not np.isfinite(y_pred).all()
+        or ((y_pred < 0) | (y_pred > 1)).any()
+    ):
+        raise ValueError("Predicted probabilities must be finite and between 0 and 1")
+    if y_pred.ndim == 2 and not np.allclose(y_pred.sum(axis=1), 1):
+        raise ValueError("Predicted probability rows must sum to one")
+    y_true = np.asarray(y_true)
+    if y_pred.ndim == 2 and y_true.ndim == 1:
+        # Matrix columns follow sklearn's sorted-label convention. A fitted
+        # model may lack a class appearing in held-out rows: its probability
+        # for that class is exactly zero, not an invented confidence level.
+        model_labels = (
+            np.sort(np.asarray(labels)) if labels is not None else np.unique(y_true)
+        )
+        if len(model_labels) != y_pred.shape[1]:
+            raise ValueError("Probability columns must match the supplied class labels")
+        all_labels = np.union1d(model_labels, np.unique(y_true))
+        if len(all_labels) == 1:
+            return 0.0
+        if len(all_labels) != len(model_labels):
+            aligned = np.zeros((len(y_pred), len(all_labels)), dtype=float)
+            for index, label in enumerate(model_labels):
+                aligned[:, np.flatnonzero(all_labels == label)[0]] = y_pred[:, index]
+            y_pred = aligned
+        labels = all_labels
+    return sklearn_log_loss(y_true, y_pred, normalize=normalize, labels=labels)
 
 
 def order_probabilities_alphabetically(
@@ -334,16 +311,16 @@ def _compute_method_losses(
 
             # Get values as numpy arrays (handles Arrow-backed dtypes)
             test_values = np.asarray(test_y[variable])
-            pred_values = np.asarray(imputation[quantile][variable])
-
-            # Get unique labels from test data
-            labels = np.unique(test_values)
-
-            # Compute loss
-            # Note: If pred_values contains class labels instead of probabilities,
-            # they will be converted with a warning
+            info = imputation.get("probabilities", {}).get(variable)
+            if info is None:
+                raise ValueError(
+                    f"Log loss for '{variable}' requires predicted probabilities; call predict(return_probs=True)"
+                )
+            probabilities, labels = order_probabilities_alphabetically(
+                np.asarray(info["probabilities"]), np.asarray(info["classes"])
+            )
             _, mean_loss = compute_loss(
-                test_values, pred_values, "log_loss", labels=labels
+                test_values, probabilities, "log_loss", labels=labels
             )
             categorical_losses.append(mean_loss)
 
@@ -431,8 +408,10 @@ def _compute_method_losses(
 @validate_call(config=VALIDATE_CONFIG)
 def compare_metrics(
     test_y: pd.DataFrame,
-    method_imputations: Dict[str, Dict[float, pd.DataFrame]],
+    method_imputations: Dict[str, dict],
     imputed_variables: List[str],
+    quantiles: Optional[List[float]] = None,
+    target_types: Optional[Dict[str, str]] = None,
 ) -> pd.DataFrame:
     """Compare metrics across different imputation methods.
 
@@ -463,6 +442,7 @@ def compare_metrics(
         # Validate inputs
         validate_columns_exist(test_y, imputed_variables, "test_y")
 
+        test_y = declare_target_types(test_y, imputed_variables, target_types)
         # Detect metric type for each variable
         variable_metrics = {}
         for var in imputed_variables:
@@ -475,12 +455,20 @@ def compare_metrics(
 
         # Process each method
         for method, imputation in method_imputations.items():
+            method_quantiles = (
+                quantiles
+                if quantiles is not None
+                else [q for q in imputation if isinstance(q, (float, int))]
+            )
+            if not method_quantiles:
+                raise ValueError(f"No prediction quantiles for {method}")
+            validate_quantiles(method_quantiles)
             method_results = _compute_method_losses(
                 method,
                 imputation,
                 test_y,
                 imputed_variables,
-                QUANTILES,
+                method_quantiles,
                 variable_metrics,
             )
             all_results.extend(method_results)

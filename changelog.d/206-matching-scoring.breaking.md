@@ -1,0 +1,1 @@
+Matching donor draws are no longer presented as quantile forecasts or class probabilities. autoimpute excludes Matching from default distributional model selection and skips its unsupported scores if explicitly supplied. Direct Matching.predict without quantiles remains available. Rerun comparisons that previously scored replicated donor draws or fabricated probabilities.

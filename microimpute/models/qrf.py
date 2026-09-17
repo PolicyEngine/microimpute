@@ -1,6 +1,7 @@
 """Quantile Regression Forest imputation model with sequential imputation."""
 
 import gc
+import hashlib
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -10,7 +11,7 @@ from pydantic import validate_call
 from quantile_forest import RandomForestQuantileRegressor
 from sklearn.ensemble import RandomForestClassifier
 
-from microimpute.config import VALIDATE_CONFIG
+from microimpute.config import DEFAULT_MODEL_PARAMS, RANDOM_STATE, VALIDATE_CONFIG
 from microimpute.models.imputer import Imputer, ImputerResults
 
 try:
@@ -25,6 +26,7 @@ def _get_sequential_predictors(
     predictors: List[str],
     imputed_variables: List[str],
     current_variable_index: int,
+    sequential: bool = True,
 ) -> List[str]:
     """Get the predictor set for sequential imputation.
 
@@ -36,7 +38,9 @@ def _get_sequential_predictors(
     Returns:
         List of predictor columns including previously imputed variables
     """
-    return predictors + imputed_variables[:current_variable_index]
+    return predictors + (
+        imputed_variables[:current_variable_index] if sequential else []
+    )
 
 
 class _RandomForestClassifierModel:
@@ -165,6 +169,7 @@ class _QRFModel:
         self.seed = seed
         self.logger = logger
         self.qrf = None
+        self._weighted_leaves = None
         self.output_column = None
         self.feature_columns: List[str] = []
         # Create the RNG once at construction so that repeated predict()
@@ -186,10 +191,12 @@ class _QRFModel:
         Args:
             X: Predictor DataFrame (preprocessed).
             y: Target Series.
-            sample_weight: Optional per-row sample weights, passed directly to
-                the underlying ``RandomForestQuantileRegressor.fit`` so each
-                row contributes to the weighted-survey estimator rather than
-                being treated as a bootstrap-resample probability.
+            sample_weight: Optional positive per-row survey weights. Weights
+                affect tree splits and the conditional empirical CDF. Each
+                tree normalizes its bootstrap donor weights within the leaf;
+                quantiles invert the average of these tree CDFs without
+                interpolation. All in-bag donors are retained in the weighted
+                CDF even if max_samples_leaf limits the upstream leaf storage.
         """
         self.output_column = y.name
 
@@ -197,7 +204,7 @@ class _QRFModel:
         # we set them explicitly below.
         qrf_kwargs_filtered = {
             k: v
-            for k, v in qrf_kwargs.items()
+            for k, v in {**DEFAULT_MODEL_PARAMS["qrf"], **qrf_kwargs}.items()
             if k not in ("random_state", "sample_weight")
         }
 
@@ -210,6 +217,80 @@ class _QRFModel:
             fit_kwargs["sample_weight"] = np.asarray(sample_weight, dtype=float)
         self.feature_columns = list(X.columns)
         self.qrf.fit(X, y.values.ravel(), **fit_kwargs)
+        self._weighted_leaves = None
+        if sample_weight is not None:
+            self._fit_weighted_leaves(X, y, np.asarray(sample_weight, dtype=float))
+
+    def _fit_weighted_leaves(
+        self, X: pd.DataFrame, y: pd.Series, sample_weight: np.ndarray
+    ) -> None:
+        """Store survey-weighted empirical leaf distributions.
+
+        quantile-forest 1.4 with sklearn <1.9 uses positive sample weights
+        for splits but not their magnitudes for quantiles. Retain its in-bag
+        donor multiplicities, normalize survey weights within each leaf, and
+        average the tree CDFs (Meinshausen, 2006, equations 4--6).
+        """
+        self._weighted_y = np.asarray(y, dtype=float)
+        self._weighted_order = np.argsort(self._weighted_y)
+        leaves = self.qrf.apply(X)
+        self._weighted_leaves = []
+        for tree, sampled in enumerate(self.qrf.estimators_samples_):
+            unique, counts = np.unique(sampled, return_counts=True)
+            tree_leaves = leaves[unique, tree]
+            masses = sample_weight[unique] * counts
+            mapping = {}
+            for leaf in np.unique(tree_leaves):
+                mask = tree_leaves == leaf
+                leaf_mass = masses[mask]
+                mapping[int(leaf)] = (unique[mask], leaf_mass / leaf_mass.sum())
+            self._weighted_leaves.append(mapping)
+
+    def predict_quantiles_per_row(
+        self, X: pd.DataFrame, quantiles: np.ndarray
+    ) -> pd.Series:
+        """Evaluate one exact conditional quantile per row, without sampling."""
+        X = self._align_features(X)
+        quantiles = np.asarray(quantiles, dtype=float)
+        if quantiles.shape != (len(X),) or not np.isfinite(quantiles).all():
+            raise ValueError("Provide one finite quantile per prediction row")
+        if ((quantiles < 0) | (quantiles > 1)).any():
+            raise ValueError("Quantiles must be between zero and one")
+        values = np.empty(len(X))
+        if self._weighted_leaves is not None:
+            query_leaves = self.qrf.apply(X)
+            # Cache consecutive identical leaf signatures (common in homogeneous
+            # prediction groups), without retaining an unbounded query cache.
+            previous = None
+            for row, signature in enumerate(query_leaves):
+                if previous is None or not np.array_equal(previous, signature):
+                    mass = np.zeros(len(self._weighted_y))
+                    for tree, leaf in enumerate(signature):
+                        indices, weights = self._weighted_leaves[tree][int(leaf)]
+                        mass[indices] += weights
+                    ordered_mass = mass[self._weighted_order]
+                    supported = ordered_mass > 0
+                    support = self._weighted_y[self._weighted_order][supported]
+                    cumulative = np.cumsum(ordered_mass[supported])
+                    cumulative /= cumulative[-1]
+                    previous = signature.copy()
+                position = np.searchsorted(cumulative, quantiles[row], side="left")
+                values[row] = support[min(position, len(support) - 1)]
+        else:
+            # The upstream API accepts a shared grid, so bound intermediate
+            # storage by querying small batches then selecting each row's q.
+            for start in range(0, len(X), 128):
+                stop = min(start + 128, len(X))
+                grid, columns = np.unique(quantiles[start:stop], return_inverse=True)
+                predicted = np.asarray(
+                    self.qrf.predict(
+                        X.iloc[start:stop],
+                        quantiles=grid.tolist(),
+                        weighted_leaves=True,
+                    )
+                ).reshape(stop - start, -1)
+                values[start:stop] = predicted[np.arange(stop - start), columns]
+        return pd.Series(values, index=X.index, name=self.output_column)
 
     def _align_features(self, X: pd.DataFrame) -> pd.DataFrame:
         """Reorder prediction features to the fitted QRF column contract."""
@@ -253,9 +334,9 @@ class _QRFModel:
         # QRF directly so that for any row i,
         # prediction(q_low) <= prediction(q_mid) <= prediction(q_high).
         if exact_quantile is not None:
-            pred = self.qrf.predict(X, quantiles=[float(exact_quantile)])
-            pred = np.asarray(pred).reshape(len(X), -1)[:, 0]
-            return pd.Series(pred, index=X.index, name=self.output_column)
+            return self.predict_quantiles_per_row(
+                X, np.full(len(X), float(exact_quantile))
+            )
 
         # Stochastic path: draw one continuous quantile per row from a Beta
         # distribution centred at ``mean_quantile`` (Beta(a,1) with
@@ -272,29 +353,7 @@ class _QRFModel:
         # from ``self.seed``, collapsing variance to zero).
         continuous_quantiles = self._rng.beta(a, 1, size=len(X))
 
-        # Bucket continuous quantiles onto a fine symmetric grid covering the
-        # full open interval (0, 1). Using round() (not floor) keeps the
-        # mapping centred on the intended quantile, so the empirical mean of
-        # mapped quantiles ≈ ``mean_quantile``. We avoid exact 0 and 1 because
-        # QRF cannot extrapolate beyond observed extremes.
-        grid_size = max(int(count_samples), 101)
-        eps = 1.0 / (grid_size + 1)
-        quantile_grid = np.linspace(eps, 1.0 - eps, grid_size)
-        # Round (not floor) onto the grid to eliminate the low-side bias.
-        grid_indices = np.clip(
-            np.rint(continuous_quantiles * (grid_size - 1)).astype(int),
-            0,
-            grid_size - 1,
-        )
-
-        pred = self.qrf.predict(X, quantiles=list(quantile_grid))
-        pred = np.asarray(pred)
-        if pred.ndim == 2:
-            predictions = pred[np.arange(len(X)), grid_indices]
-        else:
-            predictions = pred[np.arange(len(X)), :, grid_indices]
-
-        return pd.Series(predictions, index=X.index, name=self.output_column)
+        return self.predict_quantiles_per_row(X, continuous_quantiles)
 
 
 class QRFResults(ImputerResults):
@@ -317,6 +376,7 @@ class QRFResults(ImputerResults):
         constant_targets: Optional[Dict[str, Dict]] = None,
         dummy_processor: Optional[Any] = None,
         log_level: Optional[str] = "WARNING",
+        sequential: bool = True,
     ) -> None:
         """Initialize the QRF results.
 
@@ -342,6 +402,7 @@ class QRFResults(ImputerResults):
             log_level,
         )
         self.models = models
+        self.sequential = sequential
         self.categorical_targets = categorical_targets or {}
         self.boolean_targets = boolean_targets or {}
         self.constant_targets = constant_targets or {}
@@ -388,6 +449,24 @@ class QRFResults(ImputerResults):
 
         return data
 
+    def _predict_quantiles_per_row(
+        self, X_test: pd.DataFrame, variable: str, quantiles: np.ndarray
+    ) -> np.ndarray:
+        """Exact row-specific quantiles for a single numeric component model."""
+        from microimpute.models.imputer import _ConstantValueModel
+
+        if self.imputed_variables != [variable]:
+            raise NotImplementedError("Row-specific quantiles require a single target")
+        prepared, _ = self.preprocess_data_types(
+            X_test, self.original_predictors, self.dummy_processor
+        )
+        model = self.models[variable]
+        if isinstance(model, _ConstantValueModel):
+            return model.predict(prepared).to_numpy(dtype=float)
+        if not isinstance(model, _QRFModel):
+            raise NotImplementedError("Quantile components must be numeric")
+        return model.predict_quantiles_per_row(prepared, quantiles).to_numpy()
+
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
         self,
@@ -400,8 +479,9 @@ class QRFResults(ImputerResults):
 
         Args:
             X_test: DataFrame containing the test data.
-            quantiles: List of quantiles to predict (the quantile affects the
-                center of the beta distribution from which to sample when imputing each data point).
+            quantiles: Exact quantiles conditional on the original predictors.
+                Multiple targets require fitting with sequential=False: chaining
+                conditional quantiles is not a marginal quantile calculation.
             mean_quantile: The mean quantile to used for prediction if
                 quantiles are not provided.
             return_probs: If True, return probability distributions for categorical variables.
@@ -413,6 +493,15 @@ class QRFResults(ImputerResults):
         Raises:
             RuntimeError: If prediction fails.
         """
+        if (
+            quantiles is not None
+            and self.sequential
+            and len(self.imputed_variables) > 1
+        ):
+            raise NotImplementedError(
+                "Marginal quantiles for sequential multi-target QRF are not available; "
+                "fit QRF(sequential=False) or fit a single target"
+            )
         try:
             # Create output dictionary with results
             imputations: Dict[float, pd.DataFrame] = {}
@@ -453,7 +542,10 @@ class QRFResults(ImputerResults):
 
                     # Build predictor set: original predictors + previously imputed variables
                     var_predictors = _get_sequential_predictors(
-                        self.predictors, self.imputed_variables, i
+                        self.predictors,
+                        self.imputed_variables,
+                        i,
+                        sequential=self.sequential,
                     )
 
                     # Get properly encoded predictor columns
@@ -517,7 +609,7 @@ class QRFResults(ImputerResults):
                         # (the user wants to inspect specific quantiles, e.g.
                         # for prediction intervals), we query the QRF at
                         # exactly ``q`` per row — NO beta sampling. This
-                        # guarantees row-level monotonicity across quantiles.
+                        # is monotone for fixed predictors (single target).
                         # Otherwise, sample stochastically around ``q`` (the
                         # beta-mean default for imputation variance).
                         if quantiles:
@@ -607,6 +699,8 @@ class QRF(Imputer):
         batch_size: Optional[int] = None,
         cleanup_interval: int = 10,
         max_train_samples: Optional[int] = None,
+        seed: Optional[int] = RANDOM_STATE,
+        sequential: bool = True,
     ) -> None:
         """Initialize the QRF model.
 
@@ -618,9 +712,16 @@ class QRF(Imputer):
             max_train_samples: If set, subsample X_train to at most this many
                 rows before fitting. Reduces memory and training time while
                 preserving sequential covariance structure.
+            sequential: If True, condition each target on earlier targets for
+                stochastic joint draws. If False, fit each target using only the
+                original predictors, supporting marginal conditional quantiles.
+            seed: Base random seed. Each imputed variable is given a distinct
+                seed derived from it, so variables imputed together draw
+                independently. Pass None for non-reproducible draws.
         """
-        super().__init__(log_level=log_level)
+        super().__init__(log_level=log_level, seed=seed)
         self.models = {}
+        self.sequential = sequential
         self.log_level = log_level
         self.memory_efficient = memory_efficient
         self.batch_size = batch_size
@@ -695,20 +796,47 @@ class QRF(Imputer):
 
         return data
 
+    def _seed_for_variable(self, variable: str) -> Optional[int]:
+        """Derive a distinct seed for one imputed variable.
+
+        Each per-variable model builds its own generator from the seed it is
+        given. Handing every variable the same seed makes them draw the same
+        random quantiles in the same row order, so variables imputed together
+        come out comonotonic regardless of their dependence in the donor. The
+        offset follows the same convention as the subsampling seed below.
+        """
+        if self.seed is None:
+            return None
+        if not self.sequential:
+            # A stable variable-name seed makes independent fits invariant to
+            # target ordering and to adding/removing other target variables.
+            identity = int.from_bytes(
+                hashlib.blake2s(variable.encode(), digest_size=4).digest(), "little"
+            )
+            return int(
+                np.random.SeedSequence([self.seed, identity]).generate_state(1)[0]
+            )
+        try:
+            variable_offset = (self.imputed_variables or []).index(variable)
+        except ValueError:
+            variable_offset = 0
+        return self.seed + variable_offset
+
     def _create_model_for_variable(self, variable: str, **kwargs) -> Any:
         """Create the appropriate model (classifier or regressor) based on variable type."""
         categorical_targets = getattr(self, "categorical_targets", {})
         boolean_targets = getattr(self, "boolean_targets", {})
+        seed = self._seed_for_variable(variable)
 
         if variable in categorical_targets:
             # Use classifier for categorical targets
-            return _RandomForestClassifierModel(seed=self.seed, logger=self.logger)
+            return _RandomForestClassifierModel(seed=seed, logger=self.logger)
         elif variable in boolean_targets:
             # Use classifier for boolean targets
-            return _RandomForestClassifierModel(seed=self.seed, logger=self.logger)
+            return _RandomForestClassifierModel(seed=seed, logger=self.logger)
         else:
             # Use QRF for numeric targets
-            return _QRFModel(seed=self.seed, logger=self.logger)
+            return _QRFModel(seed=seed, logger=self.logger)
 
     def _fit_model(
         self,
@@ -800,12 +928,7 @@ class QRF(Imputer):
             self.max_train_samples is not None
             and len(target_train) > self.max_train_samples
         ):
-            try:
-                variable_offset = (self.imputed_variables or []).index(variable)
-            except ValueError:
-                variable_offset = 0
-            seed = None if self.seed is None else self.seed + variable_offset
-            rng = np.random.default_rng(seed)
+            rng = np.random.default_rng(self._seed_for_variable(variable))
             sel = rng.choice(
                 len(target_train), size=self.max_train_samples, replace=False
             )
@@ -971,7 +1094,10 @@ class QRF(Imputer):
 
                             # Build predictor set: original predictors + previously imputed variables
                             current_predictors = _get_sequential_predictors(
-                                predictors, imputed_variables, i
+                                predictors,
+                                imputed_variables,
+                                i,
+                                sequential=self.sequential,
                             )
 
                             # Get properly encoded predictor columns
@@ -1062,6 +1188,7 @@ class QRF(Imputer):
                             constant_targets=constant_targets,
                             dummy_processor=getattr(self, "dummy_processor", None),
                             seed=self.seed,
+                            sequential=self.sequential,
                         ),
                         qrf_kwargs,
                     )
@@ -1134,7 +1261,7 @@ class QRF(Imputer):
 
                         # Build predictor set: original predictors + previously imputed variables
                         current_predictors = _get_sequential_predictors(
-                            predictors, imputed_variables, i
+                            predictors, imputed_variables, i, sequential=self.sequential
                         )
 
                         # Get properly encoded predictor columns
@@ -1233,6 +1360,7 @@ class QRF(Imputer):
                     constant_targets=constant_targets,
                     dummy_processor=getattr(self, "dummy_processor", None),
                     seed=self.seed,
+                    sequential=self.sequential,
                     log_level=self.log_level,
                 )
         except Exception as e:
@@ -1277,7 +1405,7 @@ class QRF(Imputer):
 
             # Build predictor set: original predictors + previously imputed variables
             current_predictors = _get_sequential_predictors(
-                predictors, imputed_variables, i
+                predictors, imputed_variables, i, sequential=self.sequential
             )
             dummy_processor = getattr(self, "dummy_processor", None)
             encoded_predictors = self._get_encoded_predictors(
@@ -1316,7 +1444,7 @@ class QRF(Imputer):
                 self.logger.info(f"  ✓ Success: {variable} fitted in {var_time:.2f}s")
 
                 # Get model complexity metrics if available
-                if hasattr(model.qrf, "n_estimators"):
+                if hasattr(getattr(model, "qrf", None), "n_estimators"):
                     self.logger.info(
                         f"  Model complexity: {model.qrf.n_estimators} trees"
                     )
@@ -1450,7 +1578,7 @@ class QRF(Imputer):
                 for i, var in enumerate(all_imputed_vars):
                     # Build predictor set: original predictors + previously imputed variables
                     current_predictors = _get_sequential_predictors(
-                        predictors, all_imputed_vars, i
+                        predictors, all_imputed_vars, i, sequential=self.sequential
                     )
 
                     # Get properly encoded predictor columns
@@ -1473,7 +1601,9 @@ class QRF(Imputer):
                         )
 
                         # Predict
-                        y_pred = model.predict(X_val_augmented[encoded_predictors])
+                        y_pred = model.predict(
+                            X_val_augmented[encoded_predictors], exact_quantile=0.5
+                        )
 
                         # Add predictions to augmented datasets for next variable
                         X_train_augmented[var] = model.predict(
@@ -1607,7 +1737,7 @@ class QRF(Imputer):
                 for i, var in enumerate(all_imputed_vars):
                     # Build predictor set: original predictors + previously imputed variables
                     current_predictors = _get_sequential_predictors(
-                        predictors, all_imputed_vars, i
+                        predictors, all_imputed_vars, i, sequential=self.sequential
                     )
 
                     # Get properly encoded predictor columns

@@ -1,0 +1,1 @@
+Reject duplicate predictor/target names, predictor-target overlap, duplicate DataFrame columns, incompatible numeric/string predictor dtypes, and infinite sample weights with actionable errors. Treat numeric int/float predictor dtypes as compatible.

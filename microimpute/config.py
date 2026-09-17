@@ -46,7 +46,9 @@ DEFAULT_MODEL_PARAMS: Dict[str, Dict[str, Any]] = {
         "n_estimators": 100,
         "max_depth": None,
         "min_samples_split": 2,
-        "min_samples_leaf": 1,
+        "min_samples_leaf": 20,
+        # Retain the leaf distribution instead of one randomly selected donor.
+        "max_samples_leaf": None,
         "max_features": 1.0,
     },
     "quantreg": {

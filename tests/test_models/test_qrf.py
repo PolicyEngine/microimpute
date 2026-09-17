@@ -72,7 +72,7 @@ def test_qrf_basic_fit_predict(diabetes_data: pd.DataFrame) -> None:
     X_train, X_test = preprocess_data(data)
 
     # Initialize and fit model
-    model = QRF()
+    model = QRF(sequential=False)
     fitted_model = model.fit(
         X_train,
         predictors,
@@ -111,15 +111,15 @@ def test_qrf_sequential_imputation(diabetes_data: pd.DataFrame) -> None:
 
     # Get predictions
     small_test = X_test.head(5).copy()
-    sequential_preds = fitted_model.predict(small_test, quantiles=[0.5])[0.5]
+    sequential_preds = fitted_model.predict(small_test)
 
     # Compare with parallel imputation (each variable independently)
     parallel_predictions = {}
     for var in imputed_variables:
         single_model = QRF()
         single_fitted = single_model.fit(X_train, predictors, [var], n_estimators=30)
-        single_pred = single_fitted.predict(small_test, quantiles=[0.5])
-        parallel_predictions[var] = single_pred[0.5][var]
+        single_pred = single_fitted.predict(small_test)
+        parallel_predictions[var] = single_pred[var]
 
     # Sequential should differ from parallel for later variables
     differences_found = False
@@ -137,7 +137,7 @@ def test_qrf_sequential_imputation(diabetes_data: pd.DataFrame) -> None:
     reversed_fitted = reversed_model.fit(
         X_train, predictors, imputed_variables[::-1], n_estimators=30
     )
-    reversed_preds = reversed_fitted.predict(small_test, quantiles=[0.5])[0.5]
+    reversed_preds = reversed_fitted.predict(small_test)
 
     # Middle variable should differ when imputed in different orders
     assert not np.allclose(
@@ -234,15 +234,17 @@ def test_qrf_target_filters_fit_each_target_on_eligible_rows() -> None:
     """Target-specific masks should let each target ignore its own bad rows."""
     train = pd.DataFrame(
         {
-            "x": [0.0, 1.0, 2.0, 3.0],
-            "y1": [10.0, 20.0, np.nan, np.nan],
-            "y2": [np.nan, np.nan, 30.0, 40.0],
-            "y1_observed": [True, True, False, False],
-            "y2_observed": [False, False, True, True],
+            "x": [0.0, 1.0, 2.0, 3.0, 4.0],
+            # y1 is observed in every row used to train the conditional y2
+            # model, including rows excluded from y1's own training filter.
+            "y1": [10.0, 20.0, 30.0, 40.0, np.nan],
+            "y2": [np.nan, np.nan, 30.0, 40.0, np.nan],
+            "y1_observed": [True, True, False, False, False],
+            "y2_observed": [False, False, True, True, False],
         }
     )
 
-    fitted = QRF().fit(
+    fitted = QRF(sequential=False).fit(
         train,
         predictors=["x"],
         imputed_variables=["y1", "y2"],
@@ -760,10 +762,8 @@ def test_qrf_error_handling() -> None:
     # Try to predict with missing predictor
     test_data = pd.DataFrame({"z": [7, 8, 9]})
 
-    try:
-        predictions = fitted_model.predict(test_data)
-    except Exception as e:
-        assert "none of" in str(e).lower() and "are in the" in str(e).lower()
+    with pytest.raises(ValueError, match="Missing predictor column: x"):
+        fitted_model.predict(test_data)
 
 
 # === Internal Model Tests ===
@@ -1256,10 +1256,10 @@ def test_qrf_sequential_imputation_discrete_numeric_categorical() -> None:
 
 
 def test_qrf_not_numeric_categorical_override() -> None:
-    """Test that not_numeric_categorical parameter correctly overrides automatic detection.
+    """Explicit target types distinguish category codes from numeric counts.
 
-    Variables with <10 unique equally-spaced values normally get treated as categorical,
-    but this parameter should force them to be treated as numeric.
+    Counts remain numeric by default; categorical labels must be declared.
+    The legacy force-numeric override remains accepted.
     """
     np.random.seed(42)
     n_samples = 200
@@ -1286,7 +1286,7 @@ def test_qrf_not_numeric_categorical_override() -> None:
         {"predictor1": np.random.randn(50), "predictor2": np.random.randn(50)}
     )
 
-    # Test 1: Default behavior - discrete vars should be treated as categorical
+    # Test 1: Explicitly declared category codes use classification
     model_default = QRF(log_level="WARNING")
     fitted_default = model_default.fit(
         X_train=donor_df,
@@ -1294,14 +1294,15 @@ def test_qrf_not_numeric_categorical_override() -> None:
         imputed_variables=["discrete_var1", "discrete_var2", "continuous_var"],
         n_estimators=20,
         random_state=42,
+        target_types={"discrete_var1": "categorical", "discrete_var2": "categorical"},
     )
 
     # Check that discrete vars were treated as categorical
     assert "discrete_var1" in model_default.categorical_targets, (
-        "discrete_var1 should be categorical by default"
+        "discrete_var1 should be categorical when explicitly declared"
     )
     assert "discrete_var2" in model_default.categorical_targets, (
-        "discrete_var2 should be categorical by default"
+        "discrete_var2 should be categorical when explicitly declared"
     )
     assert "continuous_var" in model_default.numeric_targets, (
         "continuous_var should be numeric"
@@ -1313,7 +1314,8 @@ def test_qrf_not_numeric_categorical_override() -> None:
         X_train=donor_df,
         predictors=["predictor1", "predictor2"],
         imputed_variables=["discrete_var1", "discrete_var2", "continuous_var"],
-        not_numeric_categorical=["discrete_var1"],  # Force discrete_var1 to be numeric
+        not_numeric_categorical=["discrete_var1"],  # Legacy numeric override
+        target_types={"discrete_var2": "categorical"},
         n_estimators=20,
         random_state=42,
     )
@@ -1649,3 +1651,91 @@ def test_qrf_fit_predict_with_max_train_samples() -> None:
 
     assert result.shape == (n_test, 1)
     assert not result.isna().any().any()
+
+
+def test_per_variable_models_draw_independently() -> None:
+    """Variables imputed together must not share one random quantile per row.
+
+    Every per-variable model builds its own generator from the seed it is
+    given. When they all receive the same seed they draw the same quantiles in
+    the same row order, so the imputed variables come out comonotonic whatever
+    their dependence in the donor.
+    """
+    rng = np.random.default_rng(7)
+    n = 1500
+    predictors = pd.DataFrame(
+        {"inc": rng.normal(30, 8, n), "age": rng.normal(45, 12, n)}
+    )
+    targets = ["savings", "property_wealth", "corporate_wealth"]
+    train = predictors.copy()
+    for variable in targets:
+        # Shared signal, independent shocks: the conditional dependence is nil.
+        train[variable] = 0.5 * predictors["inc"] + rng.normal(0, 10, n)
+
+    test = pd.DataFrame({"inc": rng.normal(30, 8, 600), "age": rng.normal(45, 12, 600)})
+
+    model = QRF(log_level="WARNING")
+    imputations = model.fit(train, ["inc", "age"], targets).predict(test)
+
+    ranks = imputations[targets].rank().corr()
+    off_diagonal = [
+        abs(ranks.loc[a, b]) for i, a in enumerate(targets) for b in targets[i + 1 :]
+    ]
+    assert max(off_diagonal) < 0.4, (
+        "imputed variables are comonotonic; per-variable models are sharing "
+        f"a seed (rank correlations {off_diagonal})"
+    )
+
+
+def test_seed_is_configurable_and_reproducible() -> None:
+    """QRF should accept a seed, and the same seed should reproduce draws."""
+    rng = np.random.default_rng(3)
+    n = 400
+    train = pd.DataFrame({"x": rng.normal(size=n)})
+    train["y"] = train["x"] + rng.normal(0, 1, n)
+    test = pd.DataFrame({"x": rng.normal(size=120)})
+
+    first = QRF(log_level="WARNING", seed=1234).fit(train, ["x"], ["y"]).predict(test)
+    second = QRF(log_level="WARNING", seed=1234).fit(train, ["x"], ["y"]).predict(test)
+
+    np.testing.assert_allclose(first["y"], second["y"])
+
+
+def test_qrf_disjoint_target_filters_reject_missing_chained_predictors():
+    """No joint observations cannot identify a conditional second-target model."""
+    train = pd.DataFrame(
+        {
+            "x": [0.0, 1.0, 2.0, 3.0],
+            "y1": [10.0, 20.0, np.nan, np.nan],
+            "y2": [np.nan, np.nan, 30.0, 40.0],
+        }
+    )
+    with pytest.raises(RuntimeError, match="NaN"):
+        QRF().fit(
+            train,
+            ["x"],
+            ["y1", "y2"],
+            target_filters={"y1": train.y1.notna(), "y2": train.y2.notna()},
+            n_estimators=3,
+        )
+
+
+def test_qrf_independent_disjoint_target_filters_fit_marginals():
+    """Separate donor subsets identify marginals without inventing joint data."""
+    train = pd.DataFrame(
+        {
+            "x": [0.0, 1.0, 2.0, 3.0],
+            "y1": [10.0, 20.0, np.nan, np.nan],
+            "y2": [np.nan, np.nan, 30.0, 40.0],
+        }
+    )
+    fitted = QRF(sequential=False).fit(
+        train,
+        ["x"],
+        ["y1", "y2"],
+        target_filters={"y1": train.y1.notna(), "y2": train.y2.notna()},
+        n_estimators=3,
+    )
+    prediction = fitted.predict(pd.DataFrame({"x": [1.5]}), quantiles=[0.5])[0.5]
+    assert 10 <= prediction.y1.iloc[0] <= 20
+    assert 30 <= prediction.y2.iloc[0] <= 40
