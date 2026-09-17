@@ -83,11 +83,7 @@ comparison_viz = method_comparison_results(
 )
 
 # Generate plot
-fig = comparison_viz.plot(
-    title="Method comparison",
-    show_mean=True,
-    plot_type="bar"
-)
+fig = comparison_viz.plot(title="Method comparison", show_mean=True, plot_type="bar")
 fig.show()
 
 # Get summary statistics
@@ -165,7 +161,7 @@ perf_viz = model_performance_results(
     results=cv_results,
     model_name="QRF",
     method_name="Cross-validation",
-    metric="quantile_loss"
+    metric="quantile_loss",
 )
 
 fig = perf_viz.plot(title="QRF performance")
