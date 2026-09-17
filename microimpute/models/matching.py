@@ -74,6 +74,7 @@ class MatchingResults(ImputerResults):
         self.categorical_targets = categorical_targets or {}
         self.boolean_targets = boolean_targets or {}
         self.dummy_processor = dummy_processor
+        self.n_failed_records = 0
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
@@ -324,6 +325,18 @@ class MatchingResults(ImputerResults):
                 f"Error converting matching results: {str(convert_error)}"
             )
             raise RuntimeError("Failed to process matching results") from convert_error
+
+        # Both single-call and chunked predictions replace the previous count.
+        # Only missing target values represent unmatched output records.
+        self.n_failed_records = int(
+            fused0[self.imputed_variables].isna().any(axis=1).sum()
+        )
+        if self.n_failed_records:
+            self.logger.warning(
+                f"{self.n_failed_records} of {len(fused0)} records "
+                f"({self.n_failed_records / len(fused0):.1%}) could not be "
+                "matched and are NaN in the result."
+            )
 
         # Create output dictionary with results
         imputations: Dict[float, pd.DataFrame] = {}
@@ -639,11 +652,18 @@ class Matching(Imputer):
                                 )
                                 y_pred_chunks.append(fused0[var].values)
                                 y_val_chunks.append(chunk_y_val.values)
-                            except Exception:
-                                # If chunk fails, use mean of training data as prediction
-                                mean_val = X_train_fold[var].mean()
-                                y_pred_chunks.append(np.full(len(chunk_data), mean_val))
-                                y_val_chunks.append(chunk_y_val.values)
+                            except Exception as e:
+                                # Substituting the training mean here would
+                                # score this trial as a mean-predictor, which
+                                # can beat a genuine matching fit on a
+                                # low-signal target. Prune instead, so a
+                                # parameter set that cannot match is never
+                                # selected as best.
+                                self.logger.warning(
+                                    f"Matching failed for '{var}' on fold "
+                                    f"{fold_idx} chunk {i}: {e}. Pruning trial."
+                                )
+                                raise optuna.TrialPruned() from e
 
                         # Combine chunk results
                         y_pred = np.concatenate(y_pred_chunks)
@@ -660,11 +680,14 @@ class Matching(Imputer):
                             )
                             y_pred = fused0[var].values
                             y_val_combined = y_val.values
-                        except Exception:
-                            # If matching fails, use mean of training data as prediction
-                            mean_val = X_train_fold[var].mean()
-                            y_pred = np.full(len(X_val_var), mean_val)
-                            y_val_combined = y_val.values
+                        except Exception as e:
+                            # See above: score the trial on matching, or not at
+                            # all.
+                            self.logger.warning(
+                                f"Matching failed for '{var}' on fold "
+                                f"{fold_idx}: {e}. Pruning trial."
+                            )
+                            raise optuna.TrialPruned() from e
 
                     # Use appropriate metric based on variable type
                     metric = variable_metrics[var]
@@ -708,6 +731,11 @@ class Matching(Imputer):
         os.environ["PYTHONWARNINGS"] = "ignore"
 
         study.optimize(objective, n_trials=n_trials)
+
+        if not any(
+            trial.state == optuna.trial.TrialState.COMPLETE for trial in study.trials
+        ):
+            raise ValueError("No matching hyperparameter trial succeeded")
 
         best_value = study.best_value
         self.logger.info(
