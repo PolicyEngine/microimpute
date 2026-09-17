@@ -256,7 +256,7 @@ class OLSResults(ImputerResults):
             # rows far from the training centroid; at extreme quantiles
             # (0.01, 0.99) the under-dispersion is material.
             X_test_with_const = sm.add_constant(
-                X_test[self.predictors], has_constant="add"
+                X_test[self.predictors].astype(float), has_constant="add"
             )
             prediction = model.model.get_prediction(X_test_with_const)
             # var_pred_mean is the leverage term (x' (X'X)^-1 x) * scale;

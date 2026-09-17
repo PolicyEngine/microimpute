@@ -68,6 +68,9 @@ def _process_single_fold(
     # Split data for this fold
     train_data = data.iloc[train_idx]
     test_data = data.iloc[test_idx]
+    # The sampling mass must retain its original units even when the same
+    # column is transformed as a predictor. Its index also survives fit filters.
+    fit_weights = train_data[weight_col].copy() if weight_col is not None else None
 
     # Store actual values for this fold organized by variable
     train_y = {var: train_data[var].values for var in imputed_variables}
@@ -90,7 +93,7 @@ def _process_single_fold(
         train_data,
         predictors,
         imputed_variables,
-        weight_col,
+        fit_weights,
         quantiles,
         model_hyperparams,
         tune_hyperparameters,
@@ -158,7 +161,7 @@ def _fit_model_for_fold(
     train_data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    weight_col: Optional[str],
+    weight_col: Optional[Union[str, np.ndarray, pd.Series]],
     quantiles: List[float],
     model_hyperparams: Optional[dict],
     tune_hyperparameters: bool,
@@ -682,7 +685,7 @@ def cross_validate_model(
                 tuning_data,
                 predictors,
                 imputed_variables,
-                weight_col,
+                data[weight_col].copy() if weight_col is not None else None,
                 quantiles,
                 model_hyperparams,
                 True,

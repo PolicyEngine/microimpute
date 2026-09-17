@@ -1,0 +1,1 @@
+Prevent integer overflow in quantile loss and Matching tuning; consistently honor numeric boolean targets, preserve survey weights when transforming a weight predictor, retain default constant-category probabilities, and support nullable numeric OLS predictors.

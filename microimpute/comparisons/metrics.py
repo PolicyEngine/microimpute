@@ -64,7 +64,9 @@ def quantile_loss(q: float, y: np.ndarray, f: np.ndarray) -> np.ndarray:
     Returns:
         Array of quantile losses.
     """
-    e = y - f
+    # Integer counts may be unsigned or narrower than their residuals. Promote
+    # both operands before subtraction so neither wrapping nor overflow occurs.
+    e = np.asarray(y, dtype=float) - np.asarray(f, dtype=float)
     return np.maximum(q * e, (q - 1) * e)
 
 

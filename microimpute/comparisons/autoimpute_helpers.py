@@ -14,7 +14,7 @@ Key functions:
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -165,7 +165,7 @@ def prepare_data_for_imputation(
         )
 
         training_data = transformed_training
-        if weight_col:
+        if weight_col and weight_col not in all_training_cols:
             training_data[weight_col] = donor_data[weight_col]
 
         imputing_data = transformed_imputing
@@ -283,7 +283,7 @@ def fit_and_predict_model(
     imputing_data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    weight_col: Optional[str],
+    weight_col: Optional[Union[str, np.ndarray, pd.Series]],
     quantile: float,
     hyperparams: Optional[Dict[str, Any]] = None,
     log_level: str = "WARNING",
