@@ -73,9 +73,7 @@ class NewModelResults(ImputerResults):
 
         except Exception as e:
             self.logger.error(f"Error during Model prediction: {str(e)}")
-            raise RuntimeError(
-                f"Failed to predict with Model: {str(e)}"
-            ) from e
+            raise RuntimeError(f"Failed to predict with Model: {str(e)}") from e
 ```
 
 ## Implementing the main model class
