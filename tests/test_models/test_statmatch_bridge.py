@@ -241,7 +241,7 @@ def test_real_weighted_matching_preserves_donation_classes_and_recipient_order()
             ["x"],
             ["y"],
             donor_sample_weight=np.array([1.0, 3.0, 2.0, 4.0]),
-            donation_classes=ro.StrVector(["group"]),
+            don_class=ro.StrVector(["group"]),
             random_state=19,
         )
         np.testing.assert_array_equal(
