@@ -261,7 +261,7 @@ class Imputer(ABC):
             X_train: DataFrame containing the training data.
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
-            weight_col: Optional name of the column or column array/series containing sampling weights. When provided, `X_train` will be passed to the underlying learner's own weighted-fit interface as sample weights.
+            weight_col: Optional name of the column or column array/series containing sampling weights. When provided, the weights are passed to the underlying learner's own weighted-fit interface as sample weights. QRF, OLS and Matching support this; QuantReg and MDN raise `NotImplementedError` rather than silently returning an unweighted fit.
             skip_missing: If True, skip variables missing from training data with warning. If False, raise error for missing variables.
             not_numeric_categorical: Optional list of variable names that should
                 be treated as numeric even if they would normally be detected as

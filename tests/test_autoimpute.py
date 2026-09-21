@@ -7,11 +7,10 @@ from sklearn.datasets import load_diabetes
 
 from microimpute.comparisons.autoimpute import autoimpute, AutoImputeResult
 from microimpute.visualizations import *
-from microimpute.models import QRF, QuantReg, OLS
 
 # Check if Matching is available
 try:
-    from microimpute.models import Matching
+    from microimpute.models import Matching  # noqa: F401  (import is the probe)
 
     HAS_MATCHING = True
 except ImportError:
@@ -19,7 +18,7 @@ except ImportError:
 
 # Check if MDN is available
 try:
-    from microimpute.models import MDN
+    from microimpute.models import MDN  # noqa: F401  (import is the probe)
 
     HAS_MDN = True
 except ImportError:
@@ -27,19 +26,17 @@ except ImportError:
 
 
 def available_models():
-    """The models installed in this environment.
+    """The models autoimpute should use in this environment.
 
     Matching needs rpy2 and R's StatMatch, and MDN needs pytorch-tabular.
     Naming a model that did not import raises NameError before the call under
     test runs, which is how a missing optional dependency turned into eight
     test errors rather than a skip.
     """
-    if HAS_MDN:
-        return None  # exercise the full default set
-    models = [QRF, QuantReg, OLS]
-    if HAS_MATCHING:
-        models.insert(1, Matching)
-    return models
+    # autoimpute's own default is already dependency-aware, building
+    # [QRF, OLS, QuantReg] plus Matching and MDN when they import. Passing None
+    # uses it, so the installed set is exercised whatever is present.
+    return None
 
 
 # === Fixtures ===
