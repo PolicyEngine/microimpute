@@ -1739,3 +1739,118 @@ def test_qrf_independent_disjoint_target_filters_fit_marginals():
     prediction = fitted.predict(pd.DataFrame({"x": [1.5]}), quantiles=[0.5])[0.5]
     assert 10 <= prediction.y1.iloc[0] <= 20
     assert 30 <= prediction.y2.iloc[0] <= 40
+
+
+@pytest.mark.parametrize("target_type", ["numeric", "boolean", "categorical"])
+def test_qrf_max_seed_supports_multiple_targets(target_type: str) -> None:
+    """Every valid sklearn seed must support reproducible multi-target fits."""
+    rng = np.random.default_rng(71)
+    data = pd.DataFrame(
+        {name: rng.normal(size=120) for name in ["x", "first", "second"]}
+    )
+    if target_type == "boolean":
+        data[["first", "second"]] = data[["first", "second"]] > 0
+    elif target_type == "categorical":
+        for name in ["first", "second"]:
+            data[name] = np.where(data[name] > 0, "yes", "no")
+
+    predictions = []
+    for _ in range(2):
+        fitted = QRF(seed=2**32 - 1).fit(
+            data, ["x"], ["first", "second"], n_estimators=12
+        )
+        seeds = [model.seed for model in fitted.models.values()]
+        assert len(set(seeds)) == 2
+        assert all(0 <= seed < 2**32 for seed in seeds)
+        predictions.append(fitted.predict(data[["x"]].iloc[:20]))
+    pd.testing.assert_frame_equal(*predictions)
+    assert not predictions[0].isna().any().any()
+
+
+@pytest.mark.parametrize("seed", [None, 0, 42])
+def test_qrf_child_seeds_preserve_existing_seed_values(seed) -> None:
+    """Ordinary seeds and entropy-based draws retain their established meaning."""
+    model = QRF(seed=seed)
+    model.imputed_variables = ["first", "second"]
+    expected = [None, None] if seed is None else [seed, seed + 1]
+    assert [
+        model._seed_for_variable(name) for name in model.imputed_variables
+    ] == expected
+
+
+@pytest.mark.parametrize("seed", [-1, 2**32, 1.5])
+def test_qrf_invalid_base_seed_is_not_normalized(seed) -> None:
+    """An invalid seed fails at construction, not part-way through a fit."""
+    with pytest.raises(ValueError, match="seed must be an integer"):
+        QRF(seed=seed)
+
+
+def test_qrf_seed_for_unknown_variable_raises() -> None:
+    """Falling back to offset 0 would silently recreate comonotonicity."""
+    model = QRF(seed=100)
+    model.imputed_variables = ["a", "b"]
+    assert [model._seed_for_variable(v) for v in ["a", "b"]] == [100, 101]
+    with pytest.raises(ValueError, match="not among the imputed variables"):
+        model._seed_for_variable("z")
+
+
+@pytest.mark.parametrize("target_type", ["numeric", "boolean"])
+def test_qrf_tuning_uses_distinct_target_seeds(monkeypatch, target_type: str) -> None:
+    """Real Optuna folds must fit the same independent streams as final models."""
+    from microimpute.models.qrf import _RandomForestClassifierModel
+
+    rng = np.random.default_rng(73)
+    data = pd.DataFrame(
+        {name: rng.normal(size=100) for name in ["x", "first", "second"]}
+    )
+    model = QRF(seed=123)
+    model.imputed_variables = ["first", "second"]
+    if target_type == "numeric":
+        internal_model = _QRFModel
+        tune = model._tune_qrf_hyperparameters
+    else:
+        data[["first", "second"]] = data[["first", "second"]] > 0
+        model.boolean_targets = {"first": {}, "second": {}}
+        internal_model = _RandomForestClassifierModel
+        tune = model._tune_rfc_hyperparameters
+
+    fitted_seeds = []
+    original_fit = internal_model.fit
+
+    def record_fit(self, X, y, **kwargs):
+        fitted_seeds.append((y.name, self.seed))
+        return original_fit(self, X, y, **kwargs)
+
+    monkeypatch.setattr(internal_model, "fit", record_fit)
+    tune(data, ["x"], ["first", "second"], n_cv_folds=2, n_trials=1)
+    assert fitted_seeds == [("first", 123), ("second", 124)] * 2
+
+
+def test_qrf_target_subsampling_uses_bounded_child_seed(monkeypatch) -> None:
+    """Filtered training rows and their model use one consistent child seed."""
+    rng = np.random.default_rng(9)
+    data = pd.DataFrame(
+        {name: rng.normal(size=120) for name in ["x", "first", "second"]}
+    )
+    fitted_indices = {}
+    original_fit = _QRFModel.fit
+
+    def record_fit(self, X, y, **kwargs):
+        fitted_indices[y.name] = X.index.to_numpy()
+        return original_fit(self, X, y, **kwargs)
+
+    monkeypatch.setattr(_QRFModel, "fit", record_fit)
+    QRF(seed=2**32 - 1, max_train_samples=50).fit(
+        data,
+        ["x"],
+        ["first", "second"],
+        target_filters={
+            name: np.ones(len(data), dtype=bool) for name in ["first", "second"]
+        },
+        n_estimators=12,
+    )
+    # The second stream wraps to zero at the uint32 boundary.
+    expected_indices = np.random.default_rng(0).choice(
+        len(data), size=50, replace=False
+    )
+    np.testing.assert_array_equal(fitted_indices["second"], expected_indices)

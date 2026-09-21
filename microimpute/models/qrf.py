@@ -810,29 +810,28 @@ class QRF(Imputer):
         return data
 
     def _seed_for_variable(self, variable: str) -> Optional[int]:
-        """Derive a distinct seed for one imputed variable.
+        """Derive a valid, distinct seed for a declared target.
 
-        Each per-variable model builds its own generator from the seed it is
-        given. Handing every variable the same seed makes them draw the same
-        random quantiles in the same row order, so variables imputed together
-        come out comonotonic regardless of their dependence in the donor. The
-        offset follows the same convention as the subsampling seed below.
+        Independent models use target names so reordering targets preserves their
+        streams. Sequential models use bounded offsets shared by fitting, tuning,
+        and target-specific subsampling.
         """
         if self.seed is None:
             return None
+        try:
+            variable_offset = (self.imputed_variables or []).index(variable)
+        except ValueError as error:
+            raise ValueError(
+                f"Cannot derive a seed for {variable!r}: it is not among the "
+                f"imputed variables {list(self.imputed_variables or [])}."
+            ) from error
         if not self.sequential:
-            # A stable variable-name seed makes independent fits invariant to
-            # target ordering and to adding/removing other target variables.
             identity = int.from_bytes(
                 hashlib.blake2s(variable.encode(), digest_size=4).digest(), "little"
             )
             return int(
                 np.random.SeedSequence([self.seed, identity]).generate_state(1)[0]
             )
-        try:
-            variable_offset = (self.imputed_variables or []).index(variable)
-        except ValueError:
-            variable_offset = 0
         return (int(self.seed) + variable_offset) % (2**32)
 
     def _create_model_for_variable(self, variable: str, **kwargs) -> Any:
@@ -1606,7 +1605,9 @@ class QRF(Imputer):
                         y_val = X_val_fold[var]
 
                         # Create and fit QRF model with trial parameters
-                        model = _QRFModel(seed=self.seed, logger=self.logger)
+                        model = _QRFModel(
+                            seed=self._seed_for_variable(var), logger=self.logger
+                        )
                         model.fit(
                             X_train_augmented[encoded_predictors],
                             X_train_fold[var],
@@ -1766,7 +1767,7 @@ class QRF(Imputer):
 
                         # Create and fit RFC model with trial parameters
                         model = _RandomForestClassifierModel(
-                            seed=self.seed, logger=self.logger
+                            seed=self._seed_for_variable(var), logger=self.logger
                         )
 
                         # Determine variable type and fit appropriately
