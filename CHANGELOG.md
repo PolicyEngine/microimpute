@@ -1,3 +1,10 @@
+## [3.1.2] - 2026-09-21
+
+### Fixed
+
+- The Lint job no longer fails on an untouched checkout: documentation prose is excluded from the formatter, and the ruff version is bounded so a future release cannot silently change what the job checks.
+
+
 ## [3.1.1] - 2026-06-06
 
 ### Fixed
