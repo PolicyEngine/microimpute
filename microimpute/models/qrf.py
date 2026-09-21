@@ -623,6 +623,14 @@ class QRF(Imputer):
                 seed derived from it, so variables imputed together draw
                 independently. Pass None for non-reproducible draws.
         """
+        if seed is not None and (
+            isinstance(seed, bool)
+            or not isinstance(seed, (int, np.integer))
+            or not 0 <= seed < 2**32
+        ):
+            raise ValueError(
+                f"seed must be an integer from 0 to 2**32 - 1, or None, got {seed!r}"
+            )
         super().__init__(log_level=log_level, seed=seed)
         self.models = {}
         self.log_level = log_level
@@ -711,12 +719,16 @@ class QRF(Imputer):
         """
         if self.seed is None:
             return None
-        if not isinstance(self.seed, (int, np.integer)) or not 0 <= self.seed < 2**32:
-            raise ValueError("seed must be an integer from 0 to 2**32 - 1 or None")
         try:
             variable_offset = (self.imputed_variables or []).index(variable)
-        except ValueError:
-            variable_offset = 0
+        except ValueError as error:
+            # Falling back to offset 0 would hand this variable the same draws
+            # as the first target, which is the comonotonicity this method
+            # exists to prevent - and it would do so silently.
+            raise ValueError(
+                f"Cannot derive a seed for {variable!r}: it is not among the "
+                f"imputed variables {list(self.imputed_variables or [])}."
+            ) from error
         return (int(self.seed) + variable_offset) % 2**32
 
     def _create_model_for_variable(self, variable: str, **kwargs) -> Any:

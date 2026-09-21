@@ -1738,11 +1738,18 @@ def test_qrf_child_seeds_preserve_existing_seed_values(seed) -> None:
 
 @pytest.mark.parametrize("seed", [-1, 2**32, 1.5])
 def test_qrf_invalid_base_seed_is_not_normalized(seed) -> None:
-    """Wrapping child seeds must not silently accept invalid sklearn base seeds."""
-    rng = np.random.default_rng(3)
-    data = pd.DataFrame({"x": rng.normal(size=30), "y": rng.normal(size=30)})
-    with pytest.raises(RuntimeError):
-        QRF(seed=seed).fit(data, ["x"], ["y"], n_estimators=5)
+    """An invalid seed fails at construction, not part-way through a fit."""
+    with pytest.raises(ValueError, match="seed must be an integer"):
+        QRF(seed=seed)
+
+
+def test_qrf_seed_for_unknown_variable_raises() -> None:
+    """Falling back to offset 0 would silently recreate comonotonicity."""
+    model = QRF(seed=100)
+    model.imputed_variables = ["a", "b"]
+    assert [model._seed_for_variable(v) for v in ["a", "b"]] == [100, 101]
+    with pytest.raises(ValueError, match="not among the imputed variables"):
+        model._seed_for_variable("z")
 
 
 @pytest.mark.parametrize("target_type", ["numeric", "boolean"])
