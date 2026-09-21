@@ -19,12 +19,14 @@ Main components:
     - Visualization: performance and comparison plots
 """
 
-try:  # Python 3.8+
-    from importlib.metadata import PackageNotFoundError, version as _version
+from importlib.metadata import PackageNotFoundError, version as _version
 
+try:
     __version__ = _version("microimpute")
-except PackageNotFoundError:  # running from a source tree without an install
-    __version__ = "unknown"
+except PackageNotFoundError:
+    # Running from a source tree with no install. Keep it PEP 440 parseable so
+    # a consumer calling packaging.version.parse on it does not raise.
+    __version__ = "0.0.0+unknown"
 
 # Import automated imputation
 from microimpute.comparisons.autoimpute import AutoImputeResult, autoimpute
