@@ -198,8 +198,21 @@ class _OLSModel:
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Predict using OLS model."""
-        X_with_const = sm.add_constant(X, has_constant="add")
-        return self.model.predict(X_with_const)
+        return self.model.predict(self.prediction_design(X))
+
+    def prediction_design(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Preserve the intercept and column contract of the fitted model.
+
+        Historical fits skipped an added intercept when a predictor was already
+        constant. The stored statsmodels design retains that information.
+        """
+        expected = self.model.model.exog_names
+        if list(X.columns) == expected:
+            return X
+        design = sm.add_constant(X, has_constant="add")
+        if list(design.columns) == expected:
+            return design
+        return design.loc[:, expected]
 
 
 class OLSResults(ImputerResults):
@@ -255,8 +268,8 @@ class OLSResults(ImputerResults):
             # the residual std and under-dispersed imputations for test
             # rows far from the training centroid; at extreme quantiles
             # (0.01, 0.99) the under-dispersion is material.
-            X_test_with_const = sm.add_constant(
-                X_test[self.predictors].astype(float), has_constant="add"
+            X_test_with_const = model.prediction_design(
+                X_test[self.predictors].astype(float)
             )
             prediction = model.model.get_prediction(X_test_with_const)
             # var_pred_mean is the leverage term (x' (X'X)^-1 x) * scale;
@@ -319,6 +332,12 @@ class OLSResults(ImputerResults):
         self.boolean_targets = boolean_targets or {}
         self.constant_targets = constant_targets or {}
         self.dummy_processor = dummy_processor
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Initialize a random stream for historical fitted results."""
+        self.__dict__.update(state)
+        if "rng" not in state:
+            self.rng = np.random.default_rng(self.seed)
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(

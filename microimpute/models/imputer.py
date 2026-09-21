@@ -50,6 +50,18 @@ class Imputer(ABC):
         log_level: Optional[str] = "WARNING",
     ) -> None:
         """Initialize the imputer model."""
+        if seed is not None:
+            if isinstance(seed, (bool, np.bool_)) or not isinstance(
+                seed, (int, np.integer)
+            ):
+                raise ValueError(
+                    "seed must be an integer between 0 and 2**32 - 1, or None"
+                )
+            seed = int(seed)
+            if not 0 <= seed < 2**32:
+                raise ValueError(
+                    "seed must be an integer between 0 and 2**32 - 1, or None"
+                )
         self.predictors: Optional[List[str]] = None
         self.imputed_variables: Optional[List[str]] = None
         self.imputed_vars_dummy_info: Optional[Dict[str, Any]] = None
@@ -647,6 +659,20 @@ class ImputerResults(ABC):
         imputations = self._predict(
             X_test, quantiles, return_probs=return_probs, **kwargs
         )
+        if return_probs and isinstance(imputations, (dict, pd.DataFrame)):
+            for variable, info in getattr(self, "constant_targets", {}).items():
+                kind, _ = VariableTypeDetector.categorize_variable(
+                    pd.Series([info["value"]], dtype=info["dtype"]),
+                    variable,
+                    self.logger,
+                )
+                if kind in {"bool", "categorical", "numeric_categorical"}:
+                    if isinstance(imputations, pd.DataFrame):
+                        imputations = {kwargs.get("mean_quantile", 0.5): imputations}
+                    imputations.setdefault("probabilities", {})[variable] = {
+                        "probabilities": np.ones((len(X_test), 1)),
+                        "classes": np.array([info["value"]]),
+                    }
         # No more postprocessing - categorical targets handled directly
         return imputations
 

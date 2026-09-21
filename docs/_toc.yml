@@ -26,6 +26,7 @@ parts:
       - file: imputation-benchmarking/index
         sections:
           - file: imputation-benchmarking/preprocessing
+          - file: imputation-benchmarking/migration
           - file: imputation-benchmarking/cross-validation
           - file: imputation-benchmarking/metrics
           - file: imputation-benchmarking/visualizations

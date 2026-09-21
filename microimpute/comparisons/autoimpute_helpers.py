@@ -311,6 +311,9 @@ def fit_and_predict_model(
     model = create_distributional_model(
         model_class, log_level=log_level, seed=random_state
     )
+    from microimpute.utils.type_handling import declare_target_types
+
+    training_data = declare_target_types(training_data, imputed_variables, target_types)
 
     # Check for categorical variables
     from microimpute.comparisons.metrics import get_metric_for_variable_type
@@ -342,10 +345,14 @@ def fit_and_predict_model(
     fitted_model = model.fit(
         training_data, predictors, imputed_variables, weight_col=weight_col, **params
     )
-    has_categorical = bool(model.categorical_targets or model.boolean_targets)
-    imputations = fitted_model.predict(
-        imputing_data, quantiles=requested_quantiles, return_probs=has_categorical
-    )
+    from microimpute.models.matching import Matching
+
+    if isinstance(model, Matching):
+        imputations = fitted_model.predict(imputing_data)
+    else:
+        imputations = fitted_model.predict(
+            imputing_data, quantiles=requested_quantiles, return_probs=has_categorical
+        )
 
     # Handle case where predict returns a DataFrame directly
     if isinstance(imputations, pd.DataFrame):

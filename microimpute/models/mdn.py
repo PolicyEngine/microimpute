@@ -790,7 +790,7 @@ class MDNResults(ImputerResults):
                 imputations["probabilities"] = prob_results
 
             # Return format based on whether quantiles were specified
-            if quantiles is not None:
+            if quantiles is not None or (return_probs and prob_results):
                 return imputations
             else:
                 return imputations[0.5]

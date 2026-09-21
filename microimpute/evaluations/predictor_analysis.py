@@ -259,6 +259,7 @@ def leave_one_out_analysis(
         ... )
         >>> print(results.sort_values('relative_impact', ascending=False))
     """
+    _require_distributional_model(model_class)
     # Split data
     train_data, test_data = train_test_split(
         data, train_size=train_size, random_state=random_state
@@ -400,6 +401,8 @@ def progressive_predictor_inclusion(
     if max_predictors is None:
         max_predictors = len(predictors)
 
+    _require_distributional_model(model_class)
+
     # Split data
     train_data, test_data = train_test_split(
         data, train_size=train_size, random_state=random_state
@@ -505,6 +508,16 @@ def progressive_predictor_inclusion(
 
 
 # Helper functions
+
+
+def _require_distributional_model(model_class: Type[Imputer]) -> None:
+    from microimpute.models.matching import Matching
+
+    if issubclass(model_class, Matching):
+        raise NotImplementedError(
+            "Matching does not support distributional predictor analysis; "
+            "use a model with conditional quantiles and class probabilities"
+        )
 
 
 def _normalized_mutual_information(

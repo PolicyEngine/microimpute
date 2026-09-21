@@ -36,8 +36,8 @@ jobs:
           echo "Changed files:"
           echo "$CHANGED_FILES"
 
-          # Check if any MDN-related files were changed
-          if echo "$CHANGED_FILES" | grep -qE "(mdn|MDN)"; then
+          # Shared fitting, preprocessing and scoring code also affects MDN.
+          if echo "$CHANGED_FILES" | grep -qE '(^microimpute/|^tests/|^pyproject\.toml$|^uv\.lock$|^\.github/workflows/pr_code_changes\.yaml$|mdn|MDN)'; then
             echo "mdn_changed=true" >> $GITHUB_OUTPUT
             echo "MDN-related files were changed"
           else

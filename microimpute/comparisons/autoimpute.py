@@ -304,7 +304,7 @@ def _generate_imputations_for_all_models(
 
     for model_class in model_classes:
         model_name = model_class.__name__
-        if model_name == best_method or model_name == "Matching":
+        if model_name == best_method:
             continue  # Skip the best method as it's already done
 
         # Check if model can handle the variable types using original data

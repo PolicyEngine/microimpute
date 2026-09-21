@@ -182,3 +182,95 @@ def test_seeded_r_call_restores_absent_rng_state_even_on_error(bridge):
             donor[["x"]], donor, ["x"], ["y"], random_state=73
         )
     assert ".Random.seed" not in module.ro.globalenv
+
+
+@pytest.mark.parametrize("layout", ["matrix", "flat_r"])
+def test_fallback_preserves_permuted_recipient_donor_pairs(bridge, layout):
+    module, _ = bridge
+    donor = pd.DataFrame({"x": [1.0, 2.0, 3.0], "y": [10.0, 20.0, 30.0]})
+    pairs = np.array([[2, 3], [1, 2], [3, 1]])
+    payload = pairs if layout == "matrix" else pairs.flatten(order="F")
+    module._get_statmatch().NND_hotdeck = lambda **kwargs: SimpleNamespace(
+        rx2=lambda key: payload
+    )
+    matrices = []
+
+    def matrix(values, nrow, ncol):
+        result = np.asarray(values).reshape(nrow, ncol, order="F")
+        matrices.append(result)
+        return result
+
+    module.ro.r = SimpleNamespace(matrix=matrix)
+    module.nnd_hotdeck_using_rpy2(donor[["x"]], donor, ["x"], ["y"])
+    np.testing.assert_array_equal(matrices[0], pairs)
+
+
+def test_direct_bridge_adapter_receives_progressive_seeds(bridge):
+    from microimpute.models.matching import MatchingResults
+
+    module, _ = bridge
+    donor = pd.DataFrame({"x": [1.0, 2.0], "y": [10.0, 20.0]})
+    result = MatchingResults(module.nnd_hotdeck_using_rpy2, donor, ["x"], ["y"], 42)
+    first = result._matching_kwargs()["random_state"]
+    second = result._matching_kwargs()["random_state"]
+    same = MatchingResults(module.nnd_hotdeck_using_rpy2, donor, ["x"], ["y"], 42)
+    assert first == same._matching_kwargs()["random_state"]
+    assert first != second
+
+
+def test_real_weighted_matching_preserves_donation_classes_and_recipient_order():
+    ro = pytest.importorskip("rpy2.robjects")
+    from microimpute.utils.statmatch_hotdeck import nnd_hotdeck_using_rpy2
+
+    donor = pd.DataFrame(
+        {
+            "x": [0.0, 0.0, 0.0, 0.0],
+            "group": ["b", "a", "b", "a"],
+            "y": [20.0, 10.0, 20.0, 10.0],
+        }
+    )
+    receiver = pd.DataFrame(
+        {"x": [0.0, 0.0, 0.0, 0.0], "group": ["b", "a", "b", "a"]},
+        index=[70, 10, 90, 20],
+    )
+    for order in ([0, 1, 2, 3], [3, 0, 2, 1]):
+        recipients = receiver.iloc[order]
+        fused, _ = nnd_hotdeck_using_rpy2(
+            recipients,
+            donor,
+            ["x"],
+            ["y"],
+            donor_sample_weight=np.array([1.0, 3.0, 2.0, 4.0]),
+            donation_classes=ro.StrVector(["group"]),
+            random_state=19,
+        )
+        np.testing.assert_array_equal(
+            fused.y.to_numpy(), recipients.group.map({"a": 10.0, "b": 20.0}).to_numpy()
+        )
+
+
+def test_direct_bridge_seed_is_forwarded_through_fit_tuning_and_prediction(
+    bridge, monkeypatch
+):
+    from microimpute.models.matching import Matching
+
+    module, _ = bridge
+    observed = []
+
+    @contextlib.contextmanager
+    def record_seed(seed):
+        observed.append(seed)
+        yield
+
+    monkeypatch.setattr(module, "_temporary_r_seed", record_seed)
+    donor = pd.DataFrame({"x": np.arange(12.0), "y": np.arange(12.0) + 0.5})
+    fitted, _ = Matching(matching_hotdeck=module.nnd_hotdeck_using_rpy2, seed=19).fit(
+        donor, ["x"], ["y"], tune_hyperparameters=True
+    )
+    assert observed and all(isinstance(seed, int) for seed in observed)
+    assert len(set(observed[:3])) == 3
+    observed.clear()
+    first = fitted.predict(donor[["x"]])
+    fitted.predict(donor[["x"]])
+    assert len(observed) == 2 and observed[0] != observed[1]
+    np.testing.assert_array_equal(first.y, np.full(12, donor.y.iloc[0]))

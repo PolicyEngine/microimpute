@@ -176,6 +176,14 @@ class _QRFModel:
         # calls consume state progressively and return different draws.
         self._rng = np.random.default_rng(self.seed)
 
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Load historical fitted forests without changing their donor weights."""
+        self.__dict__.update(state)
+        self.__dict__.setdefault("_weighted_leaves", None)
+        self.__dict__.setdefault("feature_columns", [])
+        if "_rng" not in state:
+            self._rng = np.random.default_rng(self.seed)
+
     def fit(
         self,
         X: pd.DataFrame,
@@ -407,6 +415,11 @@ class QRFResults(ImputerResults):
         self.boolean_targets = boolean_targets or {}
         self.constant_targets = constant_targets or {}
         self.dummy_processor = dummy_processor
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Historical QRF results used sequential target conditioning."""
+        self.__dict__.update(state)
+        self.__dict__.setdefault("sequential", True)
 
     def _get_encoded_predictors(self, current_predictors: List[str]) -> List[str]:
         """Get properly encoded predictor columns for sequential imputation.
@@ -820,7 +833,7 @@ class QRF(Imputer):
             variable_offset = (self.imputed_variables or []).index(variable)
         except ValueError:
             variable_offset = 0
-        return self.seed + variable_offset
+        return (int(self.seed) + variable_offset) % (2**32)
 
     def _create_model_for_variable(self, variable: str, **kwargs) -> Any:
         """Create the appropriate model (classifier or regressor) based on variable type."""

@@ -230,6 +230,11 @@ class ZeroInflatedImputer(Imputer):
             if not np.isfinite(sample_weight).all() or (sample_weight <= 0).any():
                 raise ValueError("Weights must be positive and finite")
 
+        self.categorical_targets = {}
+        self.boolean_targets = {}
+        self.numeric_targets = []
+        self.constant_targets = {}
+
         # Classify target variables as numeric / categorical / boolean /
         # constant using the base Imputer's detector.
         self.identify_target_types(
@@ -355,7 +360,10 @@ class ZeroInflatedImputer(Imputer):
             seed = (
                 None
                 if self.seed is None
-                else (self.seed + 3 * self.imputed_variables.index(variable) + offset)
+                else (
+                    int(self.seed) + 3 * self.imputed_variables.index(variable) + offset
+                )
+                % (2**32)
             )
             return self._fit_base_single(
                 X_train.loc[mask],

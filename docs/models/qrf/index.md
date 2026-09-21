@@ -4,7 +4,9 @@ The `QRF` model uses an ensemble of decision trees to predict different quantile
 
 ## Variable type support
 
-QRF handles both numerical and categorical variables. For numerical targets, it uses quantile regression forests. For categorical targets (strings, booleans, numerically-encoded categorical variables), it automatically uses a Random Forest Classifier. The model detects variable types internally and requires no manual specification.
+QRF uses quantile regression forests for numeric targets and a Random Forest Classifier for string, categorical and boolean targets. Declare numeric-coded categories with `fit(..., target_types={"status": "categorical"})`; integer counts and 0/1 integers otherwise remain numeric.
+
+`QRF()` chains multiple targets for joint stochastic draws. Use `QRF(sequential=False)` for explicit marginal quantiles conditional on the original predictors. Request `return_probs=True` to evaluate categorical targets. See the [migration guide](../../imputation-benchmarking/migration.md) for examples and weighted-distribution performance considerations.
 
 ## How it works
 

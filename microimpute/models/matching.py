@@ -17,6 +17,14 @@ def nnd_hotdeck_using_rpy2(*args, **kwargs):
     return match(*args, **kwargs)
 
 
+nnd_hotdeck_using_rpy2._microimpute_seeded_adapter = True
+
+
+def _is_seeded_adapter(matching_hotdeck: Callable) -> bool:
+    """Recognize native bridges without importing the optional R runtime."""
+    return bool(getattr(matching_hotdeck, "_microimpute_seeded_adapter", False))
+
+
 MatchingHotdeckFn = Callable[
     [
         Optional[pd.DataFrame],
@@ -83,10 +91,16 @@ class MatchingResults(ImputerResults):
         self.boolean_targets = boolean_targets or {}
         self.dummy_processor = dummy_processor
 
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Restore the donor-draw stream when loading historical results."""
+        self.__dict__.update(state)
+        if "_rng" not in state:
+            self._rng = np.random.default_rng(self.seed)
+
     def _matching_kwargs(self) -> Dict[str, Any]:
         """Advance a reproducible child-seed stream for the optional R bridge."""
         kwargs = dict(self.hyperparameters or {})
-        if self.matching_hotdeck is nnd_hotdeck_using_rpy2:
+        if _is_seeded_adapter(self.matching_hotdeck):
             kwargs["random_state"] = int(self._rng.integers(0, np.iinfo(np.int32).max))
         return kwargs
 
@@ -480,7 +494,7 @@ class Matching(Imputer):
                 predicted = []
                 for start in range(0, len(receiver), 1000):
                     chunk = receiver.iloc[start : start + 1000]
-                    if self.matching_hotdeck is nnd_hotdeck_using_rpy2:
+                    if _is_seeded_adapter(self.matching_hotdeck):
                         call_kwargs["random_state"] = int(
                             trial_rng.integers(0, np.iinfo(np.int32).max)
                         )

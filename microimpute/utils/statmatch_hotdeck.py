@@ -194,8 +194,22 @@ def nnd_hotdeck_using_rpy2(
 
             # If the mtc.ids array has 2 values per recipient
             # (recipient_idx, donor_idx pairs).
-            if len(mtc_array) == 2 * len(receiver):
-                donor_indices = mtc_array.reshape(-1, 2)[:, 1]
+            if mtc_array.shape == (len(receiver), 2) or (
+                mtc_array.ndim == 1 and mtc_array.size == 2 * len(receiver)
+            ):
+                # R vectors flatten a matrix column by column. Preserve the
+                # explicit recipient IDs: donation classes can reorder pairs.
+                pairs = mtc_array.reshape(len(receiver), 2, order="F")
+                recipient_indices = pairs[:, 0]
+                donor_indices = pairs[:, 1]
+                if not np.array_equal(
+                    np.sort(recipient_indices), np.arange(1, len(receiver) + 1)
+                ):
+                    raise ValueError(
+                        "StatMatch recipient indices must be a permutation of recipient rows"
+                    )
+                if not np.equal(donor_indices, np.floor(donor_indices)).all():
+                    raise ValueError("StatMatch donor indices must be integers")
                 # StatMatch uses 1-based indexing; valid donor indices are
                 # in [1, len(donor)]. Previously we silently
                 # modulo-wrapped out-of-range indices, masking real
@@ -213,7 +227,7 @@ def nnd_hotdeck_using_rpy2(
                         "recipient."
                     )
                 donor_indices_valid = donor_indices
-            elif len(mtc_array) == len(receiver):
+            elif mtc_array.ndim == 1 and len(mtc_array) == len(receiver):
                 # Flat 1-D array of donor indices, one per recipient.
                 out_of_range = (mtc_array < 1) | (mtc_array > len(donor))
                 if out_of_range.any():
@@ -296,3 +310,6 @@ def nnd_hotdeck_using_rpy2(
         raise RuntimeError(
             f"Statistical matching failed with unexpected error: {e}"
         ) from e
+
+
+nnd_hotdeck_using_rpy2._microimpute_seeded_adapter = True
