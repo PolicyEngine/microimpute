@@ -32,9 +32,9 @@ bibliography: paper.bib
 
 `microimpute` imputes variables from one survey onto another and, more importantly, makes the choice of imputation method an empirical question rather than a convention. Policy microdata routinely lacks variables an analysis needs: a labour force survey records earnings but not wealth, a household survey records spending but not assets. The standard remedy is to borrow the variable from a richer donor survey conditional on characteristics both surveys observe. Many methods do this, they disagree, and the disagreement matters for the resulting estimates.
 
-The package implements five approaches behind one `fit`/`predict` interface — statistical matching, ordinary least squares, quantile regression [@koenker1978regression], quantile regression forests [@meinshausen2006qrf], and mixture density networks [@bishop1994mdn] — and adds `autoimpute`, which cross-validates the available methods on the user's own data under five-fold cross-validation, optionally tuning hyperparameters, and selects by quantile loss for numerical targets or log loss for categorical ones. Statistical matching wraps R's `StatMatch` through `rpy2` and mixture density networks require PyTorch; both are optional extras, and `autoimpute` compares whichever methods are installed. Ordinary least squares and statistical matching accept survey weights directly, fitting by weighted least squares and by weighted donor selection respectively, so survey design need not be discarded at the imputation step; quantile regression and mixture density networks raise an explicit error rather than silently returning an unweighted fit.
+The package implements five approaches behind one `fit`/`predict` interface — statistical matching, ordinary least squares, quantile regression [@koenker1978regression], quantile regression forests [@meinshausen2006qrf], and mixture density networks [@bishop1994mdn] — and adds `autoimpute`, which cross-validates the available methods on the user's own data under five-fold cross-validation, optionally tuning hyperparameters, and selects by quantile loss for numerical targets or a categorical loss for categorical ones. Statistical matching wraps R's `StatMatch` through `rpy2` and mixture density networks require PyTorch; both are optional extras, and `autoimpute` compares whichever methods are installed. Ordinary least squares accepts survey weights directly and fits by weighted least squares; quantile regression forests accept a weight column, which is passed to the underlying forest. Quantile regression and mixture density networks raise an explicit error rather than silently returning an unweighted fit, so survey design is never discarded without the analyst knowing.
 
-The design follows from an empirical finding rather than a preference. Benchmarking across six further datasets, alongside the wealth application, shows no method dominating across all of them: quantile regression forests win where relationships are nonlinear, and matching better preserves marginal distributions because it draws from the donor pool directly, with ordinary least squares and quantile regression occupying middle ranks [@juaristi2026microimpute]. With six benchmark datasets, the rank differences are not robust to the inclusion or exclusion of any single dataset. If method performance is dataset-specific, the useful tool is one that measures it.
+The design follows from an empirical finding rather than a preference. Benchmarking across six further datasets, alongside the wealth application, shows no method dominating across all of them: quantile regression forests win where relationships are nonlinear, while matching achieves the lowest mean rank overall because it draws from the donor pool directly and better preserves marginal distributions, with ordinary least squares and quantile regression occupying middle ranks [@juaristi2026microimpute]. With six benchmark datasets, the rank differences are not robust to the inclusion or exclusion of any single dataset. If method performance is dataset-specific, the useful tool is one that measures it.
 
 # Statement of Need
 
@@ -42,25 +42,31 @@ Imputation choices are usually invisible in published analysis. A study reports 
 
 Analysts nonetheless tend to pick one method and keep it, because comparing methods is laborious. Each has a different API, different hyperparameters, and different output — a conditional mean from a regression, a donor record from matching, a predictive distribution from a forest. Building a like-for-like comparison means writing adapters and a cross-validation harness before any comparison happens, which is enough friction that the comparison usually is not done.
 
-`microimpute` removes that friction. Because every method returns quantiles of the conditional distribution rather than a point prediction, they can be scored on the same footing with quantile loss, and the comparison is a function call rather than a project. The package also makes the imputation reproducible: hyperparameter tuning, cross-validation, and selection run from a single entry point that records what was chosen.
+`microimpute` removes that friction. Because the methods are expressed as predictive distributions rather than point predictions, they are scored on the same footing with quantile loss across a common grid, and the comparison is a function call rather than a project. The package also makes the imputation reproducible: hyperparameter tuning, cross-validation, and selection run from a single entry point that records what was chosen.
 
 # State of the Field
 
-| Tool | Multiple methods | Automated selection | Quantile-based evaluation | Survey weights | Language |
-|---|---|---|---|---|---|
-| `microimpute` | 5 (3 without optional extras) | Yes | Yes | Partly | Python |
-| `scikit-learn` `IterativeImputer` [@pedregosa2011scikit] | 1 family | No | No | No | Python |
-| `statsmodels` MICE [@seabold2010statsmodels] | 1 family | No | No | No | Python |
-| R `mice` [@vanbuuren2011mice] | Several | No | No | No | R |
-| R `StatMatch` [@dorazio2022statmatch] | Matching | No | No | Yes | R |
+\renewcommand{\arraystretch}{1.5}
 
-`scikit-learn` and `statsmodels` treat imputation as filling missing values within a dataset, which is a different problem from borrowing a variable across two surveys with no overlapping records. R's `mice` is the reference implementation for multiple imputation by chained equations, and `StatMatch` for statistical matching, but neither compares across method families or selects between them, and using both means working in two idioms.
+|  | `microimpute` | `scikit-learn` | `statsmodels` | R `mice` | R `StatMatch` |
+|---|---|---|---|---|---|
+| Multiple methods | 5 | 1 family | 1 family | Several | Matching |
+| Automated selection | Yes | No | No | No | No |
+| Quantile-based evaluation | Yes | No | No | No | No |
+| Survey weights | Partly | No | No | No | Partly |
+| Language | Python | Python | Python | R | R |
+
+\renewcommand{\arraystretch}{1.0}
+
+Three of `microimpute`'s five methods install with the package; statistical matching and mixture density networks are optional extras. `scikit-learn`'s `IterativeImputer` [@pedregosa2011scikit] and `statsmodels`' MICE [@seabold2010statsmodels] treat imputation as filling missing values within a dataset, which is a different problem from borrowing a variable across two surveys with no overlapping records. R's `mice` [@vanbuuren2011mice] is the reference implementation for multiple imputation by chained equations, and `StatMatch` [@dorazio2022statmatch] for statistical matching — the latter supporting donor weights in its random and rank hot-deck routines, though not in its distance-based nearest-neighbour hot deck — but neither compares across method families or selects between them, and using both means working in two idioms.
 
 The gap `microimpute` fills is comparison. Its contribution is not a new estimator but a harness that makes existing estimators commensurable on a user's data, with an evaluation metric appropriate to distributional imputation.
 
 # Software Design
 
-Every model implements `fit(X_train, predictors, imputed_variables, weight_col=None)` and `predict(X_test, quantiles)`, returning quantiles of the conditional distribution. That uniformity is what makes the comparison possible: a regression and a donor-matching procedure are not obviously comparable until both are expressed as predictive distributions. Imputation is framed throughout as a donor-to-receiver problem: the donor survey observes both the predictors and the target variables, the receiver survey observes only the predictors, and the two share no records. Categorical predictors are encoded and numeric predictors standardised consistently across the two frames, so a model fitted on the donor can be applied to the receiver without the analyst reconciling schemas by hand.
+Every model implements `fit(X_train, predictors, imputed_variables, weight_col=None)` and `predict(X_test, quantiles)`, returning quantiles of the conditional distribution. That uniformity is what makes the comparison possible: a regression and a donor-matching procedure are not obviously comparable until both are expressed as predictive distributions. Imputation is framed throughout as a donor-to-receiver problem: the donor survey observes both the predictors and the target variables, the receiver survey observes only the predictors, and the two share no records. Categorical predictors are encoded consistently across the two frames, so a model fitted on the donor can be applied to the receiver without the analyst reconciling schemas by hand. Optional numeric transformations — log, inverse hyperbolic sine and standardisation — are available for both frames.
+
+![How `microimpute` works. A donor survey observing both the predictors and the targets, a receiver observing only the predictors, and a set of candidate methods feed a cross-validated comparison, which returns the imputed variables alongside the losses that chose the method.](architecture.png){width="100%"}
 
 
 ```python
@@ -78,7 +84,7 @@ result = autoimpute(
 
 Alongside the imputers, the package provides diagnostics for the step that usually determines imputation quality more than the estimator does: the choice of predictors. `compute_predictor_correlations` reports Pearson and Spearman correlations among candidate predictors and mutual information between each predictor and each target, while `leave_one_out_analysis` and `progressive_predictor_inclusion` measure contribution by loss: the first by the degradation when a predictor is dropped, the second by building the predictor set up one addition at a time to find an ordering and a subset. A predictor set can then be defended rather than assumed. The zero-inflated wrapper composes a model for the probability of a zero with a model for the positive part, which matters for variables such as asset holdings where a large share of the population is at zero.
 
-Results are inspectable rather than final: the package reports per-method losses so an analyst can see how close the decision was, and a companion web dashboard, distributed separately, renders the comparison for exploration.
+Results are inspectable rather than final: the package reports per-method losses so an analyst can see how close the decision was, and a companion web dashboard renders the comparison for exploration.
 
 # Research Impact Statement
 
