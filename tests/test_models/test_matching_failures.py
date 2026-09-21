@@ -165,9 +165,7 @@ def test_small_prediction_reports_missing_targets_only(matching_class, caplog):
 
 
 @pytest.mark.parametrize("failed_rows", [0, 1])
-def test_prediction_frames_include_failure_metadata(
-    matching_class, failed_rows
-):
+def test_prediction_frames_include_failure_metadata(matching_class, failed_rows):
     """Every returned frame exposes failures without changing values or row labels."""
 
     def backend(**kwargs):

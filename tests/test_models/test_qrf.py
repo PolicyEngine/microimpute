@@ -749,7 +749,7 @@ def test_qrf_all_variables_missing() -> None:
 def test_qrf_error_handling() -> None:
     """Test error handling in QRF model."""
     # Test with empty data
-    with pytest.raises(Exception):
+    with pytest.raises(Exception, match=r"must not be None or empty"):
         model = QRF()
         model.fit(pd.DataFrame(), predictors=[], imputed_variables=[])
 
