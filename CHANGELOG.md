@@ -1,3 +1,15 @@
+## [3.1.3] - 2026-09-21
+
+### Fixed
+
+- Include the unmatched-record count in the default Matching prediction frame's metadata, consistently with explicit-quantile results.
+- Per-variable QRF models now derive distinct seeds, so variables imputed together no longer share one random quantile per row and come out comonotonic. `QRF` also accepts a `seed` argument.
+  Derived seeds stay within the supported uint32 range and are used consistently during numeric and classification tuning and target-specific subsampling.
+- Matching hyperparameter tuning now prunes a trial when matching fails, instead of silently scoring it as if it had predicted the training mean, and reports when no trial succeeds. Predictions report how many records could not be matched and reset the failure count on every returned result, including small unchunked predictions.
+- The wheel now declares its subpackages properly instead of sweeping the source tree in as package data, so a build from a working tree containing compiled bytecode or stray files no longer ships them. Adds `py.typed`, the full author list, per-version classifiers and project URLs.
+- The test suite now runs cleanly without `rpy2` or `pytorch-tabular` instead of erroring, and five tests that could pass without asserting anything now assert. `ZeroInflatedImputer` is exported from `microimpute` and `microimpute.models`. Keeps the legacy `VALID_YEARS` and `DEFAULT_MODEL_PARAMS` imports, and corrects the `Imputer.fit` weight docstring.
+
+
 ## [3.1.2] - 2026-09-21
 
 ### Fixed
