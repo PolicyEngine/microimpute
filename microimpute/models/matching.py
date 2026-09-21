@@ -90,6 +90,7 @@ class MatchingResults(ImputerResults):
         self.categorical_targets = categorical_targets or {}
         self.boolean_targets = boolean_targets or {}
         self.dummy_processor = dummy_processor
+        self.n_failed_records = 0
 
     def __setstate__(self, state: Dict[str, Any]) -> None:
         """Restore the donor-draw stream when loading historical results."""
@@ -121,12 +122,23 @@ class MatchingResults(ImputerResults):
         Returns:
             DataFrame of donor draws, with n_failed_records in its attrs.
 
+        Side effects:
+            Sets ``self.n_failed_records`` to the number of recipient records
+            that could not be matched and are NaN in the result, and mirrors it
+            on ``result.attrs["n_failed_records"]``. It is reset to 0 on entry,
+            so it always describes the most recent call. Matching runs
+            single-threaded (``autoimpute`` forces ``n_jobs=1`` when a Matching
+            model is present), so concurrent calls on one fitted object would
+            race on it.
+
         Raises:
             ValueError: If model is not properly set up or
                 input data is invalid.
             RuntimeError: If matching or prediction fails.
             NotImplementedError: If quantiles or probabilities are requested.
         """
+        # Clear the previous call's failure count before validating this request.
+        self.n_failed_records = 0
         if quantiles is not None:
             raise NotImplementedError(
                 "Matching returns donor draws, not conditional quantiles. "
@@ -308,6 +320,12 @@ class MatchingResults(ImputerResults):
         )
         self.n_failed_records = int(output.isna().any(axis=1).sum())
         output.attrs["n_failed_records"] = self.n_failed_records
+        if self.n_failed_records:
+            self.logger.warning(
+                f"{self.n_failed_records} of {len(output)} records "
+                f"({self.n_failed_records / len(output):.1%}) could not be "
+                "matched and are NaN in the result."
+            )
         return output
 
 
@@ -472,7 +490,12 @@ class Matching(Imputer):
         weights = fixed_kwargs.pop("donor_sample_weight", None)
         discrete_targets = set(categorical_targets or {}) | set(boolean_targets or {})
 
+        # Keeps the most recent underlying failure so an all-pruned study can
+        # report why, rather than only that nothing succeeded.
+        last_trial_error: Optional[BaseException] = None
+
         def objective(trial: optuna.Trial) -> float:
+            nonlocal last_trial_error
             # NND.hotdeck's k controls donor re-use only under constrained
             # matching; it is not a nearest-neighbor count. Do not tune a no-op.
             params = {
@@ -515,6 +538,7 @@ class Matching(Imputer):
                             fused[imputed_variables].reset_index(drop=True)
                         )
                     except Exception as error:
+                        last_trial_error = error
                         self.logger.warning(
                             f"Matching failed on fold {fold_idx} chunk {start}: {error}. Pruning trial."
                         )
@@ -545,7 +569,10 @@ class Matching(Imputer):
         )
         study.optimize(objective, n_trials=10)
         if not any(t.state == optuna.trial.TrialState.COMPLETE for t in study.trials):
-            raise ValueError("No matching hyperparameter trial succeeded")
+            message = "No matching hyperparameter trial succeeded"
+            if last_trial_error is not None:
+                message += f". Last error: {last_trial_error}"
+            raise ValueError(message)
         self.logger.info(
             f"Matching best normalized donor-draw error: {study.best_value}"
         )
