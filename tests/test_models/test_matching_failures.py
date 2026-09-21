@@ -162,3 +162,40 @@ def test_small_prediction_reports_missing_targets_only(matching_class, caplog):
     assert prediction.y.isna().sum() == 1
     assert fitted.n_failed_records == 1
     assert "1 of 3 records (33.3%) could not be matched" in caplog.text
+
+
+@pytest.mark.parametrize("quantiles", [None, [0.25, 0.75]])
+@pytest.mark.parametrize("failed_rows", [0, 1])
+def test_prediction_frames_include_failure_metadata(
+    matching_class, quantiles, failed_rows
+):
+    """Every returned frame exposes failures without changing values or row labels."""
+
+    def backend(**kwargs):
+        result, _ = exact_backend(**kwargs)
+        if failed_rows:
+            result.iloc[-1, result.columns.get_loc("y")] = np.nan
+        return result, result.copy()
+
+    fitted = matching_class(backend).fit(donor_data(), ["x"], ["y"])
+    receiver = pd.DataFrame({"x": [1.0, 3.0, 5.0]}, index=[20, 10, 30])
+    result = fitted.predict(receiver, quantiles=quantiles)
+    frames = list(result.values()) if isinstance(result, dict) else [result]
+    expected = 2 * receiver.x + 1
+    if failed_rows:
+        expected.iloc[-1] = np.nan
+    for frame in frames:
+        assert frame.attrs["n_failed_records"] == failed_rows
+        assert frame.index.equals(receiver.index)
+        np.testing.assert_array_equal(frame.y, expected)
+    assert fitted.n_failed_records == failed_rows
+
+    fitted.matching_hotdeck = exact_backend
+    next_result = fitted.predict(receiver, quantiles=quantiles)
+    next_frames = (
+        list(next_result.values()) if isinstance(next_result, dict) else [next_result]
+    )
+    for frame in next_frames:
+        assert frame.attrs["n_failed_records"] == 0
+    assert fitted.n_failed_records == 0
+    assert all(frame.attrs["n_failed_records"] == failed_rows for frame in frames)

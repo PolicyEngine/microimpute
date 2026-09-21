@@ -420,6 +420,7 @@ class MatchingResults(ImputerResults):
                             prob_results[variable] = prob_df
 
                 imputations[q_default] = imputed_df
+                imputed_df.attrs["n_failed_records"] = self.n_failed_records
 
                 # Add probabilities to results if requested
                 if return_probs and prob_results:
