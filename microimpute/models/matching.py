@@ -689,7 +689,7 @@ class Matching(Imputer):
                                     f"{fold_idx} chunk {i}: {e}. Pruning trial."
                                 )
                                 last_trial_error = e
-                            raise optuna.TrialPruned() from e
+                                raise optuna.TrialPruned() from e
 
                         # Combine chunk results
                         y_pred = np.concatenate(y_pred_chunks)
