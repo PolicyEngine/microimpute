@@ -66,7 +66,7 @@ The gap `microimpute` fills is comparison. Its contribution is not a new estimat
 
 Every model implements `fit(X_train, predictors, imputed_variables, weight_col=None)` and `predict(X_test, quantiles)`, returning quantiles of the conditional distribution. That uniformity is what makes the comparison possible: a regression and a donor-matching procedure are not obviously comparable until both are expressed as predictive distributions. Imputation is framed throughout as a donor-to-receiver problem: the donor survey observes both the predictors and the target variables, the receiver survey observes only the predictors, and the two share no records. Categorical predictors are encoded consistently across the two frames, so a model fitted on the donor can be applied to the receiver without the analyst reconciling schemas by hand. Optional numeric transformations — log, inverse hyperbolic sine and standardisation — are available for both frames.
 
-![How `microimpute` works. A donor survey observing both the predictors and the targets, a receiver observing only the predictors, and a set of candidate methods feed a cross-validated comparison, which returns the imputed variables alongside the losses that chose the method.](architecture.png){width="100%"}
+![How `microimpute` works. A donor survey observing both the predictors and the targets, a receiver observing only the predictors, and a set of candidate methods feed a cross-validated comparison, which returns the imputed variables alongside the losses that chose the method.](architecture.png){width="62%"}
 
 
 ```python
