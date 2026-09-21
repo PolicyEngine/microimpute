@@ -35,7 +35,7 @@ dependencies = [
 dev = [
     "pytest>=8.0.0,<10.0.0",
     "pytest-cov>=6.0.0,<8.0.0",
-    "ruff>=0.9.0",
+    "ruff>=0.16.0,<0.17.0",
     "mypy>=1.2.3,<2.0.0",
     "build>=1.2.0,<2.0.0",
     "towncrier>=24.8.0",
@@ -101,3 +101,9 @@ showcontent = true
 directory = "removed"
 name = "Removed"
 showcontent = true
+
+[tool.ruff]
+# Documentation is prose, not a lint surface. ruff 0.16.0 began formatting
+# Python inside markdown code blocks, which reformatted five docs files that
+# nobody had edited and turned the Lint job red on an untouched checkout.
+extend-exclude = ["docs/**/*.md"]
