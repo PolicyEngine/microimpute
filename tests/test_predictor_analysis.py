@@ -12,11 +12,105 @@ import pytest
 from sklearn.datasets import make_classification, make_regression
 
 from microimpute.evaluations.predictor_analysis import (
+    _compute_losses_from_predictions,
+    _evaluate_model_performance,
     compute_predictor_correlations,
     leave_one_out_analysis,
     progressive_predictor_inclusion,
 )
 from microimpute.models import OLS, QRF, QuantReg
+
+
+@pytest.mark.parametrize("truth", [["a", "a"], ["a", "b"]])
+def test_predictor_analysis_constant_categorical_forecast(truth):
+    """A constant training target has an exact point-mass probability forecast."""
+    from sklearn.metrics import log_loss
+
+    training = pd.DataFrame({"x": np.arange(10.0), "label": ["a"] * 10})
+    testing = pd.DataFrame({"x": [1.0, 2.0], "label": truth})
+    result = _evaluate_model_performance(
+        training, testing, ["x"], ["label"], QRF, None, [0.5], 42
+    )
+    expected = log_loss(truth, np.array([[1.0, 0.0], [1.0, 0.0]]), labels=["a", "b"])
+    assert result["log_loss"] == pytest.approx(expected, abs=1e-12)
+
+
+def test_predictor_analysis_scores_real_probabilities():
+    """Equal-probability binary forecasts score log(2), regardless of hard labels."""
+    predictions = {
+        0.5: pd.DataFrame({"choice": ["a", "a", "a", "a"]}),
+        "probabilities": {
+            "choice": {
+                "probabilities": np.full((4, 2), 0.5),
+                "classes": np.array(["b", "a"]),
+            }
+        },
+    }
+    actual = _compute_losses_from_predictions(
+        predictions, pd.DataFrame({"choice": ["a", "b", "a", "b"]}), ["choice"], [0.5]
+    )
+    assert actual["log_loss"] == pytest.approx(np.log(2))
+
+
+def test_predictor_analysis_refuses_missing_probabilities():
+    with pytest.raises(ValueError, match="probabilit"):
+        _compute_losses_from_predictions(
+            {0.5: pd.DataFrame({"choice": ["a", "a"]})},
+            pd.DataFrame({"choice": ["a", "b"]}),
+            ["choice"],
+            [0.5],
+        )
+
+
+@pytest.mark.parametrize("n", [200, 1000, 5000])
+def test_normalized_mi_identical_continuous_variables(n):
+    """Identical discretizations have MI equal to their entropy, at any size."""
+    x = np.random.default_rng(3).normal(size=n)
+    result = compute_predictor_correlations(
+        pd.DataFrame({"a": x, "b": x, "target": x}),
+        ["a", "b"],
+        ["target"],
+        method="mutual_info",
+    )
+    assert result["mutual_info"].loc["a", "b"] == pytest.approx(1.0)
+    assert result["predictor_target_mi"].loc["a", "target"] == pytest.approx(1.0)
+
+
+def test_normalized_mi_categorical_independence_and_constant():
+    """A balanced Cartesian product is independent; constants convey no information."""
+    data = pd.DataFrame(
+        {
+            "a": ["a", "a", "b", "b"] * 30,
+            "b": ["x", "y", "x", "y"] * 30,
+            "copy": ["A", "A", "B", "B"] * 30,
+            "constant": [1.0] * 120,
+        }
+    )
+    matrix = compute_predictor_correlations(data, list(data), method="mutual_info")[
+        "mutual_info"
+    ]
+    assert matrix.loc["a", "copy"] == pytest.approx(1.0)
+    assert matrix.loc["a", "b"] == pytest.approx(0.0, abs=1e-12)
+    assert (matrix.loc["constant"] == 0.0).all()
+    np.testing.assert_allclose(matrix, matrix.T)
+
+
+def test_normalized_mi_pairwise_missing_and_column_order():
+    data = pd.DataFrame(
+        {
+            "x": [1.0, 2.0, 3.0, 4.0, np.nan],
+            "y": [1.0, 2.0, 3.0, 4.0, 90.0],
+            "group": ["a", "a", "b", "b", None],
+        }
+    )
+    first = compute_predictor_correlations(data, list(data), method="mutual_info")[
+        "mutual_info"
+    ]
+    second = compute_predictor_correlations(
+        data, list(reversed(data.columns)), method="mutual_info"
+    )["mutual_info"]
+    assert first.loc["x", "y"] == pytest.approx(1.0)
+    np.testing.assert_allclose(first, second.loc[first.index, first.columns])
 
 
 @pytest.fixture

@@ -36,6 +36,7 @@ project:
         - file: imputation-benchmarking/index
           children:
             - file: imputation-benchmarking/preprocessing
+            - file: imputation-benchmarking/migration
             - file: imputation-benchmarking/cross-validation
             - file: imputation-benchmarking/metrics
             - file: imputation-benchmarking/visualizations

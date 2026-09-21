@@ -67,13 +67,8 @@ def data_with_edge_cases() -> pd.DataFrame:
 ALL_IMPUTER_MODELS = [OLS, QuantReg, QRF]
 CATEGORICAL_MODELS = [OLS, QRF]
 
-try:
-    from microimpute.models.matching import Matching
-
-    ALL_IMPUTER_MODELS.append(Matching)
-    CATEGORICAL_MODELS.append(Matching)
-except ImportError:
-    pass
+# These shared tests require conditional quantiles/probabilities. Matching's
+# donor-draw contract is exercised in test_matching[_correctness].py.
 
 try:
     from microimpute.models.mdn import MDN
@@ -265,7 +260,7 @@ def test_imputation_categorical_targets(
     assert pd.api.types.is_string_dtype(predictions["categorical"])
 
     # Test probability predictions for models that support it
-    if model_class.__name__ in ["OLS", "QRF", "Matching"]:
+    if model_class.__name__ in ["OLS", "QRF"]:
         # Get predictions with probabilities using quantiles
         # (this ensures consistent return format across models)
         predictions_with_probs = fitted_model.predict(
@@ -395,7 +390,8 @@ def test_multiple_targets(
 
     X_train, X_test = preprocess_data(data)
 
-    model = model_class()
+    # Marginal quantiles need independent targets; sequential QRF supports joint draws.
+    model = model_class(sequential=False) if model_class is QRF else model_class()
 
     if model_class.__name__ == "QuantReg":
         fitted = model.fit(X_train, predictors, imputed_variables, quantiles=[0.5])
@@ -719,21 +715,15 @@ def test_missing_predictors_in_test(model_class: Type[Imputer]) -> None:
     else:
         fitted = model.fit(train_data, ["x1", "x2"], ["y"])
 
-    # Should raise an error when predictor is missing
-    with pytest.raises(Exception):
-        predictions = fitted.predict(test_data, quantiles=[0.5])
+    # All fitted models validate missing predictors before calling a backend.
+    with pytest.raises(ValueError, match="Missing predictor column: x2"):
+        fitted.predict(test_data, quantiles=[0.5])
 
 
 # === Reproducibility Tests ===
 
 
 _REPRODUCIBILITY_MODELS = [OLS, QuantReg, QRF]
-try:
-    from microimpute.models.matching import Matching as _Matching_for_repro
-
-    _REPRODUCIBILITY_MODELS.append(_Matching_for_repro)
-except ImportError:
-    pass
 
 
 @pytest.mark.parametrize(

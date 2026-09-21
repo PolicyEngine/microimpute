@@ -21,9 +21,9 @@ def test_is_boolean_variable_true_for_bool_dtype() -> None:
     assert VariableTypeDetector.is_boolean_variable(s) is True
 
 
-def test_is_boolean_variable_true_for_int_0_1() -> None:
+def test_is_boolean_variable_false_for_int_0_1() -> None:
     s = pd.Series([0, 1, 0, 1], dtype=int)
-    assert VariableTypeDetector.is_boolean_variable(s) is True
+    assert VariableTypeDetector.is_boolean_variable(s) is False
 
 
 def test_is_boolean_variable_false_for_float_0_1() -> None:

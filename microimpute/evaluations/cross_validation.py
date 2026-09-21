@@ -22,12 +22,19 @@ from microimpute.comparisons.validation import (
     validate_quantiles,
 )
 from microimpute.config import QUANTILES, RANDOM_STATE, VALIDATE_CONFIG
+from microimpute.utils.data import (
+    preprocess_data,
+    apply_transformations,
+    reverse_transformations,
+)
+from microimpute.utils.type_handling import declare_target_types
 
 try:
     from microimpute.models.matching import Matching
 except ImportError:  # optional dependency
     Matching = None
 from microimpute.models.quantreg import QuantReg
+from microimpute.models.imputer import create_distributional_model
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +50,9 @@ def _process_single_fold(
     model_hyperparams: Optional[dict],
     tune_hyperparameters: bool,
     variable_metrics: Dict[str, str],
+    preprocessing: Optional[Dict[str, str]] = None,
+    target_types: Optional[Dict[str, str]] = None,
+    random_state: int = RANDOM_STATE,
 ) -> Tuple[
     int,
     Dict,
@@ -58,13 +68,22 @@ def _process_single_fold(
     # Split data for this fold
     train_data = data.iloc[train_idx]
     test_data = data.iloc[test_idx]
+    # The sampling mass must retain its original units even when the same
+    # column is transformed as a predictor. Its index also survives fit filters.
+    fit_weights = train_data[weight_col].copy() if weight_col is not None else None
 
     # Store actual values for this fold organized by variable
     train_y = {var: train_data[var].values for var in imputed_variables}
     test_y = {var: test_data[var].values for var in imputed_variables}
 
-    # Instantiate and fit the model
-    model = model_class()
+    transform_params = {}
+    if preprocessing:
+        train_data, transform_params = preprocess_data(
+            train_data, full_data=True, **_preprocessing_kwargs(preprocessing)
+        )
+        test_data = apply_transformations(test_data, transform_params)
+    # Instantiate with the caller's seed for fitting and prediction sampling.
+    model = create_distributional_model(model_class, seed=random_state)
     fold_tuned_params = None
 
     # Fit model with appropriate parameters
@@ -74,10 +93,11 @@ def _process_single_fold(
         train_data,
         predictors,
         imputed_variables,
-        weight_col,
+        fit_weights,
         quantiles,
         model_hyperparams,
         tune_hyperparameters,
+        target_types,
     )
 
     # Check if model fitting failed (incompatible with variable types)
@@ -106,6 +126,25 @@ def _process_single_fold(
         fold_test_imputations = fitted_model.predict(test_data, quantiles)
         fold_train_imputations = fitted_model.predict(train_data, quantiles)
 
+    if has_categorical:
+        for predictions, frame in [
+            (fold_test_imputations, test_data),
+            (fold_train_imputations, train_data),
+        ]:
+            probabilities = predictions.setdefault("probabilities", {})
+            for variable, info in model.constant_targets.items():
+                if variable_metrics[variable] == "log_loss":
+                    probabilities[variable] = {
+                        "probabilities": np.ones((len(frame), 1)),
+                        "classes": np.asarray([info["value"]]),
+                    }
+    if transform_params:
+        for predictions in [fold_test_imputations, fold_train_imputations]:
+            for quantile in quantiles:
+                predictions[quantile] = reverse_transformations(
+                    predictions[quantile], transform_params
+                )
+
     return (
         fold_idx,
         fold_test_imputations,
@@ -122,110 +161,58 @@ def _fit_model_for_fold(
     train_data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    weight_col: Optional[str],
+    weight_col: Optional[Union[str, np.ndarray, pd.Series]],
     quantiles: List[float],
     model_hyperparams: Optional[dict],
     tune_hyperparameters: bool,
+    target_types: Optional[Dict[str, str]] = None,
 ) -> Tuple[Any, Optional[dict]]:
     """Fit a model for a single fold with appropriate parameters.
 
     Returns None for fitted_model if the model cannot handle the variable types.
     """
     model_name = model_class.__name__
-    fold_tuned_params = None
-
-    # Special handling for QuantReg with categorical variables
+    if model_name == "Matching":
+        log.warning(
+            "Matching provides donor samples, not quantiles or class probabilities; skipping distributional scoring"
+        )
+        return None, None
+    metric_types = {
+        var: ("quantile_loss" if target_types[var] == "numeric" else "log_loss")
+        if target_types and var in target_types
+        else get_metric_for_variable_type(train_data[var], var)
+        for var in imputed_variables
+    }
+    if model_name == "QuantReg" and "log_loss" in metric_types.values():
+        log.warning("QuantReg does not support categorical targets; skipping")
+        return None, None
+    params = dict(model_hyperparams or {})
+    params["target_types"] = target_types
     if model_name == "QuantReg":
-        # Check if any imputed variables are categorical
-        from microimpute.comparisons.metrics import (
-            get_metric_for_variable_type,
-        )
+        params["quantiles"] = quantiles
+    if tune_hyperparameters and model_name in ["QRF", "MDN"]:
+        params["tune_hyperparameters"] = True
+    fitted = model.fit(
+        train_data, predictors, imputed_variables, weight_col=weight_col, **params
+    )
+    if isinstance(fitted, tuple):
+        return fitted
+    return fitted, None
 
-        for var in imputed_variables:
-            if get_metric_for_variable_type(train_data[var], var) == "log_loss":
-                log.warning(
-                    f"QuantReg does not support categorical variable '{var}'. "
-                    f"Skipping QuantReg for this fold."
-                )
-                return None, None
 
-    # Handle model-specific hyperparameters
-    if model_hyperparams:
-        try:
-            log.info(f"Fitting {model_name} with hyperparameters: {model_hyperparams}")
-            fitted_model = model.fit(
-                X_train=train_data,
-                predictors=predictors,
-                imputed_variables=imputed_variables,
-                weight_col=weight_col,
-                **model_hyperparams,
-            )
-        except ValueError as e:
-            # Check if it's due to categorical incompatibility
-            if "QuantReg does not support categorical" in str(e):
-                log.warning(f"{model_name} incompatible with variable types: {str(e)}")
-                return None, None
-            raise e
-        except TypeError as e:
-            log.warning(
-                f"Invalid hyperparameters for {model_name}, using defaults: {str(e)}"
-            )
-            fitted_model = model.fit(
-                X_train=train_data,
-                predictors=predictors,
-                imputed_variables=imputed_variables,
-                weight_col=weight_col,
-            )
-            raise ValueError(f"Invalid hyperparameters for {model_name}") from e
-
-    # Handle QuantReg which needs explicit quantiles
-    elif model_class == QuantReg:
-        try:
-            log.info(f"Fitting QuantReg model with explicit quantiles")
-            fitted_model = model.fit(
-                train_data,
-                predictors,
-                imputed_variables,
-                weight_col=weight_col,
-                quantiles=quantiles,
-            )
-        except ValueError as e:
-            if "QuantReg does not support categorical" in str(e):
-                log.warning(f"QuantReg incompatible with variable types: {str(e)}")
-                return None, None
-            raise e
-
-    # Handle hyperparameter tuning for QRF, Matching, and MDN
-    elif tune_hyperparameters and model_name in ["QRF", "Matching", "MDN"]:
-        log.info(f"Tuning {model_name} hyperparameters during fitting")
-        fitted_model, fold_tuned_params = model.fit(
-            train_data,
-            predictors,
-            imputed_variables,
-            weight_col=weight_col,
-            tune_hyperparameters=True,
-        )
-
-    # Default fitting
-    else:
-        try:
-            log.info(f"Fitting {model_name} model with default parameters")
-            fitted_model = model.fit(
-                train_data,
-                predictors,
-                imputed_variables,
-                weight_col=weight_col,
-            )
-        except ValueError as e:
-            if (
-                "QuantReg does not support categorical" in str(e)
-                and model_name == "QuantReg"
-            ):
-                log.warning(f"QuantReg incompatible with variable types: {str(e)}")
-                return None, None
-            raise e
-
-    return fitted_model, fold_tuned_params
+def _preprocessing_kwargs(preprocessing: Dict[str, str]) -> dict:
+    valid = {
+        "normalize": "normalize",
+        "log": "log_transform",
+        "asinh": "asinh_transform",
+    }
+    if set(preprocessing.values()) - set(valid):
+        raise ValueError("Unknown preprocessing transformation")
+    return {
+        argument: [col for col, transform in preprocessing.items() if transform == name]
+        or False
+        for name, argument in valid.items()
+    }
 
 
 def _compute_fold_loss_by_metric(
@@ -278,70 +265,32 @@ def _compute_fold_loss_by_metric(
             result["quantile_loss"]["variables"].append(var)
 
         else:  # log_loss
-            # Use probabilities if available, otherwise use class predictions
-            if test_probabilities and test_probabilities[var][fold_idx] is not None:
-                # Get probabilities and classes for this variable
-                test_prob_info = test_probabilities[var][fold_idx]
-                train_prob_info = train_probabilities[var][fold_idx]
-
-                if (
-                    isinstance(test_prob_info, dict)
-                    and "probabilities" in test_prob_info
-                ):
-                    # Extract probabilities and classes
-                    test_probs = test_prob_info["probabilities"]
-                    train_probs = train_prob_info["probabilities"]
-                    model_classes = test_prob_info["classes"]
-
-                    # Import the ordering function
-                    from microimpute.comparisons.metrics import (
-                        order_probabilities_alphabetically,
+            if not test_probabilities or test_probabilities[var][fold_idx] is None:
+                raise ValueError(
+                    f"Log loss for '{var}' requires predicted probabilities"
+                )
+            losses = []
+            labels = np.unique(np.concatenate([test_y_var, train_y_var]))
+            for truth, info in [
+                (test_y_var, test_probabilities[var][fold_idx]),
+                (train_y_var, train_probabilities[var][fold_idx]),
+            ]:
+                classes = np.asarray(info["classes"])
+                all_labels = np.union1d(labels, classes)
+                probabilities = np.zeros((len(truth), len(all_labels)))
+                for idx, label in enumerate(classes):
+                    probabilities[:, np.flatnonzero(all_labels == label)[0]] = (
+                        np.asarray(info["probabilities"])[:, idx]
                     )
-
-                    # Order probabilities alphabetically
-                    test_probs_ordered, alphabetical_labels = (
-                        order_probabilities_alphabetically(test_probs, model_classes)
-                    )
-                    train_probs_ordered, _ = order_probabilities_alphabetically(
-                        train_probs, model_classes
-                    )
-
-                    # Compute log loss with properly ordered probabilities
-                    _, test_loss = compute_loss(
-                        test_y_var,
-                        test_probs_ordered,
-                        "log_loss",
-                        labels=alphabetical_labels,
-                    )
-                    _, train_loss = compute_loss(
-                        train_y_var,
-                        train_probs_ordered,
-                        "log_loss",
-                        labels=alphabetical_labels,
-                    )
+                if len(all_labels) == 1:
+                    losses.append(0.0)
                 else:
-                    # Fallback for old format or if probabilities not available
-                    log.warning(
-                        f"Probabilities not in expected format for variable {var}, using class predictions"
+                    losses.append(
+                        compute_loss(
+                            truth, probabilities, "log_loss", labels=all_labels
+                        )[1]
                     )
-                    labels = np.unique(np.concatenate([test_y_var, train_y_var]))
-                    labels = np.sort(labels)  # Ensure alphabetical order
-                    _, test_loss = compute_loss(
-                        test_y_var, test_pred_var, "log_loss", labels=labels
-                    )
-                    _, train_loss = compute_loss(
-                        train_y_var, train_pred_var, "log_loss", labels=labels
-                    )
-            else:
-                # Fall back to using class predictions (less accurate)
-                labels = np.unique(np.concatenate([test_y_var, train_y_var]))
-                labels = np.sort(labels)  # Ensure alphabetical order
-                _, test_loss = compute_loss(
-                    test_y_var, test_pred_var, "log_loss", labels=labels
-                )
-                _, train_loss = compute_loss(
-                    train_y_var, train_pred_var, "log_loss", labels=labels
-                )
+            test_loss, train_loss = losses
 
             if result["log_loss"]["test"] is None:
                 result["log_loss"]["test"] = []
@@ -459,6 +408,8 @@ def cross_validate_model(
     random_state: Optional[int] = RANDOM_STATE,
     model_hyperparams: Optional[dict] = None,
     tune_hyperparameters: Optional[bool] = False,
+    preprocessing: Optional[Dict[str, str]] = None,
+    target_types: Optional[Dict[str, str]] = None,
 ) -> Union[Dict[str, Any], Tuple[Dict[str, Any], Dict]]:
     """Perform cross-validation with dual metric support.
 
@@ -491,8 +442,10 @@ def cross_validate_model(
     validate_columns_exist(data, imputed_variables, "data")
     if weight_col:
         validate_columns_exist(data, [weight_col], "data")
-    if quantiles:
-        validate_quantiles(quantiles)
+    quantiles = QUANTILES if quantiles is None else quantiles
+    validate_quantiles(quantiles)
+
+    data = declare_target_types(data, imputed_variables, target_types)
 
     # Set up parallel processing
     n_jobs = 1 if (Matching is not None and model_class == Matching) else -1
@@ -530,6 +483,9 @@ def cross_validate_model(
                     model_hyperparams,
                     tune_hyperparameters,
                     variable_metrics,
+                    preprocessing,
+                    target_types,
+                    random_state,
                 )
                 for i, fold_pair in enumerate(fold_indices)
             )
@@ -668,8 +624,25 @@ def cross_validate_model(
                 # Calculate means and stds across all quantiles
                 mean_test = combined_df.loc["test"].mean()
                 mean_train = combined_df.loc["train"].mean()
-                std_test = std_df.loc["test"].mean()
-                std_train = std_df.loc["train"].mean()
+                std_test = float(
+                    np.std(
+                        np.mean(
+                            [metric_results[metric_type]["test"][q] for q in quantiles],
+                            axis=0,
+                        )
+                    )
+                )
+                std_train = float(
+                    np.std(
+                        np.mean(
+                            [
+                                metric_results[metric_type]["train"][q]
+                                for q in quantiles
+                            ],
+                            axis=0,
+                        )
+                    )
+                )
 
                 final_results[metric_type] = {
                     "results": combined_df,  # Single DataFrame with train/test rows
@@ -699,26 +672,25 @@ def cross_validate_model(
 
         # Return results with optional hyperparameters
         if tune_hyperparameters and tuned_hyperparameters:
-            # Select best hyperparameters based on primary metric
-            primary_metric = (
-                "quantile_loss"
-                if len(final_results["quantile_loss"]["variables"])
-                >= len(final_results["log_loss"]["variables"])
-                else "log_loss"
+            # Outer test folds estimate performance only. Select final parameters
+            # with a fresh internal tuning run on all available training rows.
+            tuning_data = data
+            if preprocessing:
+                tuning_data, _ = preprocess_data(
+                    data, full_data=True, **_preprocessing_kwargs(preprocessing)
+                )
+            _, best_hyperparams = _fit_model_for_fold(
+                create_distributional_model(model_class, seed=random_state),
+                model_class,
+                tuning_data,
+                predictors,
+                imputed_variables,
+                data[weight_col].copy() if weight_col is not None else None,
+                quantiles,
+                model_hyperparams,
+                True,
+                target_types,
             )
-
-            # Use median quantile (0.5) for selection
-            best_fold = 0
-            best_loss = float("inf")
-
-            if 0.5 in quantiles:
-                for fold_idx in range(n_splits):
-                    fold_loss = metric_results[primary_metric]["test"][0.5][fold_idx]
-                    if fold_loss < best_loss:
-                        best_loss = fold_loss
-                        best_fold = fold_idx
-
-            best_hyperparams = tuned_hyperparameters.get(best_fold)
             return final_results, best_hyperparams
         else:
             return final_results

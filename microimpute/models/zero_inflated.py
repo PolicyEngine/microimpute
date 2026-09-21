@@ -51,6 +51,7 @@ from pydantic import validate_call
 from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
 from microimpute.models.imputer import Imputer, ImputerResults
 from microimpute.models.qrf import QRF
+from microimpute.utils.type_handling import declare_target_types
 
 # Regime labels. Kept as module-level constants so downstream code can
 # match on them without magic strings.
@@ -160,6 +161,8 @@ class ZeroInflatedImputer(Imputer):
         self.base_imputer_class = base_imputer_class or QRF
         self.base_imputer_kwargs = dict(base_imputer_kwargs or {})
         self.zero_atol = float(zero_atol)
+        if not np.isfinite(self.zero_atol) or self.zero_atol < 0:
+            raise ValueError("zero_atol must be finite and nonnegative")
         self.classifier_type = classifier_type
         self.sequential = bool(sequential)
 
@@ -187,6 +190,7 @@ class ZeroInflatedImputer(Imputer):
         weight_col: Optional[Union[str, np.ndarray, pd.Series]] = None,
         skip_missing: bool = False,
         not_numeric_categorical: Optional[List[str]] = None,
+        target_types: Optional[Dict[str, str]] = None,
         **kwargs: Any,
     ) -> Any:
         """Fit the regime-aware wrapper.
@@ -199,7 +203,37 @@ class ZeroInflatedImputer(Imputer):
         Returns a ``ZeroInflatedImputerResults`` that routes
         predictions through each target's regime-specific pipeline.
         """
+        X_train = declare_target_types(X_train, imputed_variables, target_types)
+        not_numeric_categorical = list(not_numeric_categorical or [])
+        not_numeric_categorical.extend(
+            name for name, kind in (target_types or {}).items() if kind == "numeric"
+        )
+        if skip_missing:
+            imputed_variables = self._handle_missing_variables(
+                X_train, imputed_variables
+            )
         self._validate_data(X_train, predictors + imputed_variables)
+        if set(predictors) & set(imputed_variables):
+            raise ValueError("Predictors and imputed variables must be distinct")
+        sample_weight = None
+        if isinstance(weight_col, str):
+            if weight_col not in X_train:
+                raise ValueError(f"Weight column {weight_col!r} not found")
+            sample_weight = X_train[weight_col].to_numpy(dtype=float)
+        elif isinstance(weight_col, pd.Series):
+            sample_weight = weight_col.reindex(X_train.index).to_numpy(dtype=float)
+        elif weight_col is not None:
+            sample_weight = np.asarray(weight_col, dtype=float)
+        if sample_weight is not None:
+            if sample_weight.shape != (len(X_train),):
+                raise ValueError("Weights must have one value per training row")
+            if not np.isfinite(sample_weight).all() or (sample_weight <= 0).any():
+                raise ValueError("Weights must be positive and finite")
+
+        self.categorical_targets = {}
+        self.boolean_targets = {}
+        self.numeric_targets = []
+        self.constant_targets = {}
 
         # Classify target variables as numeric / categorical / boolean /
         # constant using the base Imputer's detector.
@@ -259,6 +293,8 @@ class ZeroInflatedImputer(Imputer):
                 regime=regime,
                 y=y,
                 not_numeric_categorical=nested_not_numeric_categorical,
+                sample_weight=sample_weight,
+                fit_kwargs=kwargs,
             )
             bundle["predictors"] = list(seq_predictors)
             self._per_variable[var] = bundle
@@ -307,117 +343,65 @@ class ZeroInflatedImputer(Imputer):
         regime: str,
         y: np.ndarray,
         not_numeric_categorical: Optional[List[str]] = None,
+        sample_weight: Optional[np.ndarray] = None,
+        fit_kwargs: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
-        """Fit the gate and base imputer(s) for one numeric target.
-
-        Returns a bundle dict with the regime, the gate classifier
-        (or None), and the base imputer(s) keyed by their role.
-        """
+        """Fit weighted regime probabilities and weighted sign components."""
+        if not np.isfinite(y).all():
+            raise ValueError(f"Numeric target {variable!r} must contain finite values")
         X_pred = X_train[predictors].to_numpy(dtype=float, copy=False)
-
+        if not np.isfinite(X_pred).all():
+            raise ValueError("Zero-inflated predictors must contain finite values")
         if regime == REGIME_DEGENERATE_ZERO:
             return {"kind": "constant", "value": 0.0}
 
+        def fit_component(mask: np.ndarray, offset: int) -> ImputerResults:
+            weights = sample_weight[mask] if sample_weight is not None else None
+            seed = (
+                None
+                if self.seed is None
+                else (
+                    int(self.seed) + 3 * self.imputed_variables.index(variable) + offset
+                )
+                % (2**32)
+            )
+            return self._fit_base_single(
+                X_train.loc[mask],
+                predictors,
+                variable,
+                not_numeric_categorical=not_numeric_categorical,
+                sample_weight=weights,
+                seed=seed,
+                fit_kwargs=fit_kwargs,
+            )
+
         if regime in (REGIME_POSITIVE_ONLY, REGIME_NEGATIVE_ONLY):
-            # No gate; single base imputer on the full training set.
             return {
                 "kind": "single",
-                "base": self._fit_base_single(
-                    X_train,
-                    predictors,
-                    variable,
-                    not_numeric_categorical=not_numeric_categorical,
-                ),
+                "base": fit_component(np.ones(len(y), dtype=bool), 0),
             }
 
-        if regime == REGIME_ZI_POSITIVE:
-            labels = (y > self.zero_atol).astype(int)
-            clf = _make_classifier(self.classifier_type, self.seed)
-            clf.fit(X_pred, labels)
-            pos_mask = y > self.zero_atol
-            pos_base = self._fit_base_single(
-                X_train.loc[pos_mask],
-                predictors,
-                variable,
-                not_numeric_categorical=not_numeric_categorical,
-            )
-            return {
-                "kind": "zi_positive",
-                "classifier": clf,
-                "positive_base": pos_base,
-            }
-
-        if regime == REGIME_ZI_NEGATIVE:
-            labels = (y < -self.zero_atol).astype(int)
-            clf = _make_classifier(self.classifier_type, self.seed)
-            clf.fit(X_pred, labels)
-            neg_mask = y < -self.zero_atol
-            neg_base = self._fit_base_single(
-                X_train.loc[neg_mask],
-                predictors,
-                variable,
-                not_numeric_categorical=not_numeric_categorical,
-            )
-            return {
-                "kind": "zi_negative",
-                "classifier": clf,
-                "negative_base": neg_base,
-            }
-
-        if regime == REGIME_SIGN_ONLY:
-            # No zero class, but both signs present. Binary sign gate
-            # plus a base imputer per sign.
-            labels = (y > 0).astype(int)
-            clf = _make_classifier(self.classifier_type, self.seed)
-            clf.fit(X_pred, labels)
-            pos_mask = y > 0
-            neg_mask = ~pos_mask
-            return {
-                "kind": "sign_only",
-                "classifier": clf,
-                "positive_base": self._fit_base_single(
-                    X_train.loc[pos_mask],
-                    predictors,
-                    variable,
-                    not_numeric_categorical=not_numeric_categorical,
-                ),
-                "negative_base": self._fit_base_single(
-                    X_train.loc[neg_mask],
-                    predictors,
-                    variable,
-                    not_numeric_categorical=not_numeric_categorical,
-                ),
-            }
-
+        positive = y > self.zero_atol
+        negative = y < -self.zero_atol
         if regime == REGIME_THREE_SIGN:
-            # 0 / neg / pos three-way gate + two base imputers.
-            labels = np.where(
-                y > self.zero_atol,
-                2,
-                np.where(y < -self.zero_atol, 0, 1),
-            )
-            clf = _make_classifier(self.classifier_type, self.seed)
-            clf.fit(X_pred, labels)
-            pos_mask = y > self.zero_atol
-            neg_mask = y < -self.zero_atol
-            return {
-                "kind": "three_sign",
-                "classifier": clf,
-                "positive_base": self._fit_base_single(
-                    X_train.loc[pos_mask],
-                    predictors,
-                    variable,
-                    not_numeric_categorical=not_numeric_categorical,
-                ),
-                "negative_base": self._fit_base_single(
-                    X_train.loc[neg_mask],
-                    predictors,
-                    variable,
-                    not_numeric_categorical=not_numeric_categorical,
-                ),
-            }
-
-        raise ValueError(f"Unhandled regime {regime!r}")
+            labels = np.where(positive, 2, np.where(negative, 0, 1))
+            kind = "three_sign"
+        elif regime == REGIME_SIGN_ONLY:
+            labels, kind = positive.astype(int), "sign_only"
+        elif regime == REGIME_ZI_POSITIVE:
+            labels, kind = positive.astype(int), "zi_positive"
+        elif regime == REGIME_ZI_NEGATIVE:
+            labels, kind = negative.astype(int), "zi_negative"
+        else:
+            raise ValueError(f"Unhandled regime {regime!r}")
+        classifier = _make_classifier(self.classifier_type, self.seed)
+        classifier.fit(X_pred, labels, sample_weight=sample_weight)
+        bundle = {"kind": kind, "classifier": classifier}
+        if positive.any():
+            bundle["positive_base"] = fit_component(positive, 1)
+        if negative.any():
+            bundle["negative_base"] = fit_component(negative, 2)
+        return bundle
 
     def _fit_base_single(
         self,
@@ -425,18 +409,27 @@ class ZeroInflatedImputer(Imputer):
         predictors: List[str],
         variable: str,
         not_numeric_categorical: Optional[List[str]] = None,
+        sample_weight: Optional[np.ndarray] = None,
+        seed: Optional[int] = None,
+        fit_kwargs: Optional[Dict[str, Any]] = None,
     ) -> ImputerResults:
-        """Fit a single base Imputer on a (possibly filtered) slice."""
-        imputer = self.base_imputer_class(
-            log_level="ERROR",
+        """Fit a component with its own seed and aligned conditional weights."""
+        constructor_kwargs = {
+            "log_level": "ERROR",
+            "seed": seed,
             **self.base_imputer_kwargs,
-        )
-        return imputer.fit(
+        }
+        imputer = self.base_imputer_class(**constructor_kwargs)
+        result = imputer.fit(
             X_train=X_train,
             predictors=predictors,
             imputed_variables=[variable],
+            weight_col=sample_weight,
             not_numeric_categorical=not_numeric_categorical,
+            **(fit_kwargs or {}),
         )
+        # The fit API returns (result, params) when tuning is requested.
+        return result[0] if isinstance(result, tuple) else result
 
 
 class ZeroInflatedImputerResults(ImputerResults):
@@ -477,21 +470,32 @@ class ZeroInflatedImputerResults(ImputerResults):
     ) -> Union[pd.DataFrame, Dict[float, pd.DataFrame]]:
         """Predict imputed values, routing per-variable by regime.
 
-        For numeric targets, the gate assigns each record to zero,
-        positive, or negative regime (depending on the detected
-        regime), and the base imputer for that regime produces the
-        nonzero draw. Zeros are set exactly to 0.0 (no stochastic
-        smearing).
+        Explicit quantiles invert the fitted signed mixture CDF, including
+        its zero atom, deterministically. Without quantiles, the gate samples
+        a regime and its component produces a stochastic draw. Quantiles
+        across multiple sequential targets are unsupported because chaining
+        conditional quantiles does not produce marginal quantiles.
 
         For non-numeric targets (categorical / boolean / constant),
         delegation is to the single auxiliary base imputer fit at
         training time.
         """
+        self._validate_quantiles(quantiles)
+        if return_probs:
+            raise NotImplementedError(
+                "ZeroInflatedImputer does not expose categorical probabilities"
+            )
         if quantiles is not None:
-            # Quantile grid not currently supported in the wrapper; the
-            # regime routing only produces a single stochastic draw per
-            # call. Deterministic-quantile support would require the
-            # caller to specify quantile conditional on regime.
+            if not quantiles:
+                raise ValueError("quantiles must not be empty")
+            if any(
+                set(bundle.get("predictors", [])) & set(self._regimes)
+                for bundle in self._per_variable.values()
+            ):
+                raise NotImplementedError(
+                    "Marginal quantiles for sequential multi-target imputation "
+                    "are not available; fit with sequential=False or a single target"
+                )
             return {
                 q: self._predict_single_draw(X_test, quantile=q, **kwargs)
                 for q in quantiles
@@ -562,6 +566,11 @@ class ZeroInflatedImputerResults(ImputerResults):
         X_pred = X_test[bundle.get("predictors", self.predictors)].to_numpy(
             dtype=float, copy=False
         )
+
+        if quantile is not None:
+            return self._mixture_quantile(
+                X_test, X_pred, variable, bundle, quantile, **kwargs
+            )
 
         if kind == "zi_positive":
             clf = bundle["classifier"]
@@ -648,6 +657,79 @@ class ZeroInflatedImputerResults(ImputerResults):
             return values
 
         raise ValueError(f"Unhandled bundle kind {kind!r}")
+
+    def _mixture_quantile(
+        self,
+        X_test: pd.DataFrame,
+        X_pred: np.ndarray,
+        variable: str,
+        bundle: Dict[str, Any],
+        quantile: float,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Invert the ordered negative / zero / positive mixture CDF.
+
+        Negative quantiles use q / p_neg; the zero atom occupies
+        (p_neg, p_neg + p_zero]; positive quantiles use
+        (q - p_neg - p_zero) / p_pos. Endpoints select the first/last
+        nonempty component, including rows with degenerate gate probabilities.
+        """
+        classifier = bundle["classifier"]
+        probabilities = classifier.predict_proba(X_pred)
+        by_class = {
+            label: probabilities[:, i] for i, label in enumerate(classifier.classes_)
+        }
+        zero = np.zeros(len(X_test))
+        if bundle["kind"] == "three_sign":
+            p_neg, p_zero, p_pos = (by_class.get(k, zero) for k in (0, 1, 2))
+        elif bundle["kind"] == "sign_only":
+            p_neg, p_zero, p_pos = by_class.get(0, zero), zero, by_class.get(1, zero)
+        elif bundle["kind"] == "zi_positive":
+            p_neg, p_zero, p_pos = zero, by_class.get(0, zero), by_class.get(1, zero)
+        else:
+            p_neg, p_zero, p_pos = by_class.get(1, zero), by_class.get(0, zero), zero
+        values = np.zeros(len(X_test))
+        negative = (p_neg > 0) & (quantile <= p_neg)
+        if quantile == 1:
+            negative &= (p_zero == 0) & (p_pos == 0)
+        positive = (p_pos > 0) & (
+            (quantile == 1)
+            | (quantile > p_neg + p_zero)
+            | ((quantile == 0) & (p_neg + p_zero == 0))
+        )
+        for sign, mask, offset, mass in (
+            ("negative", negative, zero, p_neg),
+            ("positive", positive, p_neg + p_zero, p_pos),
+        ):
+            if not mask.any():
+                continue
+            conditional_q = np.clip((quantile - offset[mask]) / mass[mask], 0, 1)
+            if quantile == 1:
+                conditional_q[:] = 1
+            result = bundle[f"{sign}_base"]
+            subset = X_test.loc[mask]
+            if hasattr(result, "_predict_quantiles_per_row") and not kwargs:
+                component = result._predict_quantiles_per_row(
+                    subset, variable, conditional_q
+                )
+            else:
+                component = np.empty(mask.sum())
+                for q in np.unique(conditional_q):
+                    selected = conditional_q == q
+                    predictions = self._invoke_base(
+                        result, subset.loc[selected], quantile=float(q), **kwargs
+                    )
+                    component[selected] = predictions[variable].to_numpy(dtype=float)
+            if not np.isfinite(component).all():
+                raise ValueError("Component quantiles must be finite")
+            invalid = component >= 0 if sign == "negative" else component <= 0
+            if invalid.any():
+                raise ValueError(
+                    f"The {sign} component predicts outside its sign support; "
+                    "use a base imputer that preserves the component support"
+                )
+            values[mask] = component
+        return values
 
     def _invoke_base(
         self,

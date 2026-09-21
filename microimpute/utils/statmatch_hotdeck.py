@@ -5,6 +5,7 @@ distance hot deck matching.
 """
 
 import logging
+from contextlib import contextmanager
 from typing import Any, List, Tuple
 
 import numpy as np
@@ -46,6 +47,26 @@ def _get_statmatch():
     if "StatMatch" not in _statmatch_cache:
         _statmatch_cache["StatMatch"] = importr("StatMatch")
     return _statmatch_cache["StatMatch"]
+
+
+@contextmanager
+def _temporary_r_seed(seed):
+    """Seed a bridge call without changing the caller's R random stream."""
+    if seed is None:
+        yield
+        return
+    had_state = ".Random.seed" in ro.globalenv
+    original_state = (
+        ro.IntVector(list(ro.globalenv[".Random.seed"])) if had_state else None
+    )
+    try:
+        ro.r["set.seed"](int(seed))
+        yield
+    finally:
+        if had_state:
+            ro.globalenv[".Random.seed"] = original_state
+        elif ".Random.seed" in ro.globalenv:
+            del ro.globalenv[".Random.seed"]
 
 
 @validate_call(config=VALIDATE_CONFIG)
@@ -98,40 +119,53 @@ def nnd_hotdeck_using_rpy2(
             log.error(msg)
             raise ValueError(msg)
 
+        # NND.hotdeck has no weight argument. RANDwNND.hotdeck accepts
+        # weight.don as the NAME of a column in data.don, not a vector.
+        # cut.don="min" preserves nearest-distance matching and weights ties.
+        # https://search.r-project.org/CRAN/refmans/StatMatch/html/RANDwNND.hotdeck.html
+        r_kwargs = dict(matching_kwargs)
+        random_state = r_kwargs.pop("random_state", None)
+        donor_sample_weight = r_kwargs.pop("donor_sample_weight", None)
+        donor_for_matching = donor
+        matching_function = StatMatch.NND_hotdeck
+        if donor_sample_weight is not None:
+            weights = np.asarray(donor_sample_weight, dtype=float)
+            if weights.ndim != 1 or len(weights) != len(donor):
+                raise ValueError("Donor weights must contain one value per donor")
+            if not np.isfinite(weights).all() or (weights <= 0).any():
+                raise ValueError("Donor weights must be positive and finite")
+            if r_kwargs.pop("constrained", False):
+                raise ValueError(
+                    "Weighted constrained matching is not supported by RANDwNND.hotdeck"
+                )
+            r_kwargs.pop("constr_alg", None)
+            if "k" in r_kwargs and "cut_don" not in r_kwargs:
+                raise ValueError(
+                    "Weighted matching with k requires an explicit cut_don rule"
+                )
+            weight_column = "__microimpute_donor_weight__"
+            while weight_column in donor.columns:
+                weight_column += "_"
+            donor_for_matching = donor.copy()
+            donor_for_matching[weight_column] = weights
+            r_kwargs["weight_don"] = weight_column
+            r_kwargs.setdefault("cut_don", "min")
+            matching_function = StatMatch.RANDwNND_hotdeck
+
         with localconverter(
             default_converter + pandas2ri.converter + numpy2ri.converter
         ):
             r_receiver = conversion.py2rpy(receiver)
-            r_donor = conversion.py2rpy(donor)
+            r_donor = conversion.py2rpy(donor_for_matching)
             r_match = ro.StrVector(matching_variables)
             r_z = ro.StrVector(z_variables)
 
-        # Extract optional donor sample weights (threaded from Imputer.fit
-        # when weight_col was supplied). StatMatch accepts these via the
-        # ``weight.don`` R argument; we pop it from matching_kwargs so that
-        # other kwargs pass through unchanged.
-        r_kwargs = dict(matching_kwargs)
-        donor_sample_weight = r_kwargs.pop("donor_sample_weight", None)
-        if donor_sample_weight is not None:
-            with localconverter(
-                default_converter + pandas2ri.converter + numpy2ri.converter
-            ):
-                r_kwargs["weight_don"] = ro.FloatVector(
-                    np.asarray(donor_sample_weight, dtype=float)
-                )
-
-        if r_kwargs:
-            out_NND = StatMatch.NND_hotdeck(
+        with _temporary_r_seed(random_state):
+            out_NND = matching_function(
                 data_rec=r_receiver,
                 data_don=r_donor,
                 match_vars=r_match,
                 **r_kwargs,
-            )
-        else:
-            out_NND = StatMatch.NND_hotdeck(
-                data_rec=r_receiver,
-                data_don=r_donor,
-                match_vars=r_match,
             )
 
         # Create the correct matching indices matrix for StatMatch.create_fused
@@ -160,8 +194,22 @@ def nnd_hotdeck_using_rpy2(
 
             # If the mtc.ids array has 2 values per recipient
             # (recipient_idx, donor_idx pairs).
-            if len(mtc_array) == 2 * len(receiver):
-                donor_indices = mtc_array.reshape(-1, 2)[:, 1]
+            if mtc_array.shape == (len(receiver), 2) or (
+                mtc_array.ndim == 1 and mtc_array.size == 2 * len(receiver)
+            ):
+                # R vectors flatten a matrix column by column. Preserve the
+                # explicit recipient IDs: donation classes can reorder pairs.
+                pairs = mtc_array.reshape(len(receiver), 2, order="F")
+                recipient_indices = pairs[:, 0]
+                donor_indices = pairs[:, 1]
+                if not np.array_equal(
+                    np.sort(recipient_indices), np.arange(1, len(receiver) + 1)
+                ):
+                    raise ValueError(
+                        "StatMatch recipient indices must be a permutation of recipient rows"
+                    )
+                if not np.equal(donor_indices, np.floor(donor_indices)).all():
+                    raise ValueError("StatMatch donor indices must be integers")
                 # StatMatch uses 1-based indexing; valid donor indices are
                 # in [1, len(donor)]. Previously we silently
                 # modulo-wrapped out-of-range indices, masking real
@@ -179,7 +227,7 @@ def nnd_hotdeck_using_rpy2(
                         "recipient."
                     )
                 donor_indices_valid = donor_indices
-            elif len(mtc_array) == len(receiver):
+            elif mtc_array.ndim == 1 and len(mtc_array) == len(receiver):
                 # Flat 1-D array of donor indices, one per recipient.
                 out_of_range = (mtc_array < 1) | (mtc_array > len(donor))
                 if out_of_range.any():
@@ -220,7 +268,7 @@ def nnd_hotdeck_using_rpy2(
             mtc_matrix = np.column_stack((recipient_indices, donor_indices_valid))
             # Convert to R matrix
             mtc_ids = ro.r.matrix(
-                ro.IntVector(mtc_matrix.flatten()),
+                ro.IntVector(mtc_matrix.flatten(order="F")),
                 nrow=len(recipient_indices),
                 ncol=2,
             )
@@ -262,3 +310,6 @@ def nnd_hotdeck_using_rpy2(
         raise RuntimeError(
             f"Statistical matching failed with unexpected error: {e}"
         ) from e
+
+
+nnd_hotdeck_using_rpy2._microimpute_seeded_adapter = True

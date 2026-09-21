@@ -4,7 +4,7 @@ The `OLS` model uses linear regression to predict missing values from the relati
 
 ## Variable type support
 
-OLS adapts to target variable types automatically. For numerical variables, it uses standard linear regression. For categorical variables (including strings, booleans, or numerically-encoded categorical variables), it switches to logistic regression. You don't need to specify variable types manually.
+OLS uses linear regression for numeric targets and logistic regression for string, categorical and boolean targets. Declare numeric-coded categories with `fit(..., target_types={"status": "categorical"})`; integer counts and 0/1 integers otherwise remain numeric. Request `return_probs=True` to score categorical predictions. See the [migration guide](../../imputation-benchmarking/migration.md).
 
 ## How it works
 

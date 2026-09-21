@@ -9,7 +9,7 @@ from pydantic import validate_call
 from scipy.stats import norm
 from sklearn.linear_model import LogisticRegression
 
-from microimpute.config import VALIDATE_CONFIG
+from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
 from microimpute.models.imputer import Imputer, ImputerResults
 
 
@@ -167,18 +167,52 @@ class _OLSModel:
         the weights.
         """
         self.output_column = y.name
-        X_with_const = sm.add_constant(X)
+        if (
+            not np.isfinite(X.to_numpy(dtype=float)).all()
+            or not np.isfinite(y.to_numpy(dtype=float)).all()
+        ):
+            raise ValueError("OLS training predictors and targets must be finite")
+        X_with_const = sm.add_constant(X, has_constant="add")
         if sample_weight is not None:
             weights = np.asarray(sample_weight, dtype=float)
+            if (
+                weights.shape != (len(y),)
+                or not np.isfinite(weights).all()
+                or (weights <= 0).any()
+            ):
+                raise ValueError(
+                    "OLS sample weights must be positive, finite, and aligned to training rows"
+                )
+            # weight_col represents relative survey mass, not observation
+            # precision. Unit-mean weights leave coefficient covariance unchanged
+            # but put residual scale back in outcome units, invariant to w -> c*w.
+            weights = weights / weights.mean()
             self.model = sm.WLS(y, X_with_const, weights=weights).fit()
         else:
             self.model = sm.OLS(y, X_with_const).fit()
         self.scale = self.model.scale
+        if not np.isfinite(self.scale):
+            raise ValueError(
+                "OLS residual variance is undefined; provide more observations than fitted parameters"
+            )
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
         """Predict using OLS model."""
-        X_with_const = sm.add_constant(X)
-        return self.model.predict(X_with_const)
+        return self.model.predict(self.prediction_design(X))
+
+    def prediction_design(self, X: pd.DataFrame) -> pd.DataFrame:
+        """Preserve the intercept and column contract of the fitted model.
+
+        Historical fits skipped an added intercept when a predictor was already
+        constant. The stored statsmodels design retains that information.
+        """
+        expected = self.model.model.exog_names
+        if list(X.columns) == expected:
+            return X
+        design = sm.add_constant(X, has_constant="add")
+        if list(design.columns) == expected:
+            return design
+        return design.loc[:, expected]
 
 
 class OLSResults(ImputerResults):
@@ -234,7 +268,9 @@ class OLSResults(ImputerResults):
             # the residual std and under-dispersed imputations for test
             # rows far from the training centroid; at extreme quantiles
             # (0.01, 0.99) the under-dispersion is material.
-            X_test_with_const = sm.add_constant(X_test[self.predictors])
+            X_test_with_const = model.prediction_design(
+                X_test[self.predictors].astype(float)
+            )
             prediction = model.model.get_prediction(X_test_with_const)
             # var_pred_mean is the leverage term (x' (X'X)^-1 x) * scale;
             # adding model.scale (residual variance) gives the prediction
@@ -291,10 +327,17 @@ class OLSResults(ImputerResults):
             log_level,
         )
         self.models = models
+        self.rng = np.random.default_rng(seed)
         self.categorical_targets = categorical_targets or {}
         self.boolean_targets = boolean_targets or {}
         self.constant_targets = constant_targets or {}
         self.dummy_processor = dummy_processor
+
+    def __setstate__(self, state: Dict[str, Any]) -> None:
+        """Initialize a random stream for historical fitted results."""
+        self.__dict__.update(state)
+        if "rng" not in state:
+            self.rng = np.random.default_rng(self.seed)
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
@@ -319,6 +362,8 @@ class OLSResults(ImputerResults):
         Raises:
             RuntimeError: If prediction fails.
         """
+        if not np.isfinite(X_test[self.predictors].to_numpy(dtype=float)).all():
+            raise ValueError("OLS prediction predictors must be finite")
         try:
             # Create output dictionary with results
             imputations: Dict[float, pd.DataFrame] = {}
@@ -327,7 +372,7 @@ class OLSResults(ImputerResults):
             if quantiles:
                 if random_quantile_sample:
                     self.logger.warning(
-                        f"Predicting at random quantiles sampled from a beta distribution is not possible when specified quantiles are provided."
+                        "Explicit quantiles take precedence; ignoring random_quantile_sample."
                     )
                 self.logger.info(
                     f"Predicting at {len(quantiles)} quantiles: {quantiles}"
@@ -341,7 +386,7 @@ class OLSResults(ImputerResults):
                             variable,
                             X_test,
                             q,
-                            random_quantile_sample,
+                            False,
                             return_probs,
                             prob_results,
                         )
@@ -387,7 +432,6 @@ class OLSResults(ImputerResults):
         se: Any,
         mean_quantile: float,
         random_sample: bool,
-        count_samples: int = 10,
     ) -> pd.Series:
         """Predict values at a specified quantile.
 
@@ -399,8 +443,6 @@ class OLSResults(ImputerResults):
             mean_quantile: Quantile to predict (the quantile affects the center
                 of the beta distribution from which to sample when imputing each data point).
             random_sample: If True, use random quantile sampling for prediction.
-            count_samples: Number of quantile samples to generate when
-                random_sample is True.
 
         Returns:
             Series of predicted values at the specified quantile, indexed to
@@ -423,23 +465,14 @@ class OLSResults(ImputerResults):
                 self.logger.info(
                     f"Predicting at random quantiles sampled from a beta distribution with mean quantile {q_clipped}"
                 )
-                random_generator = np.random.default_rng(self.seed)
-
-                # Calculate alpha parameter for beta distribution (q is
-                # safely in (0,1) after clipping).
+                # A persistent stream advances across rows, variables and calls.
+                # At q=0.5, Beta(1, 1) yields independent normal residuals.
                 a = q_clipped / (1 - q_clipped)
-
-                # Generate count_samples beta distributed values with parameter a
-                beta_samples = random_generator.beta(a, 1, size=count_samples)
-
-                # Convert to normal quantiles using norm.ppf
-                normal_quantiles = norm.ppf(beta_samples)
-
-                # For each mean prediction, randomly select one of the quantiles
-                sampled_indices = random_generator.integers(
-                    0, count_samples, size=len(mean_preds)
+                beta_samples = self.rng.beta(a, 1, size=len(mean_preds))
+                beta_samples = np.clip(
+                    beta_samples, np.finfo(float).eps, 1 - np.finfo(float).eps
                 )
-                selected_quantiles = normal_quantiles[sampled_indices]
+                selected_quantiles = norm.ppf(beta_samples)
 
                 # Adjust each mean prediction by the sampled quantile
                 # times its per-row SE (or scalar SE if se is a float).
@@ -470,9 +503,11 @@ class OLS(Imputer):
     distributed residuals.
     """
 
-    def __init__(self, log_level: Optional[str] = "WARNING") -> None:
+    def __init__(
+        self, log_level: Optional[str] = "WARNING", seed: int = RANDOM_STATE
+    ) -> None:
         """Initialize the OLS model."""
-        super().__init__(log_level=log_level)
+        super().__init__(seed=seed, log_level=log_level)
         self.model = None
         self.log_level = log_level
         self.logger.debug("Initializing OLS imputer")
@@ -507,6 +542,15 @@ class OLS(Imputer):
         Raises:
             RuntimeError: If model fitting fails.
         """
+        if X_train[predictors + imputed_variables].isna().any().any():
+            raise ValueError(
+                "OLS training predictors and targets must not contain missing values"
+            )
+        numeric_data = X_train[predictors + imputed_variables].select_dtypes(
+            include=["number", "bool"]
+        )
+        if not np.isfinite(numeric_data.to_numpy(dtype=float)).all():
+            raise ValueError("OLS training predictors and targets must be finite")
         try:
             self.logger.info(f"Fitting OLS model with {len(predictors)} predictors")
 

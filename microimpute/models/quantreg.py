@@ -9,7 +9,7 @@ import statsmodels.api as sm
 from pydantic import validate_call
 from statsmodels.tools.sm_exceptions import IterationLimitWarning
 
-from microimpute.config import VALIDATE_CONFIG
+from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
 from microimpute.models.imputer import Imputer, ImputerResults
 
 warnings.filterwarnings("ignore", category=IterationLimitWarning)
@@ -58,10 +58,26 @@ class QuantRegResults(ImputerResults):
             log_level,
         )
         self.models = models
+        self.default_quantiles = list(models[imputed_variables[0]])
+        self.rng = np.random.default_rng(seed)
         self.quantiles_specified = quantiles_specified
         self.boolean_targets = boolean_targets or {}
         self.constant_targets = constant_targets or {}
         self.dummy_processor = dummy_processor
+
+    def _ensure_quantiles(self, quantiles: List[float]) -> None:
+        """Fit and cache missing quantiles using the original donor design matrix."""
+        if any(not 0 < q < 1 for q in quantiles):
+            raise ValueError("QuantReg quantiles must be strictly between 0 and 1")
+        for variable in self.imputed_variables:
+            for q in quantiles:
+                if q in self.models[variable]:
+                    continue
+                fitted = next(iter(self.models[variable].values()))
+                if variable in self.constant_targets:
+                    self.models[variable][q] = fitted
+                else:
+                    self.models[variable][q] = fitted.model.fit(q=q)
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
@@ -84,9 +100,16 @@ class QuantRegResults(ImputerResults):
             Dictionary mapping quantiles to predicted values.
 
         Raises:
-            ValueError: If a requested quantile was not fitted during training.
+            ValueError: If a quantile is not strictly between zero and one.
+
+        Quantiles absent from the original fit are fitted lazily on the retained
+        donor data and cached. Prediction data never participate in fitting.
             RuntimeError: If prediction fails.
         """
+        if not np.isfinite(X_test[self.predictors].to_numpy(dtype=float)).all():
+            raise ValueError("QuantReg prediction predictors must be finite")
+        if quantiles is not None:
+            self._ensure_quantiles(quantiles)
         # Log warning if return_probs is used with QuantReg
         if return_probs:
             self.logger.warning(
@@ -99,7 +122,9 @@ class QuantRegResults(ImputerResults):
             # Store original quantiles parameter to determine return type
             quantiles_param = quantiles
 
-            X_test_with_const = sm.add_constant(X_test[self.predictors])
+            X_test_with_const = sm.add_constant(
+                X_test[self.predictors], has_constant="add"
+            )
             self.logger.info(f"Prepared test data with {len(X_test)} samples")
 
             if quantiles is not None:
@@ -147,7 +172,7 @@ class QuantRegResults(ImputerResults):
                         imputed_df[variable] = predictions
                     imputations[q] = imputed_df
             else:
-                quantiles = list(self.models[self.imputed_variables[0]].keys())
+                quantiles = self.default_quantiles
                 if random_quantile_sample:
                     self.logger.info("Sampling random quantiles for each prediction")
                     mean_quantile = np.mean(quantiles)
@@ -189,15 +214,14 @@ class QuantRegResults(ImputerResults):
                     # lookups and silently demotes numeric predictions to
                     # object dtype — a major contributor to issue #96
                     # (OOM with many variables).
-                    rng = np.random.default_rng(self.seed)
                     index = random_q_imputations[quantiles[0]].index
                     n_rows = len(index)
                     quantiles_arr = np.asarray(quantiles)
-                    # Sampled quantile index per row.
-                    sampled_idx = rng.integers(0, len(quantiles_arr), size=n_rows)
-
                     result_df = pd.DataFrame(index=index)
                     for variable in self.imputed_variables:
+                        sampled_idx = self.rng.integers(
+                            0, len(quantiles_arr), size=n_rows
+                        )
                         # Stack predictions for this variable across all
                         # quantiles into an (n_rows, n_quantiles) array,
                         # then select per-row with np.take_along_axis so
@@ -276,9 +300,11 @@ class QuantReg(Imputer):
     directly predict specific quantiles.
     """
 
-    def __init__(self, log_level: Optional[str] = "WARNING") -> None:
+    def __init__(
+        self, log_level: Optional[str] = "WARNING", seed: int = RANDOM_STATE
+    ) -> None:
         """Initialize the Quantile Regression model."""
-        super().__init__(log_level=log_level)
+        super().__init__(seed=seed, log_level=log_level)
         self.models: Dict[str, Any] = {}
         self.log_level = log_level
         self.logger.debug("Initializing QuantReg imputer")
@@ -341,7 +367,20 @@ class QuantReg(Imputer):
                 f"Values will be thresholded at 0.5 during prediction."
             )
 
+        if X_train[predictors + imputed_variables].isna().any().any():
+            raise ValueError(
+                "QuantReg training predictors and targets must not contain missing values"
+            )
+        if not np.isfinite(
+            X_train[predictors + imputed_variables].to_numpy(dtype=float)
+        ).all():
+            raise ValueError("QuantReg training predictors and targets must be finite")
+        if quantiles is not None and (
+            not quantiles or any(not 0 < q < 1 for q in quantiles)
+        ):
+            raise ValueError("QuantReg quantiles must be strictly between 0 and 1")
         try:
+            self.models = {}
             for variable in imputed_variables:
                 self.models[variable] = {}
 
@@ -358,7 +397,7 @@ class QuantReg(Imputer):
                     f"Fitting QuantReg models for {len(quantiles)} quantiles: {quantiles}"
                 )
 
-            X_with_const = sm.add_constant(X_train[predictors])
+            X_with_const = sm.add_constant(X_train[predictors], has_constant="add")
             self.logger.info(
                 f"Prepared training data with {len(X_train)} samples, {len(predictors)} predictors"
             )

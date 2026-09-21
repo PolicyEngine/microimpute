@@ -20,6 +20,7 @@ from microimpute.config import RANDOM_STATE, VALIDATE_CONFIG
 from microimpute.utils.type_handling import (
     DummyVariableProcessor,
     VariableTypeDetector,
+    declare_target_types,
 )
 
 
@@ -49,6 +50,18 @@ class Imputer(ABC):
         log_level: Optional[str] = "WARNING",
     ) -> None:
         """Initialize the imputer model."""
+        if seed is not None:
+            if isinstance(seed, (bool, np.bool_)) or not isinstance(
+                seed, (int, np.integer)
+            ):
+                raise ValueError(
+                    "seed must be an integer between 0 and 2**32 - 1, or None"
+                )
+            seed = int(seed)
+            if not 0 <= seed < 2**32:
+                raise ValueError(
+                    "seed must be an integer between 0 and 2**32 - 1, or None"
+                )
         self.predictors: Optional[List[str]] = None
         self.imputed_variables: Optional[List[str]] = None
         self.imputed_vars_dummy_info: Optional[Dict[str, Any]] = None
@@ -253,6 +266,7 @@ class Imputer(ABC):
         target_filters: Optional[
             Dict[str, Union[str, np.ndarray, pd.Series, List[bool], Tuple[bool, ...]]]
         ] = None,
+        target_types: Optional[Dict[str, str]] = None,
         **kwargs: Any,
     ) -> Any:  # Returns ImputerResults
         """Fit the model to the training data.
@@ -261,7 +275,10 @@ class Imputer(ABC):
             X_train: DataFrame containing the training data.
             predictors: List of column names to use as predictors.
             imputed_variables: List of column names to impute.
-            weight_col: Optional name of the column or column array/series containing sampling weights. When provided, `X_train` will be sampled with replacement using this column as selection probabilities before fitting the model.
+            weight_col: Optional name, array or Series of positive finite sampling
+                weights, passed to the learner's weighted-fit interface. QRF,
+                OLS and Matching support weights; QuantReg and MDN raise
+                NotImplementedError rather than returning an unweighted fit.
             skip_missing: If True, skip variables missing from training data with warning. If False, raise error for missing variables.
             not_numeric_categorical: Optional list of variable names that should
                 be treated as numeric even if they would normally be detected as
@@ -283,6 +300,20 @@ class Imputer(ABC):
             RuntimeError: If model fitting fails.
             NotImplementedError: If method is not implemented by subclass.
         """
+        if len(predictors) != len(set(predictors)) or len(imputed_variables) != len(
+            set(imputed_variables)
+        ):
+            raise ValueError("Duplicate predictor or imputed variable names")
+        if not X_train.columns.is_unique:
+            raise ValueError("Duplicate DataFrame column names are not supported")
+        X_train = declare_target_types(X_train, imputed_variables, target_types)
+        not_numeric_categorical = list(not_numeric_categorical or []) + [
+            name for name, kind in (target_types or {}).items() if kind == "numeric"
+        ]
+        self.categorical_targets = {}
+        self.boolean_targets = {}
+        self.numeric_targets = []
+        self.constant_targets = {}
         original_predictors = predictors.copy()
         target_filters = target_filters or {}
         unknown_target_filters = set(target_filters) - set(imputed_variables)
@@ -366,7 +397,7 @@ class Imputer(ABC):
             # weights — those then propagated into .sample() as NaN
             # probabilities or corrupted sample_weight passed to learners.
             weights_arr = np.asarray(weights, dtype=float)
-            invalid_mask = np.isnan(weights_arr) | (weights_arr <= 0)
+            invalid_mask = ~np.isfinite(weights_arr) | (weights_arr <= 0)
             if invalid_mask.any():
                 raise ValueError(
                     "Weights must be positive and finite; found "
@@ -577,6 +608,8 @@ class ImputerResults(ABC):
                 processor = DummyVariableProcessor(self.logger)
                 # This will only encode predictors in test data
                 return processor.preprocess_predictors(data, predictors, [])
+        except ValueError:
+            raise
         except Exception as e:
             self.logger.error(f"Error during test data preprocessing: {str(e)}")
             raise RuntimeError("Failed to preprocess data types") from e
@@ -629,6 +662,20 @@ class ImputerResults(ABC):
         imputations = self._predict(
             X_test, quantiles, return_probs=return_probs, **kwargs
         )
+        if return_probs and isinstance(imputations, (dict, pd.DataFrame)):
+            for variable, info in getattr(self, "constant_targets", {}).items():
+                kind, _ = VariableTypeDetector.categorize_variable(
+                    pd.Series([info["value"]], dtype=info["dtype"]),
+                    variable,
+                    self.logger,
+                )
+                if kind in {"bool", "categorical", "numeric_categorical"}:
+                    if isinstance(imputations, pd.DataFrame):
+                        imputations = {kwargs.get("mean_quantile", 0.5): imputations}
+                    imputations.setdefault("probabilities", {})[variable] = {
+                        "probabilities": np.ones((len(X_test), 1)),
+                        "classes": np.array([info["value"]]),
+                    }
         # No more postprocessing - categorical targets handled directly
         return imputations
 
@@ -654,3 +701,16 @@ class ImputerResults(ABC):
             NotImplementedError: If method is not implemented by subclass.
         """
         raise NotImplementedError("Subclasses must implement the predict method")
+
+
+def create_distributional_model(model_class: type, **kwargs: Any) -> Imputer:
+    """Construct a model for marginal distribution evaluation.
+
+    QRF chains model joint donor draws by default. Evaluating target-specific
+    quantiles instead requires independent fits conditional on original predictors.
+    """
+    from microimpute.models.qrf import QRF
+
+    if issubclass(model_class, QRF):
+        kwargs["sequential"] = False
+    return model_class(**kwargs)

@@ -1,8 +1,8 @@
 """
 Configuration module for MicroImpute.
 
-This module centralizes all constants and configuration parameters used across
-the package.
+Shared validation, analysis and plotting settings, QRF runtime defaults, and
+compatibility constants retained for existing callers.
 """
 
 from typing import Any, Dict, List
@@ -14,7 +14,8 @@ from pydantic import ConfigDict
 # arbitrary types like pd.DataFrame
 VALIDATE_CONFIG = ConfigDict(arbitrary_types_allowed=True)
 
-# Data configuration
+# Historical SCF years retained for imports in existing notebooks and callers.
+# This compatibility list does not restrict datasets accepted by the imputers.
 VALID_YEARS: List[int] = [
     1989,
     1992,
@@ -30,6 +31,7 @@ VALID_YEARS: List[int] = [
     2022,
 ]
 
+# Data configuration
 TRAIN_SIZE: float = 0.8
 TEST_SIZE: float = 0.2
 
@@ -39,40 +41,34 @@ QUANTILES: List[float] = [round(q, 2) for q in np.arange(0.05, 1.00, 0.05)]
 # Random state for reproducibility
 RANDOM_STATE: int = 42
 
-# Model parameters (passed via **kwargs to fit() or as __init__ params)
+# QRF applies the qrf entry as runtime defaults before explicit fit overrides.
+# Other entries remain import-compatible reference values; those learners define
+# their runtime defaults in their own implementations.
 DEFAULT_MODEL_PARAMS: Dict[str, Dict[str, Any]] = {
     "qrf": {
-        # RandomForestQuantileRegressor parameters
         "n_estimators": 100,
         "max_depth": None,
         "min_samples_split": 2,
-        "min_samples_leaf": 1,
+        "min_samples_leaf": 20,
+        # Retain the leaf distribution instead of one randomly selected donor.
+        "max_samples_leaf": None,
         "max_features": 1.0,
     },
-    "quantreg": {
-        # statsmodels QuantReg uses default parameters
-    },
+    "quantreg": {},
     "ols": {
-        # statsmodels OLS uses default parameters
-        # LogisticRegression params for categorical targets:
         "l1_ratio": 0,
         "C": 1.0,
         "max_iter": 1000,
     },
-    "matching": {
-        # StatMatch NND hotdeck default parameters
-    },
+    "matching": {},
     "mdn": {
-        # Backbone network parameters
         "layers": "128-64-32",
         "activation": "ReLU",
         "dropout": 0.0,
         "use_batch_norm": False,
-        # MDN head parameters
         "num_gaussian": 5,
         "softmax_temperature": 1.0,
         "n_samples": 100,
-        # Training parameters
         "learning_rate": 1e-3,
         "max_epochs": 100,
         "early_stopping_patience": 10,

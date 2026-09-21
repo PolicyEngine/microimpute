@@ -4,7 +4,7 @@ The `Matching` model imputes missing values using nearest neighbor distance hot 
 
 ## Variable type support
 
-Matching handles any variable type: numerical, categorical, boolean, or mixed. Because it transfers actual observed values rather than generating predictions, it preserves the original data type and distribution of each variable.
+Matching handles numerical, categorical, boolean and mixed targets. It transfers observed donor values, preserving their support and within-record target combinations. The distribution among recipients depends on donor selection and can differ from the donor marginal distribution.
 
 ## How it works
 
@@ -18,6 +18,6 @@ Because the imputed values are drawn from actually observed records, the natural
 
 Matching is non-parametric: it makes no assumptions about the data distribution. This makes it useful when the data doesn't fit standard parametric models, or when the relationships between predictors and targets are hard to specify in closed form.
 
-The method preserves the empirical distribution of the imputed variables. Since values come directly from observed data points, features like multimodality, skewness, and natural bounds are maintained. A model-based approach might smooth these away.
+Donated values respect the observed target bounds and discrete categories. Nearest-neighbor selection determines how often donors contribute, so multimodality and skewness need assessment in the resulting recipient population.
 
-One limitation is that Matching does not incorporate quantile information. It matches donor and receiver units identically regardless of the quantile being predicted, which means it cannot distinguish between different parts of the conditional distribution. It may also fail to capture non-linear predictor-target relationships despite producing a plausible marginal distribution.
+`fitted.predict(receiver)` returns a DataFrame with one donor draw per recipient. Matching rejects explicit quantiles and `return_probs=True`, because a donor draw does not estimate conditional quantiles or class probabilities. AutoImpute excludes Matching from distributional ranking, but includes its draws when explicitly requested with `impute_all=True`. Distributional predictor analysis rejects Matching. See the [migration guide](../../imputation-benchmarking/migration.md).

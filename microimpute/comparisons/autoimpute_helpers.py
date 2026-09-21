@@ -14,7 +14,7 @@ Key functions:
 """
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple, Type, Union
 
 import numpy as np
 import pandas as pd
@@ -25,7 +25,13 @@ from microimpute.comparisons.validation import (
 )
 from microimpute.evaluations import cross_validate_model
 from microimpute.models import Imputer
-from microimpute.utils.data import preprocess_data
+from microimpute.models.imputer import create_distributional_model
+from microimpute.config import RANDOM_STATE
+from microimpute.utils.data import (
+    preprocess_data,
+    apply_transformations,
+    reverse_transformations,
+)
 
 log = logging.getLogger(__name__)
 
@@ -64,7 +70,7 @@ def validate_autoimpute_inputs(
         raise ValueError(error_msg)
 
     # Validate quantiles if provided
-    if quantiles:
+    if quantiles is not None:
         validate_quantiles(quantiles)
 
     # Validate data and columns
@@ -154,26 +160,12 @@ def prepare_data_for_imputation(
             asinh_transform=asinh_cols if asinh_cols else False,
         )
 
-        # Apply same transformations to predictors in imputing data
-        predictor_normalize = [c for c in normalize_cols if c in predictors]
-        predictor_log = [c for c in log_cols if c in predictors]
-        predictor_asinh = [c for c in asinh_cols if c in predictors]
-
-        if predictor_normalize or predictor_log or predictor_asinh:
-            transformed_imputing, _ = preprocess_data(
-                imputing_data[predictors],
-                full_data=True,
-                train_size=train_size,
-                test_size=test_size,
-                normalize=(predictor_normalize if predictor_normalize else False),
-                log_transform=predictor_log if predictor_log else False,
-                asinh_transform=predictor_asinh if predictor_asinh else False,
-            )
-        else:
-            transformed_imputing = imputing_data[predictors].copy()
+        transformed_imputing = apply_transformations(
+            imputing_data[predictors], transform_result
+        )
 
         training_data = transformed_training
-        if weight_col:
+        if weight_col and weight_col not in all_training_cols:
             training_data[weight_col] = donor_data[weight_col]
 
         imputing_data = transformed_imputing
@@ -197,20 +189,12 @@ def prepare_data_for_imputation(
             },
         }
 
-        # Only return params if there are transformations to reverse
-        has_transforms = any(
-            imputed_transform_params[key]
-            for key in ["normalization", "log_transform", "asinh_transform"]
-        )
-
-        if has_transforms:
-            transform_params = {
-                "type": "preprocessing",
-                "params": imputed_transform_params,
-            }
-            return training_data, imputing_data, transform_params
-        else:
-            return training_data, imputing_data, None
+        transform_params = {
+            "type": "preprocessing",
+            "params": imputed_transform_params,
+            "all_params": transform_result,
+        }
+        return training_data, imputing_data, transform_params
 
     else:
         # No transformation needed
@@ -247,6 +231,8 @@ def evaluate_model(
     random_state: int,
     tune_hyperparams: bool,
     hyperparameters: Optional[Dict[str, Any]],
+    preprocessing: Optional[Dict[str, str]] = None,
+    target_types: Optional[Dict[str, str]] = None,
 ) -> tuple:
     """Evaluate a single imputation model with cross-validation.
 
@@ -280,6 +266,8 @@ def evaluate_model(
         random_state=random_state,
         tune_hyperparameters=tune_hyperparams,
         model_hyperparams=hyperparameters,
+        preprocessing=preprocessing,
+        target_types=target_types,
     )
 
     if tune_hyperparams and isinstance(cv_result, tuple) and len(cv_result) == 2:
@@ -295,10 +283,13 @@ def fit_and_predict_model(
     imputing_data: pd.DataFrame,
     predictors: List[str],
     imputed_variables: List[str],
-    weight_col: Optional[str],
+    weight_col: Optional[Union[str, np.ndarray, pd.Series]],
     quantile: float,
     hyperparams: Optional[Dict[str, Any]] = None,
     log_level: str = "WARNING",
+    random_state: int = RANDOM_STATE,
+    target_types: Optional[Dict[str, str]] = None,
+    quantiles: Optional[List[float]] = None,
 ) -> Tuple[Any, Dict[float, pd.DataFrame]]:
     """Fit a model and generate predictions.
 
@@ -317,7 +308,12 @@ def fit_and_predict_model(
         Tuple of (fitted_model, predictions_dict)
     """
     model_name = model_class.__name__
-    model = model_class(log_level=log_level)
+    model = create_distributional_model(
+        model_class, log_level=log_level, seed=random_state
+    )
+    from microimpute.utils.type_handling import declare_target_types
+
+    training_data = declare_target_types(training_data, imputed_variables, target_types)
 
     # Check for categorical variables
     from microimpute.comparisons.metrics import get_metric_for_variable_type
@@ -341,40 +337,22 @@ def fit_and_predict_model(
         log.error(error_msg)
         raise ValueError(error_msg)
 
-    # Fit the model
+    requested_quantiles = quantiles if quantiles is not None else [quantile]
+    params = dict(hyperparams or {})
+    params["target_types"] = target_types
     if model_name == "QuantReg":
-        # QuantReg needs explicit quantiles during fitting
-        fitted_model = model.fit(
-            training_data,
-            predictors,
-            imputed_variables,
-            weight_col=weight_col,
-            quantiles=[quantile],
-        )
-    elif hyperparams and model_name in ["Matching", "QRF", "MDN"]:
-        # Apply hyperparameters for specific models
-        fitted_model = model.fit(
-            training_data,
-            predictors,
-            imputed_variables,
-            weight_col=weight_col,
-            **hyperparams,
-        )
-    else:
-        fitted_model = model.fit(
-            training_data,
-            predictors,
-            imputed_variables,
-            weight_col=weight_col,
-        )
+        params["quantiles"] = requested_quantiles
+    fitted_model = model.fit(
+        training_data, predictors, imputed_variables, weight_col=weight_col, **params
+    )
+    from microimpute.models.matching import Matching
 
-    # Generate predictions with return_probs for categorical variables
-    if has_categorical:
-        imputations = fitted_model.predict(
-            imputing_data, quantiles=[quantile], return_probs=True
-        )
+    if isinstance(model, Matching):
+        imputations = fitted_model.predict(imputing_data)
     else:
-        imputations = fitted_model.predict(imputing_data, quantiles=[quantile])
+        imputations = fitted_model.predict(
+            imputing_data, quantiles=requested_quantiles, return_probs=has_categorical
+        )
 
     # Handle case where predict returns a DataFrame directly
     if isinstance(imputations, pd.DataFrame):
@@ -550,3 +528,51 @@ def select_best_model_dual_metrics(
         log.info(f"Selected {best_method} based on combined metric: {best_score:.6f}")
 
     return best_method, model_metrics[best_method]
+
+
+class PreprocessedImputerResults:
+    """A fitted model that accepts raw receiver data and returns original units.
+
+    The wrapped learner remains available through ``fitted_model``; its public
+    metadata (predictors, seed, models, etc.) is forwarded unchanged.
+    """
+
+    def __init__(self, fitted_model: Any, transform_params: dict):
+        self.fitted_model = fitted_model
+        self.transform_params = transform_params
+
+    def __getattr__(self, name: str) -> Any:
+        fitted_model = self.__dict__.get("fitted_model")
+        if fitted_model is None:
+            raise AttributeError(name)
+        return getattr(fitted_model, name)
+
+    def predict(
+        self,
+        X_test: pd.DataFrame,
+        quantiles: Optional[List[float]] = None,
+        return_probs: bool = False,
+        **kwargs: Any,
+    ) -> Any:
+        receiver = X_test.drop(columns=self.imputed_variables, errors="ignore")
+        transformed = apply_transformations(receiver, self.transform_params)
+        predictions = self.fitted_model.predict(
+            transformed, quantiles=quantiles, return_probs=return_probs, **kwargs
+        )
+        if isinstance(predictions, pd.DataFrame):
+            return reverse_transformations(predictions, self.transform_params)
+        return {
+            q: reverse_transformations(frame, self.transform_params)
+            if isinstance(frame, pd.DataFrame)
+            else frame
+            for q, frame in predictions.items()
+        }
+
+
+def preprocessing_aware_model(
+    fitted_model: Any, transform_params: Optional[dict]
+) -> Any:
+    """Attach fitted preprocessing to models returned after initial imputation."""
+    if transform_params and any(transform_params.get("all_params", {}).values()):
+        return PreprocessedImputerResults(fitted_model, transform_params["all_params"])
+    return fitted_model

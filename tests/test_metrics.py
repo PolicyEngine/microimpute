@@ -49,8 +49,10 @@ def mixed_type_data() -> pd.DataFrame:
             "num_target1": np.random.randn(n_samples) * 3,
             "num_target2": np.random.randn(n_samples) + 5,
             # Categorical targets
-            "binary_target": np.random.choice([0, 1], size=n_samples),
-            "multiclass_target": np.random.choice([0, 1, 2], size=n_samples),
+            "binary_target": np.random.choice([False, True], size=n_samples),
+            "multiclass_target": pd.Categorical(
+                np.random.choice([0, 1, 2], size=n_samples)
+            ),
             "string_target": np.random.choice(["A", "B", "C"], size=n_samples),
         }
     )
@@ -82,7 +84,7 @@ def test_metric_detection_numerical() -> None:
 def test_metric_detection_categorical() -> None:
     """Test that categorical variables are correctly identified."""
     # Binary data
-    binary_series = pd.Series([0, 1, 0, 1, 1, 0, 1, 0])
+    binary_series = pd.Series([0, 1, 0, 1, 1, 0, 1, 0], dtype=bool)
     assert get_metric_for_variable_type(binary_series, "binary_var") == "log_loss"
 
     # String categorical
@@ -90,7 +92,7 @@ def test_metric_detection_categorical() -> None:
     assert get_metric_for_variable_type(string_series, "string_var") == "log_loss"
 
     # Low cardinality integer (categorical-like)
-    low_card_series = pd.Series([0, 1, 2, 0, 1, 2, 0, 1, 2])
+    low_card_series = pd.Series([0, 1, 2, 0, 1, 2, 0, 1, 2], dtype="category")
     assert get_metric_for_variable_type(low_card_series, "low_card_var") == "log_loss"
 
     # Boolean type
@@ -116,20 +118,24 @@ def test_log_loss_with_class_labels() -> None:
     y_true = np.array([0, 1, 0, 1, 1])
     y_pred_labels = np.array([0, 1, 1, 1, 0])  # Class predictions
 
-    # Should convert to probabilities with a warning
-    loss = log_loss(y_true, y_pred_labels)
-    assert loss > 0
-    # Loss should be higher since we're using high-confidence probabilities
-    assert loss > 1
+    with pytest.raises(ValueError, match="probabilities"):
+        log_loss(y_true, y_pred_labels)
 
 
 def test_log_loss_multiclass() -> None:
     """Test log loss with multiclass data."""
     y_true = np.array([0, 1, 2, 0, 1, 2])
-    # Provide class predictions (should be converted)
-    y_pred_classes = np.array([0, 1, 2, 1, 1, 2])
-
-    loss = log_loss(y_true, y_pred_classes)
+    probabilities = np.array(
+        [
+            [0.8, 0.1, 0.1],
+            [0.1, 0.8, 0.1],
+            [0.1, 0.1, 0.8],
+            [0.2, 0.7, 0.1],
+            [0.1, 0.8, 0.1],
+            [0.1, 0.1, 0.8],
+        ]
+    )
+    loss = log_loss(y_true, probabilities)
     assert loss > 0
 
 
@@ -150,7 +156,7 @@ def test_compute_loss_quantile() -> None:
 def test_compute_loss_log() -> None:
     """Test compute_loss with log loss metric."""
     y_true = np.random.choice([0, 1], size=50)
-    y_pred = np.random.choice([0, 1], size=50)
+    y_pred = np.random.default_rng(3).uniform(0.1, 0.9, size=50)
 
     losses, mean_loss = compute_loss(
         y_true, y_pred, "log_loss", q=0.5, labels=np.array([0, 1])
@@ -655,8 +661,6 @@ def test_autoimpute_with_all_models(mixed_type_data: pd.DataFrame) -> None:
             del receiver_data[target]
 
     models = [OLS, QRF, QuantReg]
-    if HAS_MATCHING:
-        models.append(Matching)
 
     result = autoimpute(
         donor_data=donor_data,
@@ -957,15 +961,10 @@ def test_probability_ordering_with_real_model() -> None:
         assert not np.isinf(loss_ordered), "Log loss should not be infinite"
         assert loss_ordered > 0, "Log loss should be positive"
 
-        # Check if this is better than using dummy probabilities
-        # With dummy probabilities (converting class predictions to 0.99/0.01)
+        # Label predictions must not masquerade as calibrated probabilities.
         class_preds = predictions[0.5]["target"].values
-        _, loss_dummy = compute_loss(y_test, class_preds, "log_loss")
-
-        # Real probabilities should give better (lower) loss than dummy probabilities
-        assert loss_ordered < loss_dummy, (
-            "Real probabilities should give better loss than dummy probabilities"
-        )
+        with pytest.raises(ValueError, match="probabilities"):
+            compute_loss(y_test, class_preds, "log_loss")
 
 
 # === Distribution Comparison Tests ===

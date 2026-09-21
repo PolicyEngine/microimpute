@@ -17,6 +17,7 @@ from microimpute.comparisons.autoimpute_helpers import (
     evaluate_model,
     fit_and_predict_model,
     prepare_data_for_imputation,
+    preprocessing_aware_model,
     select_best_model_dual_metrics,
     validate_autoimpute_inputs,
 )
@@ -28,11 +29,10 @@ from microimpute.config import (
 )
 from microimpute.models import OLS, QRF, Imputer, QuantReg
 from microimpute.utils.data import (
-    un_asinh_transform_predictions,
-    unlog_transform_predictions,
     unnormalize_predictions,
+    reverse_transformations,
 )
-from microimpute.utils.type_handling import VariableTypeDetector
+from microimpute.utils.type_handling import VariableTypeDetector, declare_target_types
 
 try:
     from microimpute.models import Matching
@@ -76,22 +76,12 @@ def _reverse_transformations(
         return unnormalize_predictions(imputations, params)
 
     elif transform_type == "preprocessing":
-        # New preprocessing format with multiple transformation types
-        result = imputations
-
-        # Reverse normalization if any
-        if params.get("normalization"):
-            result = unnormalize_predictions(result, params["normalization"])
-
-        # Reverse log transform if any
-        if params.get("log_transform"):
-            result = unlog_transform_predictions(result, params["log_transform"])
-
-        # Reverse asinh transform if any
-        if params.get("asinh_transform"):
-            result = un_asinh_transform_predictions(result, params["asinh_transform"])
-
-        return result
+        return {
+            q: reverse_transformations(frame, params)
+            if isinstance(frame, pd.DataFrame)
+            else frame
+            for q, frame in imputations.items()
+        }
 
     else:
         log.warning(f"Unknown transform type: {transform_type}")
@@ -121,16 +111,17 @@ class AutoImputeResult(BaseModel):
     receiver_data : pd.DataFrame
         Copy of the receiver data with the median-quantile imputations of the best performing model attached.
     fitted_models : Dict[str, Any]
-        Mapping model name → fitted Imputer instance.
+        Mapping model name → fitted model. Returned models accept raw receiver data
+        and replay donor-fitted preprocessing, returning predictions in original units.
     cv_results : Dict[str, Dict[str, Any]]
         Cross-validation results with separate quantile_loss and log_loss metrics for each model.
     """
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
-    imputations: Union[
-        Dict[str, Dict[float, pd.DataFrame]], Dict[str, pd.DataFrame]
-    ] = Field(...)
+    imputations: Dict[str, Union[pd.DataFrame, Dict[Union[float, str], Any]]] = Field(
+        ...
+    )
     receiver_data: pd.DataFrame = Field(...)
     fitted_models: Dict[str, Any] = Field(...)
     cv_results: Dict[str, Dict[str, Any]] = Field(...)
@@ -198,7 +189,6 @@ def _setup_logging(log_level: str) -> int:
     }
     numeric_level = level_map[log_level]
     log.setLevel(numeric_level)
-    warnings.filterwarnings("ignore")
     return numeric_level
 
 
@@ -214,6 +204,8 @@ def _evaluate_models_parallel(
     tune_hyperparameters: bool,
     hyperparameters: Optional[Dict[str, Dict[str, Any]]],
     n_jobs: int = -1,
+    preprocessing: Optional[Dict[str, str]] = None,
+    target_types: Optional[Dict[str, str]] = None,
 ) -> Tuple[Dict[str, Dict[str, Any]], Optional[Dict[str, Any]]]:
     """Evaluate multiple models in parallel using cross-validation with dual metrics.
 
@@ -248,6 +240,8 @@ def _evaluate_models_parallel(
                 random_state,
                 tune_hyperparameters,
                 model_hyperparams,
+                preprocessing,
+                target_types,
             )
         )
 
@@ -291,6 +285,9 @@ def _generate_imputations_for_all_models(
     hyperparams: Optional[Dict[str, Any]],
     log_level: str,
     preprocessing: Optional[Dict[str, str]] = None,
+    random_state: int = RANDOM_STATE,
+    target_types: Optional[Dict[str, str]] = None,
+    quantiles: Optional[List[float]] = None,
 ) -> Tuple[Dict[str, pd.DataFrame], Dict[str, Any]]:
     """Generate imputations for all models when impute_all=True.
 
@@ -341,17 +338,22 @@ def _generate_imputations_for_all_models(
             imputing_data,
             predictors,
             imputed_variables,
-            weight_col,
+            donor_data[weight_col].copy() if weight_col is not None else None,
             imputation_q,
             model_hyperparams,
             log_level,
+            random_state=random_state,
+            target_types=target_types,
+            quantiles=quantiles,
         )
 
         # Reverse transformations if needed
         final_imputations = _reverse_transformations(imputations, transform_params)
 
         final_imputations_dict[model_name] = final_imputations[imputation_q]
-        fitted_models_dict[model_name] = fitted_model
+        fitted_models_dict[model_name] = preprocessing_aware_model(
+            fitted_model, transform_params
+        )
 
     return final_imputations_dict, fitted_models_dict
 
@@ -375,6 +377,7 @@ def autoimpute(
     k_folds: Optional[int] = 5,
     force_retrain: Optional[bool] = False,
     log_level: Optional[str] = "WARNING",
+    target_types: Optional[Dict[str, str]] = None,
 ) -> AutoImputeResult:
     """Automatically select and apply the best imputation model.
 
@@ -414,8 +417,11 @@ def autoimpute(
             'numerical': select based on quantile loss only
             'categorical': select based on log loss only
             'combined': weighted average of both metrics
+        target_types : Optional mapping of target names to "numeric", "categorical",
+            or "bool". Numeric dtypes remain numeric unless explicitly declared.
         random_state : Random seed for reproducibility
-        train_size : Proportion of data to use for training in preprocessing
+        train_size : Fraction of donor rows used for comparison and final fitting;
+            sampled without replacement using random_state. Use 1.0 for all rows.
         k_folds : Number of folds for cross-validation. Defaults to 5.
         force_retrain : If True, forces MDN models to retrain instead of using
             cached models. Defaults to False.
@@ -452,7 +458,9 @@ def autoimpute(
         receiver_data = receiver_data.copy()
 
         # Use provided quantiles or defaults
-        quantiles = imputation_quantiles if imputation_quantiles else QUANTILES
+        quantiles = (
+            imputation_quantiles if imputation_quantiles is not None else QUANTILES
+        )
 
         # Validate all inputs
         validate_autoimpute_inputs(
@@ -472,6 +480,14 @@ def autoimpute(
             f"to {len(receiver_data)} receiver data for variables {imputed_variables} "
             f"with predictors {predictors}."
         )
+
+        donor_data = declare_target_types(donor_data, imputed_variables, target_types)
+        if train_size is None or not 0 < train_size <= 1:
+            raise ValueError("train_size must be greater than 0 and at most 1")
+        if train_size < 1:
+            donor_data = donor_data.sample(frac=train_size, random_state=random_state)
+        if len(donor_data) < k_folds:
+            raise ValueError("train_size leaves fewer donor rows than k_folds")
 
         # Step 1: Data preparation
         if numeric_log_level <= logging.INFO:
@@ -501,8 +517,6 @@ def autoimpute(
         # Get model classes
         if not models:
             model_classes: List[Type[Imputer]] = [QRF, OLS, QuantReg]
-            if HAS_MATCHING:
-                model_classes.append(Matching)
             if HAS_MDN:
                 model_classes.append(MDN)
         else:
@@ -534,7 +548,7 @@ def autoimpute(
         # Evaluate models in parallel
         method_results, best_hyperparams = _evaluate_models_parallel(
             model_classes,
-            training_data,
+            donor_data,
             predictors,
             imputed_variables,
             weight_col,
@@ -543,6 +557,8 @@ def autoimpute(
             random_state,
             tune_hyperparameters,
             hyperparameters,
+            preprocessing=preprocessing,
+            target_types=target_types,
         )
 
         # Step 3: Model selection
@@ -605,10 +621,13 @@ def autoimpute(
             imputing_data,
             predictors,
             imputed_variables,
-            weight_col,
+            donor_data[weight_col].copy() if weight_col is not None else None,
             imputation_q,
             model_hyperparams,
             log_level,
+            random_state=random_state,
+            target_types=target_types,
+            quantiles=sorted(set((imputation_quantiles or []) + [0.5])),
         )
 
         # Reverse transformations if needed
@@ -635,7 +654,11 @@ def autoimpute(
                 else final_imputations
             )
         }
-        fitted_models_dict = {"best_method": best_fitted_model}
+        fitted_models_dict = {
+            "best_method": preprocessing_aware_model(
+                best_fitted_model, transform_params
+            )
+        }
 
         # Step 5: Generate imputations for all models if requested
         if impute_all:
@@ -665,6 +688,9 @@ def autoimpute(
                 merged_hyperparams if merged_hyperparams else None,
                 log_level,
                 preprocessing=preprocessing,
+                random_state=random_state,
+                target_types=target_types,
+                quantiles=sorted(set((imputation_quantiles or []) + [0.5])),
             )
             final_imputations_dict.update(other_imputations)
             fitted_models_dict.update(other_models)

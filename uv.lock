@@ -1090,6 +1090,7 @@ matching = [
 ]
 mdn = [
     { name = "pytorch-tabular" },
+    { name = "setuptools" },
     { name = "torch" },
 ]
 
@@ -1119,6 +1120,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.16.0,<0.17.0" },
     { name = "scikit-learn", specifier = ">=1.7.0,<1.9.0" },
     { name = "scipy", specifier = ">=1.16.0,<2.0.0" },
+    { name = "setuptools", marker = "extra == 'mdn'", specifier = "<82" },
     { name = "statsmodels", specifier = ">=0.14.5,<0.16.0" },
     { name = "torch", marker = "extra == 'mdn'", specifier = ">=2.0.0" },
     { name = "towncrier", marker = "extra == 'dev'", specifier = ">=24.8.0" },

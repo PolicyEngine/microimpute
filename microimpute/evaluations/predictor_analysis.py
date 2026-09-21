@@ -12,10 +12,7 @@ import numpy as np
 import pandas as pd
 from pydantic import validate_call
 from scipy.stats import spearmanr
-from sklearn.feature_selection import (
-    mutual_info_classif,
-    mutual_info_regression,
-)
+from sklearn.metrics import mutual_info_score
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 from tqdm.auto import tqdm
@@ -23,6 +20,7 @@ from tqdm.auto import tqdm
 from microimpute.comparisons.metrics import (
     compute_loss,
     get_metric_for_variable_type,
+    order_probabilities_alphabetically,
 )
 from microimpute.config import (
     QUANTILES,
@@ -31,6 +29,7 @@ from microimpute.config import (
     VALIDATE_CONFIG,
 )
 from microimpute.models import Imputer, ImputerResults
+from microimpute.models.imputer import create_distributional_model
 from microimpute.utils.type_handling import (
     DummyVariableProcessor,
     VariableTypeDetector,
@@ -45,6 +44,7 @@ def compute_predictor_correlations(
     predictors: List[str],
     imputed_variables: Optional[List[str]] = None,
     method: str = "all",
+    n_bins: int = 10,
 ) -> Dict[str, pd.DataFrame]:
     """Compute correlation matrices between predictors using multiple methods.
 
@@ -66,6 +66,12 @@ def compute_predictor_correlations(
             - "pearson": Only Pearson correlation
             - "spearman": Only Spearman correlation
             - "mutual_info": Only mutual information
+        n_bins: Maximum number of equal-frequency bins for continuous variables
+            in mutual information (default 10). Categorical levels are retained.
+            MI and both entropies use the same discretization and natural logs.
+            The score is MI / min(H(X), H(Y)), not Pearson correlation. It depends
+            on the binning and is not adjusted for chance. Constant variables
+            have score zero, including on the diagonal. Missing pairs are omitted.
 
     Returns:
         Dictionary containing correlation matrices:
@@ -105,6 +111,8 @@ def compute_predictor_correlations(
     valid_methods = ["all", "pearson", "spearman", "mutual_info"]
     if method not in valid_methods:
         raise ValueError(f"Invalid method. Choose from: {valid_methods}")
+    if n_bins < 2:
+        raise ValueError("n_bins must be at least 2")
 
     # Prepare data - encode categorical variables
     detector = VariableTypeDetector()
@@ -150,25 +158,14 @@ def compute_predictor_correlations(
 
         for i, pred1 in enumerate(predictors):
             for j, pred2 in enumerate(predictors):
-                if i == j:
-                    mi_matrix.iloc[i, j] = 1.0
-                elif j > i:
-                    # Compute MI between pred1 and pred2
-                    mi_value = _compute_mutual_information(
-                        data_encoded[pred1].values,
-                        data_encoded[pred2].values,
+                if j >= i:
+                    mi_normalized = _normalized_mutual_information(
+                        data[pred1].values,
+                        data[pred2].values,
+                        categorical_mask[pred1],
                         categorical_mask[pred2],
+                        n_bins,
                     )
-                    # Normalize by max possible MI (min of entropies)
-                    # This makes it comparable to correlation coefficients
-                    max_mi = min(
-                        _compute_entropy(data_encoded[pred1].values),
-                        _compute_entropy(data_encoded[pred2].values),
-                    )
-                    if max_mi > 0:
-                        mi_normalized = mi_value / max_mi
-                    else:
-                        mi_normalized = 0.0
 
                     mi_matrix.iloc[i, j] = mi_normalized
                     mi_matrix.iloc[j, i] = mi_normalized
@@ -187,7 +184,6 @@ def compute_predictor_correlations(
         )
 
         # Prepare target variables - encode if categorical
-        targets_encoded = {}
         target_is_categorical = {}
 
         for target in imputed_variables:
@@ -198,31 +194,16 @@ def compute_predictor_correlations(
                 "bool",
             ]
 
-            if target_is_categorical[target]:
-                # Encode categorical targets
-                le = LabelEncoder()
-                targets_encoded[target] = le.fit_transform(data[target].astype(str))
-            else:
-                targets_encoded[target] = data[target].values
-
         # Compute MI between each predictor and each target
         for pred in predictors:
             for target in imputed_variables:
-                # Use encoded predictor values
-                pred_values = data_encoded[pred].values
-                target_values = targets_encoded[target]
-
-                # Compute mutual information
-                mi_value = _compute_mutual_information(
-                    pred_values, target_values, target_is_categorical[target]
+                mi_normalized = _normalized_mutual_information(
+                    data[pred].values,
+                    data[target].values,
+                    categorical_mask[pred],
+                    target_is_categorical[target],
+                    n_bins,
                 )
-
-                # Optionally normalize by target entropy for comparability
-                target_entropy = _compute_entropy(target_values)
-                if target_entropy > 0:
-                    mi_normalized = mi_value / target_entropy
-                else:
-                    mi_normalized = 0.0
 
                 pred_target_mi.loc[pred, target] = mi_normalized
 
@@ -278,6 +259,7 @@ def leave_one_out_analysis(
         ... )
         >>> print(results.sort_values('relative_impact', ascending=False))
     """
+    _require_distributional_model(model_class)
     # Split data
     train_data, test_data = train_test_split(
         data, train_size=train_size, random_state=random_state
@@ -419,6 +401,8 @@ def progressive_predictor_inclusion(
     if max_predictors is None:
         max_predictors = len(predictors)
 
+    _require_distributional_model(model_class)
+
     # Split data
     train_data, test_data = train_test_split(
         data, train_size=train_size, random_state=random_state
@@ -526,32 +510,50 @@ def progressive_predictor_inclusion(
 # Helper functions
 
 
-def _compute_mutual_information(
-    x: np.ndarray, y: np.ndarray, y_is_categorical: bool
-) -> float:
-    """Compute mutual information between two variables."""
-    # Remove any rows where either variable is NaN
-    mask = ~(pd.isna(x) | pd.isna(y))
-    x_clean = x[mask]
-    y_clean = y[mask]
+def _require_distributional_model(model_class: Type[Imputer]) -> None:
+    from microimpute.models.matching import Matching
 
-    if len(x_clean) == 0:
+    if issubclass(model_class, Matching):
+        raise NotImplementedError(
+            "Matching does not support distributional predictor analysis; "
+            "use a model with conditional quantiles and class probabilities"
+        )
+
+
+def _normalized_mutual_information(
+    x: np.ndarray,
+    y: np.ndarray,
+    x_is_categorical: bool,
+    y_is_categorical: bool,
+    n_bins: int,
+) -> float:
+    """Normalize empirical MI using entropies of the same paired discretization."""
+    mask = ~(pd.isna(x) | pd.isna(y))
+    if not np.any(mask):
         return 0.0
 
-    # Reshape for sklearn
-    x_clean = x_clean.reshape(-1, 1)
+    def discretize(values: np.ndarray, categorical: bool) -> np.ndarray:
+        if categorical:
+            return pd.factorize(values)[0]
+        numeric = np.asarray(values, dtype=float)
+        if not np.isfinite(numeric).all():
+            raise ValueError("Mutual information requires finite numeric values")
+        unique = np.unique(numeric)
+        if len(unique) <= n_bins:
+            return pd.factorize(numeric)[0]
+        # Equal-frequency bins are invariant to increasing unit transformations.
+        return np.asarray(pd.qcut(numeric, q=n_bins, labels=False, duplicates="drop"))
 
-    # Use appropriate MI function based on target type
-    if y_is_categorical:
-        mi = mutual_info_classif(x_clean, y_clean, random_state=RANDOM_STATE)[0]
-    else:
-        mi = mutual_info_regression(x_clean, y_clean, random_state=RANDOM_STATE)[0]
-
-    return mi
+    x_codes = discretize(x[mask], x_is_categorical)
+    y_codes = discretize(y[mask], y_is_categorical)
+    normalizer = min(_compute_entropy(x_codes), _compute_entropy(y_codes))
+    if normalizer <= 0:
+        return 0.0
+    return float(np.clip(mutual_info_score(x_codes, y_codes) / normalizer, 0.0, 1.0))
 
 
 def _compute_entropy(x: np.ndarray) -> float:
-    """Compute entropy of a variable."""
+    """Compute empirical discrete entropy in nats."""
     # Remove NaN values
     x_clean = x[~pd.isna(x)]
 
@@ -563,7 +565,7 @@ def _compute_entropy(x: np.ndarray) -> float:
     probs = counts / counts.sum()
 
     # Compute entropy
-    entropy = -np.sum(probs * np.log2(probs + 1e-10))
+    entropy = -np.sum(probs * np.log(probs))
 
     return entropy
 
@@ -581,7 +583,8 @@ def _evaluate_model_performance(
     """Train a model and evaluate its performance."""
     try:
         # Initialize and fit the model
-        model = model_class()
+        model = create_distributional_model(model_class)
+        model.seed = random_state
         fitted_model = model.fit(
             X_train=train_data,
             predictors=predictors,
@@ -590,7 +593,24 @@ def _evaluate_model_performance(
         )
 
         # Get predictions
-        predictions = fitted_model.predict(test_data, quantiles)
+        predictions = fitted_model.predict(test_data, quantiles, return_probs=True)
+        metrics_by_variable = {
+            var: get_metric_for_variable_type(train_data[var], var)
+            for var in imputed_variables
+        }
+        # Constant targets bypass a classifier, but their predictive distribution
+        # is an exact point mass. Unseen evaluation classes receive probability 0.
+        for var, info in model.constant_targets.items():
+            if metrics_by_variable[var] == "log_loss":
+                classes = np.unique(
+                    np.concatenate([train_data[var].values, test_data[var].values])
+                )
+                predictions.setdefault("probabilities", {})[var] = {
+                    "probabilities": np.tile(
+                        (classes == info["value"]).astype(float), (len(test_data), 1)
+                    ),
+                    "classes": classes,
+                }
 
         # Compute losses
         losses = _compute_losses_from_predictions(
@@ -598,6 +618,7 @@ def _evaluate_model_performance(
             true_data=test_data,
             imputed_variables=imputed_variables,
             quantiles=quantiles,
+            metrics_by_variable=metrics_by_variable,
         )
 
         return losses
@@ -608,10 +629,11 @@ def _evaluate_model_performance(
 
 
 def _compute_losses_from_predictions(
-    predictions: Dict[float, pd.DataFrame],
+    predictions: Dict[Any, Any],
     true_data: pd.DataFrame,
     imputed_variables: List[str],
     quantiles: List[float],
+    metrics_by_variable: Optional[Dict[str, str]] = None,
 ) -> Dict[str, float]:
     """Compute losses from model predictions."""
     quantile_losses = []
@@ -630,14 +652,35 @@ def _compute_losses_from_predictions(
             pred_values = predictions[quantile][var]
 
             # Determine appropriate loss metric
-            metric_type = get_metric_for_variable_type(true_values, var)
+            metric_type = (
+                metrics_by_variable[var]
+                if metrics_by_variable is not None
+                else get_metric_for_variable_type(true_values, var)
+            )
+
+            labels = None
+            if metric_type == "log_loss":
+                info = predictions.get("probabilities", {}).get(var)
+                if (
+                    not isinstance(info, dict)
+                    or not {"probabilities", "classes"} <= info.keys()
+                ):
+                    raise ValueError(
+                        f"Log loss for {var!r} requires predicted probabilities and classes"
+                    )
+                pred_values, labels = order_probabilities_alphabetically(
+                    np.asarray(info["probabilities"]), np.asarray(info["classes"])
+                )
+            else:
+                pred_values = pred_values.values
 
             # Compute loss (returns tuple of element-wise losses and mean)
             _, mean_loss = compute_loss(
                 test_y=true_values.values,
-                imputations=pred_values.values,
+                imputations=pred_values,
                 metric=metric_type,
                 q=quantile,
+                labels=labels,
             )
 
             if metric_type == "quantile_loss":
