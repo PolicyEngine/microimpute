@@ -94,11 +94,24 @@ class MatchingResults(ImputerResults):
             Dictionary mapping quantiles to imputed values.
             If return_probs=True, includes 'probabilities' key with one-hot encodings.
 
+        Side effects:
+            Sets ``self.n_failed_records`` to the number of recipient records
+            that could not be matched and are NaN in the result, and mirrors it
+            on ``result.attrs["n_failed_records"]``. It is reset to 0 on entry,
+            so it always describes the most recent call. Matching runs
+            single-threaded (``autoimpute`` forces ``n_jobs=1`` when a Matching
+            model is present), so concurrent calls on one fitted object would
+            race on it.
+
         Raises:
             ValueError: If model is not properly set up or
                 input data is invalid.
             RuntimeError: If matching or prediction fails.
         """
+        # Reset before any work: a prediction that raises must not leave the
+        # previous successful call's count readable as if it described this one.
+        self.n_failed_records = 0
+
         try:
             self.logger.info(f"Performing matching for {len(X_test)} recipient records")
 
@@ -376,6 +389,12 @@ class MatchingResults(ImputerResults):
                 if return_probs and prob_results:
                     imputations["probabilities"] = prob_results
 
+                # Mirror the unmatched count onto each frame, so a caller can
+                # see it without reaching into the fitted model.
+                for frame in imputations.values():
+                    if isinstance(frame, pd.DataFrame):
+                        frame.attrs["n_failed_records"] = self.n_failed_records
+
                 return imputations
             else:
                 # If no quantiles specified, use a default one
@@ -585,7 +604,13 @@ class Matching(Imputer):
             f"Tuning Matching hyperparameters with {n_cv_folds}-fold CV and {n_trials} trials"
         )
 
+        # Keeps the most recent underlying failure so an all-pruned study can
+        # report why, rather than only that nothing succeeded.
+        last_trial_error: Optional[BaseException] = None
+
         def objective(trial: optuna.Trial) -> float:
+            nonlocal last_trial_error
+
             params = {
                 "dist_fun": trial.suggest_categorical(
                     "dist_fun",
@@ -663,7 +688,8 @@ class Matching(Imputer):
                                     f"Matching failed for '{var}' on fold "
                                     f"{fold_idx} chunk {i}: {e}. Pruning trial."
                                 )
-                                raise optuna.TrialPruned() from e
+                                last_trial_error = e
+                            raise optuna.TrialPruned() from e
 
                         # Combine chunk results
                         y_pred = np.concatenate(y_pred_chunks)
@@ -687,6 +713,7 @@ class Matching(Imputer):
                                 f"Matching failed for '{var}' on fold "
                                 f"{fold_idx}: {e}. Pruning trial."
                             )
+                            last_trial_error = e
                             raise optuna.TrialPruned() from e
 
                     # Use appropriate metric based on variable type
@@ -735,7 +762,12 @@ class Matching(Imputer):
         if not any(
             trial.state == optuna.trial.TrialState.COMPLETE for trial in study.trials
         ):
-            raise ValueError("No matching hyperparameter trial succeeded")
+            raise ValueError(
+                "No matching hyperparameter trial succeeded. Last error: "
+                f"{last_trial_error}"
+                if last_trial_error
+                else "No matching hyperparameter trial succeeded"
+            )
 
         best_value = study.best_value
         self.logger.info(
