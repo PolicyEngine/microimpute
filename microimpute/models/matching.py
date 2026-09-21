@@ -74,6 +74,7 @@ class MatchingResults(ImputerResults):
         self.categorical_targets = categorical_targets or {}
         self.boolean_targets = boolean_targets or {}
         self.dummy_processor = dummy_processor
+        self.n_failed_records = 0
 
     @validate_call(config=VALIDATE_CONFIG)
     def _predict(
@@ -93,11 +94,24 @@ class MatchingResults(ImputerResults):
             Dictionary mapping quantiles to imputed values.
             If return_probs=True, includes 'probabilities' key with one-hot encodings.
 
+        Side effects:
+            Sets ``self.n_failed_records`` to the number of recipient records
+            that could not be matched and are NaN in the result, and mirrors it
+            on ``result.attrs["n_failed_records"]``. It is reset to 0 on entry,
+            so it always describes the most recent call. Matching runs
+            single-threaded (``autoimpute`` forces ``n_jobs=1`` when a Matching
+            model is present), so concurrent calls on one fitted object would
+            race on it.
+
         Raises:
             ValueError: If model is not properly set up or
                 input data is invalid.
             RuntimeError: If matching or prediction fails.
         """
+        # Reset before any work: a prediction that raises must not leave the
+        # previous successful call's count readable as if it described this one.
+        self.n_failed_records = 0
+
         try:
             self.logger.info(f"Performing matching for {len(X_test)} recipient records")
 
@@ -325,6 +339,18 @@ class MatchingResults(ImputerResults):
             )
             raise RuntimeError("Failed to process matching results") from convert_error
 
+        # Both single-call and chunked predictions replace the previous count.
+        # Only missing target values represent unmatched output records.
+        self.n_failed_records = int(
+            fused0[self.imputed_variables].isna().any(axis=1).sum()
+        )
+        if self.n_failed_records:
+            self.logger.warning(
+                f"{self.n_failed_records} of {len(fused0)} records "
+                f"({self.n_failed_records / len(fused0):.1%}) could not be "
+                "matched and are NaN in the result."
+            )
+
         # Create output dictionary with results
         imputations: Dict[float, pd.DataFrame] = {}
         prob_results = {} if return_probs else None
@@ -363,6 +389,12 @@ class MatchingResults(ImputerResults):
                 if return_probs and prob_results:
                     imputations["probabilities"] = prob_results
 
+                # Mirror the unmatched count onto each frame, so a caller can
+                # see it without reaching into the fitted model.
+                for frame in imputations.values():
+                    if isinstance(frame, pd.DataFrame):
+                        frame.attrs["n_failed_records"] = self.n_failed_records
+
                 return imputations
             else:
                 # If no quantiles specified, use a default one
@@ -388,6 +420,7 @@ class MatchingResults(ImputerResults):
                             prob_results[variable] = prob_df
 
                 imputations[q_default] = imputed_df
+                imputed_df.attrs["n_failed_records"] = self.n_failed_records
 
                 # Add probabilities to results if requested
                 if return_probs and prob_results:
@@ -572,7 +605,13 @@ class Matching(Imputer):
             f"Tuning Matching hyperparameters with {n_cv_folds}-fold CV and {n_trials} trials"
         )
 
+        # Keeps the most recent underlying failure so an all-pruned study can
+        # report why, rather than only that nothing succeeded.
+        last_trial_error: Optional[BaseException] = None
+
         def objective(trial: optuna.Trial) -> float:
+            nonlocal last_trial_error
+
             params = {
                 "dist_fun": trial.suggest_categorical(
                     "dist_fun",
@@ -639,11 +678,19 @@ class Matching(Imputer):
                                 )
                                 y_pred_chunks.append(fused0[var].values)
                                 y_val_chunks.append(chunk_y_val.values)
-                            except Exception:
-                                # If chunk fails, use mean of training data as prediction
-                                mean_val = X_train_fold[var].mean()
-                                y_pred_chunks.append(np.full(len(chunk_data), mean_val))
-                                y_val_chunks.append(chunk_y_val.values)
+                            except Exception as e:
+                                # Substituting the training mean here would
+                                # score this trial as a mean-predictor, which
+                                # can beat a genuine matching fit on a
+                                # low-signal target. Prune instead, so a
+                                # parameter set that cannot match is never
+                                # selected as best.
+                                self.logger.warning(
+                                    f"Matching failed for '{var}' on fold "
+                                    f"{fold_idx} chunk {i}: {e}. Pruning trial."
+                                )
+                                last_trial_error = e
+                                raise optuna.TrialPruned() from e
 
                         # Combine chunk results
                         y_pred = np.concatenate(y_pred_chunks)
@@ -660,11 +707,15 @@ class Matching(Imputer):
                             )
                             y_pred = fused0[var].values
                             y_val_combined = y_val.values
-                        except Exception:
-                            # If matching fails, use mean of training data as prediction
-                            mean_val = X_train_fold[var].mean()
-                            y_pred = np.full(len(X_val_var), mean_val)
-                            y_val_combined = y_val.values
+                        except Exception as e:
+                            # See above: score the trial on matching, or not at
+                            # all.
+                            self.logger.warning(
+                                f"Matching failed for '{var}' on fold "
+                                f"{fold_idx}: {e}. Pruning trial."
+                            )
+                            last_trial_error = e
+                            raise optuna.TrialPruned() from e
 
                     # Use appropriate metric based on variable type
                     metric = variable_metrics[var]
@@ -708,6 +759,16 @@ class Matching(Imputer):
         os.environ["PYTHONWARNINGS"] = "ignore"
 
         study.optimize(objective, n_trials=n_trials)
+
+        if not any(
+            trial.state == optuna.trial.TrialState.COMPLETE for trial in study.trials
+        ):
+            raise ValueError(
+                "No matching hyperparameter trial succeeded. Last error: "
+                f"{last_trial_error}"
+                if last_trial_error
+                else "No matching hyperparameter trial succeeded"
+            )
 
         best_value = study.best_value
         self.logger.info(
