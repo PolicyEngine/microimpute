@@ -45,6 +45,12 @@ jobs:
       name: Publish to PyPI
       if: (github.event.head_commit.message == 'Update package version')
       runs-on: ubuntu-latest
+      # PyPI trusted publishing: uploads accepted only from this workflow in
+      # the pypi environment (limited to main). No stored token.
+      environment: pypi
+      permissions:
+        contents: write # publish-git-tag.sh pushes the release tag
+        id-token: write # OIDC token for PyPI trusted publishing
       strategy:
         matrix:
           python-version: ["3.14"]
@@ -66,6 +72,4 @@ jobs:
         - name: Publish to PyPI
           uses: pypa/gh-action-pypi-publish@release/v1
           with:
-            user: __token__
-            password: ${{ secrets.PYPI }}
             skip-existing: true
