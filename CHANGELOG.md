@@ -1,3 +1,10 @@
+## [3.2.0] - 2026-11-06
+
+### Added
+
+- Add an experiment that measures how the choice of method for imputing medical out-of-pocket spending (MOOP) changes Supplemental Poverty Measure poverty on held-out 2026 CPS ASEC SPM units (`experiments/moop_spm`).
+
+
 ## [3.1.4] - 2026-10-12
 
 ### Changed
