@@ -24,6 +24,8 @@ MAIN = [
     "pmm",
     "qrf",
     "zi_qrf",
+    "microcosm_qrf",
+    "microcosm_qrf_unweighted",
 ]
 SHORT = {
     "reported": "Reported",
@@ -31,8 +33,10 @@ SHORT = {
     "logit_reg_mean": "(a) Logit + OLS mean",
     "logit_draw_hotdeck": "(b) Logit draw + donor",
     "pmm": "PMM",
-    "qrf": "(c) QRF",
-    "zi_qrf": "(c) ZI-QRF",
+    "qrf": "(c) microimpute QRF",
+    "zi_qrf": "(c) microimpute ZI-QRF",
+    "microcosm_qrf": "(c) Microcosm QRF, weighted",
+    "microcosm_qrf_unweighted": "(c) Microcosm QRF, unweighted",
 }
 DECOMPOSITION = [
     "logit_cell_mean",
@@ -339,6 +343,28 @@ def placeholder_values(results: dict) -> dict[str, str]:
         raise ValueError("A method (a), (b) or PMM no longer raises the subset rate.")
     values["subset_pp_low_ab_pmm"] = f"{100 * min(subset_ab_pmm):.2f}"
     values["subset_pp_high_ab_pmm"] = f"{100 * max(subset_ab_pmm):.2f}"
+    # The note says all four QRF fits leave the national rate within 0.1
+    # point and fall short of the reported MOOP total.
+    forests = ["qrf", "zi_qrf", "microcosm_qrf", "microcosm_qrf_unweighted"]
+    if max(abs(methods[m]["diff"][0]) for m in forests) >= 0.001:
+        raise ValueError("A QRF fit moves the national rate by 0.1 point or more.")
+    totals = [methods[m]["distribution"]["aggregate_billions"] for m in forests]
+    if max(totals) >= reported_total:
+        raise ValueError("A QRF fit no longer falls short of the reported total.")
+    # It says four methods raise the rate of the first band above the line.
+    band1 = keyed["pre_moop_ratio::1.0 to 1.25"]
+    cited = ["logit_cell_mean", "logit_draw_hotdeck", "pmm", "microcosm_qrf"]
+    if min(methods[m]["diff"][band1] for m in cited) <= 0:
+        raise ValueError("A method the note cites no longer raises the band's rate.")
+    subset_forests = [methods[m]["no_allocation_subset"] for m in forests]
+    values["subset_diff_low_forest"] = signed(min(s["diff"] for s in subset_forests))
+    values["subset_diff_high_forest"] = signed(max(s["diff"] for s in subset_forests))
+    values["subset_se_low_forest"] = (
+        f"{100 * min(s['diff_se'] for s in subset_forests):.2f}"
+    )
+    values["subset_se_high_forest"] = (
+        f"{100 * max(s['diff_se'] for s in subset_forests):.2f}"
+    )
     return values
 
 

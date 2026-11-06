@@ -60,8 +60,8 @@ carries:
 
 ## Methods
 
-We fit every method on donor units, without survey weights, and impute
-held-out recipient units (`methods.py`).
+We fit every method on donor units and impute held-out recipient units
+(`methods.py`). Only the weighted Microcosm fit uses survey weights.
 
 | Name | Participation | Amount |
 |---|---|---|
@@ -71,6 +71,27 @@ held-out recipient units (`methods.py`).
 | `pmm` | implicit | predictive mean matching on log(1 + MOOP) within five coverage groups, random one of 5 nearest donors |
 | (c) `qrf` | implicit | microimpute `QRF`, one random quantile per unit |
 | (c) `zi_qrf` | microimpute gate | microimpute `ZeroInflatedImputer` around `QRF` |
+| (c) `microcosm_qrf` | Microcosm gate, a gradient-boosted classifier | Microcosm `RegimeGatedQRF` forest grown on donor spenders, one random quantile per unit; gate and forest use the SPM unit weights |
+| (c) `microcosm_qrf_unweighted` | same, without weights | same, without weights |
+
+Microcosm (`PolicyEngine/microcosm`) builds PolicyEngine's microdata,
+and its `microcosm-fit` package imputes with `RegimeGatedQRF`. We fit it
+with its defaults (100 trees, every leaf sample kept, no cross-fitting
+of the gate), once with each donor unit's SPM weight (`SPM_WEIGHT / 100`) and
+once without weights. The weighted fit passes the weights to the gate as
+sample weights and grows the forest on spenders resampled in proportion
+to them. Both fits share a seed, so their draws use the same random
+numbers. Beyond the weights, Microcosm's model differs from microimpute's
+`QRF` in three ways:
+
+- Its gate draws whether a unit spends. microimpute's `QRF` has no
+  gate, and `ZeroInflatedImputer` adds one of its own.
+- It keeps every training sample in each leaf, where microimpute keeps
+  quantile-forest's default of at most one.
+- It reads each unit's draw at that unit's own quantile, interpolating
+  a 203-point grid whose ends lie 0.000001 from 0 and 1. microimpute
+  rounds the quantile to the nearest of 101 points from 1/102 to
+  101/102.
 
 We form cells from the unit's coverage group (Medicare, employer, direct
 purchase, public, uninsured), the head's age band, cash income relative
@@ -106,7 +127,19 @@ cells).
 
 ## Running
 
-Install microimpute, then run from the repository root:
+Install microimpute with its `dev` extra, and Microcosm's `graph`,
+`frame` and `fit` packages at the commit we used. Microcosm needs Python
+3.13 or later and installs from git:
+
+```bash
+uv pip install -e ".[dev]"
+uv pip install \
+  "microcosm-graph @ git+https://github.com/PolicyEngine/microcosm@7080ba8a3ff4ba498575ec1a624a9064a6f619c8#subdirectory=packages/microcosm-graph" \
+  "microcosm-frame @ git+https://github.com/PolicyEngine/microcosm@7080ba8a3ff4ba498575ec1a624a9064a6f619c8#subdirectory=packages/microcosm-frame" \
+  "microcosm-fit @ git+https://github.com/PolicyEngine/microcosm@7080ba8a3ff4ba498575ec1a624a9064a6f619c8#subdirectory=packages/microcosm-fit"
+```
+
+Then run from the repository root:
 
 ```bash
 python -m experiments.moop_spm.run --data-dir ~/data/cps_asec_2026
@@ -115,15 +148,20 @@ python -m experiments.moop_spm.render
 
 The first command downloads the 139 MB Census zip, checks its SHA-256,
 caches each fold's imputations in `results/cache/`, which git ignores,
-and writes `results/results.json`.
+and writes `results/results.json`. `--n-jobs` (default 4) caps the
+threads of microimpute's `QRF` and of each Microcosm fit; a test checks
+that Microcosm's draws do not depend on it.
 `run.py` refits every fold when any of these change:
 
 - the settings or the experiment's source files;
-- any microimpute source file;
+- any source file of microimpute or of Microcosm's `fit`, `frame` and
+  `graph` packages;
 - the version of Python, numpy, pandas, scipy, scikit-learn,
-  quantile-forest or microimpute;
+  quantile-forest, microimpute or Microcosm, or the commit Microcosm came
+  from;
 - the model inputs or their row keys.
 
-`run.py` also records each method's run time in `results.json`. The
-tests in `tests/test_moop_spm_experiment.py` check the experiment's
-invariants on synthetic data.
+`run.py` also records each method's run time, and the commit each
+Microcosm package came from, in `results.json`. The tests in
+`tests/test_moop_spm_experiment.py` check the experiment's invariants on
+synthetic data; the Microcosm tests skip on a machine without Microcosm.

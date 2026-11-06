@@ -21,6 +21,12 @@ Methods:
 - ``qrf``: microimpute's ``QRF`` fit on all donors, one random quantile
   draw per recipient.
 - ``zi_qrf``: microimpute's ``ZeroInflatedImputer`` around ``QRF``.
+- ``microcosm_qrf``: Microcosm's ``RegimeGatedQRF``, the model that
+  imputes PolicyEngine's microdata, fit with the donors' unit weights.
+  On Microcosm's own data frames, a fit uses the frame's weights unless
+  told not to.
+- ``microcosm_qrf_unweighted``: the same model fit without weights, like
+  every other method here.
 
 Decomposition variants cross the participation rule (threshold or
 draw) with the amount rule (cell mean or donor draw), and
@@ -31,7 +37,9 @@ coverage group only (five cells).
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+import os
+from collections.abc import Callable, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 import numpy as np
@@ -170,10 +178,15 @@ def participation_probability(model: Pipeline, X: pd.DataFrame) -> np.ndarray:
 
 @dataclass
 class FoldData:
-    """Donor and recipient data for one cross-fitting fold."""
+    """Donor and recipient data for one cross-fitting fold.
+
+    ``weight_donor`` holds the donors' SPM unit weights; only the weighted
+    Microcosm fit reads them.
+    """
 
     X_donor: pd.DataFrame
     moop_donor: np.ndarray
+    weight_donor: np.ndarray
     cells_donor: pd.DataFrame
     group_donor: np.ndarray
     X_recipient: pd.DataFrame
@@ -353,6 +366,70 @@ def zi_qrf(fold: FoldData, n_draws: int, seed: int) -> np.ndarray:
     return draws
 
 
+@contextmanager
+def microcosm_threads(n_jobs: int) -> Iterator[None]:
+    """Cap Microcosm's threads at ``n_jobs``.
+
+    Microcosm reads its forest-fitting and drawing widths from environment
+    variables that its ``qrf`` module names; when they are unset, it fits
+    and draws on every core. Its gate, a scikit-learn gradient-boosted
+    classifier, runs on OpenMP threads, which ``threadpoolctl`` caps. The
+    previous settings come back on exit.
+    """
+    from microcosm.fit import qrf as microcosm_qrf_module
+    from threadpoolctl import threadpool_limits
+
+    names = (
+        microcosm_qrf_module._N_JOBS_ENV,
+        microcosm_qrf_module._PREDICT_WORKERS_ENV,
+    )
+    saved = {name: os.environ.get(name) for name in names}
+    os.environ.update({name: str(n_jobs) for name in names})
+    try:
+        with threadpool_limits(limits=n_jobs, user_api="openmp"):
+            yield
+    finally:
+        for name, value in saved.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+
+
+def microcosm_qrf(
+    fold: FoldData,
+    n_draws: int,
+    seed: int,
+    weighted: bool,
+    n_jobs: int = 4,
+) -> np.ndarray:
+    """Microcosm's ``RegimeGatedQRF`` on all donors.
+
+    A gradient-boosted classifier gates zero against positive MOOP, and a
+    quantile regression forest grown on donor spenders gives each gated
+    spender the amount at a random quantile of its predicted distribution.
+    With ``weighted``, the gate takes the donors' unit weights as sample
+    weights and the forest grows on spenders resampled in proportion to
+    them; without it, both ignore the weights. Each draw calls ``predict``
+    again on the one fitted model, which advances the model's own random
+    stream.
+    """
+    from microcosm.fit import NO_WEIGHTS, RegimeGatedQRF
+
+    train = fold.X_donor.copy()
+    train["moop"] = fold.moop_donor
+    predictors = list(fold.X_donor.columns)
+    weights = fold.weight_donor if weighted else NO_WEIGHTS
+    draws = np.empty((n_draws, len(fold.X_recipient)))
+    with microcosm_threads(n_jobs):
+        fitted = RegimeGatedQRF(seed=seed).fit(
+            train, predictors, ["moop"], weights=weights
+        )
+        for r in range(n_draws):
+            draws[r] = fitted.predict(fold.X_recipient)["moop"].to_numpy()
+    return draws
+
+
 MAIN_METHODS = [
     "logit_cell_mean",
     "logit_reg_mean",
@@ -360,6 +437,8 @@ MAIN_METHODS = [
     "pmm",
     "qrf",
     "zi_qrf",
+    "microcosm_qrf",
+    "microcosm_qrf_unweighted",
 ]
 DECOMPOSITION_METHODS = [
     "logit_threshold_hotdeck",
@@ -381,6 +460,8 @@ METHOD_LABELS = {
     "pmm": "PMM within coverage groups",
     "qrf": "(c) QRF (microimpute)",
     "zi_qrf": "(c) Zero-inflated QRF (microimpute)",
+    "microcosm_qrf": "(c) Regime-gated QRF (Microcosm), unit weights",
+    "microcosm_qrf_unweighted": "(c) Regime-gated QRF (Microcosm), unweighted",
     "logit_threshold_hotdeck": "Logit, p >= 0.5, donor amount in cell",
     "logit_draw_cell_mean": "Logit draw, cell mean",
     "logit_expected_value": "p x cell mean for every unit",
@@ -391,6 +472,8 @@ STOCHASTIC = {
     "pmm",
     "qrf",
     "zi_qrf",
+    "microcosm_qrf",
+    "microcosm_qrf_unweighted",
     "logit_threshold_hotdeck",
     "logit_draw_cell_mean",
 }
