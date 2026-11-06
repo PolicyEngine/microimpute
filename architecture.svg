@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="620" height="545" viewBox="0 0 620 545" font-family="Helvetica, Arial, sans-serif" font-size="13">
+  <rect width="620" height="545" fill="#fff"/>
+
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2c5f5c"/>
+    </marker>
+  </defs>
+
+  <!-- Cross-validation enclosure -->
+  <rect x="20" y="20" width="580" height="370" rx="12" fill="#f4fbfa" stroke="#319795" stroke-width="2" stroke-dasharray="7 5"/>
+
+  <!-- Donor -->
+  <rect x="45" y="45" width="250" height="110" rx="10" fill="#319795"/>
+  <text x="170" y="80" text-anchor="middle" font-weight="bold" font-size="21" fill="#fff">Donor</text>
+  <text x="170" y="104" text-anchor="middle" font-size="12" fill="#d4f0ef">Observes predictors</text>
+  <text x="170" y="121" text-anchor="middle" font-size="12" fill="#d4f0ef">and target variables</text>
+  <text x="170" y="142" text-anchor="middle" font-size="10" fill="#b0dfdd">(e.g. Survey of Consumer Finances)</text>
+
+  <!-- Receiver -->
+  <rect x="325" y="45" width="250" height="110" rx="10" fill="#2a8a88"/>
+  <text x="450" y="80" text-anchor="middle" font-weight="bold" font-size="21" fill="#fff">Receiver</text>
+  <text x="450" y="104" text-anchor="middle" font-size="12" fill="#d4f0ef">Observes only the</text>
+  <text x="450" y="121" text-anchor="middle" font-size="12" fill="#d4f0ef">shared predictors</text>
+  <text x="450" y="142" text-anchor="middle" font-size="10" fill="#b0dfdd">(e.g. Current Population Survey)</text>
+
+  <!-- Arrows into Methods -->
+  <line x1="170" y1="155" x2="240" y2="198" stroke="#2c5f5c" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="450" y1="155" x2="380" y2="198" stroke="#2c5f5c" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Methods -->
+  <rect x="125" y="203" width="370" height="110" rx="10" fill="#1f6e6b"/>
+  <text x="310" y="238" text-anchor="middle" font-weight="bold" font-size="21" fill="#fff">Methods</text>
+  <text x="310" y="262" text-anchor="middle" font-size="12" fill="#d4f0ef">Matching, ordinary least squares, quantile</text>
+  <text x="310" y="279" text-anchor="middle" font-size="12" fill="#d4f0ef">regression, quantile regression forests, MDN</text>
+  <text x="310" y="300" text-anchor="middle" font-size="10" fill="#b0dfdd">(one fit/predict interface, scored by quantile loss)</text>
+
+  <!-- Enclosure label, bottom inside -->
+  <text x="45" y="347" text-anchor="start" font-weight="bold" font-size="15" fill="#1a4a48">Cross-validation</text>
+  <text x="45" y="368" text-anchor="start" font-size="10" fill="#4a7c7a">(five folds on the donor)</text>
+
+  <!-- Arrow down to result, crossing the boundary -->
+  <line x1="310" y1="313" x2="310" y2="418" stroke="#2c5f5c" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- Result -->
+  <rect x="125" y="423" width="370" height="100" rx="10" fill="#e6f4f3" stroke="#319795" stroke-width="2"/>
+  <text x="310" y="455" text-anchor="middle" font-weight="bold" font-size="19" fill="#1a4a48">Result</text>
+  <text x="310" y="479" text-anchor="middle" font-size="12" fill="#1a4a48">Imputed variables in the receiver</text>
+  <text x="310" y="503" text-anchor="middle" font-size="10" fill="#4a7c7a">(with per-method losses and the fitted model)</text>
+</svg>
