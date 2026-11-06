@@ -2,13 +2,14 @@
 
 How much does the choice of method for imputing medical out-of-pocket
 spending (MOOP) change Supplemental Poverty Measure (SPM) poverty? We
-measure it on the 2026 CPS ASEC public-use file, which records SPM-unit
+measure it on the public-use file of the 2026 Current Population Survey
+Annual Social and Economic Supplement (CPS ASEC), which records SPM-unit
 MOOP for calendar year 2025.
 
 The American Community Survey (ACS) does not ask about medical spending,
-so researchers who build an SPM on the ACS impute MOOP. Census
-researchers used predictive mean matching by insurance status
-([Fox, Pacas and Glassman, 2017](https://www.census.gov/content/dam/Census/library/working-papers/2017/demo/Fox-ACSSPM2014.pdf)).
+so researchers who build an SPM on the ACS impute MOOP. For 2014,
+Census researchers imputed it with predictive mean matching by insurance
+status ([Fox, Pacas and Glassman, 2017](https://www.census.gov/content/dam/Census/library/working-papers/2017/demo/Fox-ACSSPM2014.pdf)).
 We impute MOOP within the CPS ASEC and check each method against the
 file's own MOOP.
 
@@ -17,33 +18,35 @@ file's own MOOP.
 
 ## Data
 
-- Source: Census CPS ASEC 2026 public-use CSV release
-  (`asecpub26csv.zip`; `cps_asec.py` pins its SHA-256), with the 160
-  person replicate weights it ships.
-- Imputation unit: the SPM unit. Target: `SPM_MEDXPNS`, which the
-  dictionary labels "MOOP and Medicare Part B subsidy". In the file it
+- We use Census's CPS ASEC 2026 public-use CSV release
+  (`asecpub26csv.zip`; `cps_asec.py` pins its SHA-256) and the 160 person
+  replicate weights it ships.
+- We impute `SPM_MEDXPNS` for each SPM unit. Census's data dictionary
+  labels it "MOOP and Medicare Part B subsidy", and on every record it
   equals the unit sum of person `MOOP` plus the unit sum of `PEMCPREM`
-  (edited Medicare premium) on every record.
-- `check_spm_identity` confirms, on every record, that
-  `SPM_RESOURCES` equals cash income plus SNAP, housing, school lunch,
-  energy and WIC subsidies, less taxes, FICA, capped work and child care
-  expenses, MOOP and child support paid; and that `SPM_POOR` equals
-  `SPM_RESOURCES < SPM_POVTHRESHOLD`. So an imputed MOOP `m'` changes a
-  unit's resources to `SPM_RESOURCES + SPM_MEDXPNS - m'`.
-- Baseline: with reported MOOP and the ASEC person weight, we reproduce
-  Census's published 2025 SPM rates (P60-290 Table 5) and their margins
-  of error, for all people and each age group, to within 0.01 percentage
-  point. Our MOOP effects (the rise in the rate from subtracting MOOP)
-  fall 0.02 to 0.03 points short of Census's.
-  `results.json` records the published figures beside the computed ones.
+  (edited Medicare premium).
+- `check_spm_identity` confirms that, on every record, `SPM_RESOURCES`
+  equals cash income plus SNAP, housing, school lunch, energy and WIC
+  subsidies, less taxes, FICA, capped work and child care expenses,
+  `SPM_MEDXPNS` and child support paid. So an imputed MOOP `m'` changes
+  a unit's resources to `SPM_RESOURCES + SPM_MEDXPNS - m'`. It also
+  confirms that `SPM_POOR` equals `SPM_RESOURCES < SPM_POVTHRESHOLD`, so
+  we recompute poverty from the new resources and the unchanged
+  threshold.
+- With reported MOOP and the ASEC person weight, we reproduce Census's
+  published 2025 SPM rates (P60-290 Table 5) and their margins of error,
+  for all people and each age group, to within 0.01 percentage point.
+  Subtracting MOOP raises our rates by 0.02 to 0.03 points less than it
+  raises Census's. `results.json` records the published figures beside
+  ours.
 - Census imputes MOOP for 43% of the file's people (`I_MOOP` of 1, 2 or
-  3) and the Medicare premium for 13% (`I_MCPREM` of 2). So we repeat the
-  comparison on units where Census imputes neither for any member.
+  3) and the Medicare premium for 13% (`I_MCPREM` of 2).
 
 ## Predictors
 
-We limit every method to predictors an ACS-style recipient file carries,
-built at the SPM-unit level (`cps_asec.design_matrix`, 73 columns):
+For each SPM unit, we build 73 predictor columns
+(`cps_asec.design_matrix`) from information an ACS-style recipient file
+carries:
 
 - head's age and sex; counts of members aged 0-17, 18-44, 45-64, 65-74,
   75+; adult women;
@@ -63,7 +66,7 @@ held-out recipient units (`methods.py`).
 | Name | Participation | Amount |
 |---|---|---|
 | (a) `logit_cell_mean` | logistic P(MOOP > 0) >= 0.5 | mean of donor spenders in the unit's cell |
-| (a) `logit_reg_mean` | same | OLS prediction among donor spenders (floored at 0) |
+| (a) `logit_reg_mean` | same | max(0, OLS prediction among donor spenders) |
 | (b) `logit_draw_hotdeck` | Bernoulli draw from the logistic P | random donor spender in the cell |
 | `pmm` | implicit | predictive mean matching on log(1 + MOOP) within five coverage groups, random one of 5 nearest donors |
 | (c) `qrf` | implicit | microimpute `QRF`, one random quantile per unit |
@@ -71,13 +74,13 @@ held-out recipient units (`methods.py`).
 
 We form cells from the unit's coverage group (Medicare, employer, direct
 purchase, public, uninsured), the head's age band, cash income relative
-to the threshold (under 1, 1-2, 2-4, 4+) and unit size (1, 2, 3+). A cell
-needs 30 donor spenders; otherwise the recipient falls back to coarser
-cells.
+to the threshold (under 1, 1-2, 2-4, 4+) and unit size (1, 2, 3+). Each
+recipient uses the finest cell with at least 30 donor spenders. Where its
+full cell has fewer, we drop unit size, then income, then age and then
+coverage group.
 
-For PMM, we follow the approach Census researchers described for their
-ACS-SPM research in 2017 (predictive mean matching within eight groups
-by insurance status) but match within five coverage groups.
+For PMM, we match within five coverage groups, where the Census
+researchers used eight groups by insurance status.
 
 To decompose method (a), we cross the participation rule (0.5 cutoff or
 a draw) with the amount rule (cell mean or a donor draw). In two more
@@ -87,23 +90,23 @@ cells).
 
 ## Design
 
-- We split whole households into 5 folds (`run.assign_folds`), and each
-  SPM unit gets an imputation from models we fit on the other 4 folds.
+- We assign whole households to 5 folds (`run.assign_folds`) and impute
+  each SPM unit from models we fit on the other 4.
 - We take 10 draws for each stochastic method and average poverty rates
   over them.
 - We weight rates with the ASEC person weight (`MARSUPWT / 100`) and
   compute standard errors from the 160 replicate weights,
   `SE^2 = (4 / 160) * sum_r (theta_r - theta_0)^2`, treating the fitted
   imputation models as fixed.
-- Breakdowns: age, disability, current coverage, and the unit's resources
-  before MOOP relative to its threshold.
-- Robustness: the same comparison among people in SPM units where
-  Census imputes no member's MOOP or Medicare premium (`I_MOOP` of 0 or
-  -1, and `I_MCPREM` of 0 or -1).
+- We break the results down by age, disability, current coverage, and
+  the unit's resources before MOOP relative to its threshold.
+- We repeat the comparison among people in SPM units where Census
+  imputes no member's MOOP or Medicare premium (`I_MOOP` of 0 or -1, and
+  `I_MCPREM` of 0 or -1).
 
 ## Running
 
-From the repository root, with microimpute installed:
+Install microimpute, then run from the repository root:
 
 ```bash
 python -m experiments.moop_spm.run --data-dir ~/data/cps_asec_2026
@@ -111,7 +114,8 @@ python -m experiments.moop_spm.render
 ```
 
 The first command downloads the 139 MB Census zip, checks its SHA-256,
-and caches per-fold imputations in `results/cache/` (git-ignored).
+caches each fold's imputations in `results/cache/` (git-ignored) and
+writes `results/results.json`.
 `run.py` refits every fold when any of these change:
 
 - the settings or the experiment's source files;

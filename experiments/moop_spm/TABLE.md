@@ -1,6 +1,6 @@
 # MOOP imputation and SPM poverty: tables
 
-Source: CPS ASEC 2026 public-use file (calendar-year 2025 income), 134,729 people in 55,401 SPM units and 53,344 households. We impute each unit's MOOP from models fit on the other 4 of 5 folds of whole households, and stochastic methods average 10 draws. Rates use the ASEC person weight. Standard errors in parentheses use the 160 replicate weights and treat the fitted imputation models as fixed.
+Source: CPS ASEC 2026 public-use file (calendar-year 2025 income), 134,729 people in 55,401 SPM units and 53,344 households. We impute each unit's MOOP from models we fit on the other 4 of 5 folds of whole households and average 10 draws for each stochastic method. We weight rates by the ASEC person weight and compute the standard errors in parentheses from the 160 replicate weights, treating the fitted imputation models as fixed.
 
 ## Table 1. SPM poverty rate with reported MOOP (%), and the change under each imputation (percentage points, SE)
 
@@ -30,9 +30,9 @@ Source: CPS ASEC 2026 public-use file (calendar-year 2025 income), 134,729 peopl
 | 2.0 to 3.0 | 30,010 | 0.3 | -0.32 (0.07) | -0.32 (0.07) | +0.05 (0.07) | +0.03 (0.08) | -0.10 (0.07) | -0.06 (0.07) |
 | 3.0 or more | 55,747 | 0.1 | -0.05 (0.02) | -0.05 (0.02) | +0.03 (0.02) | +0.02 (0.02) | +0.02 (0.02) | +0.00 (0.02) |
 
-Every method imputes MOOP of zero or more, so people whose unit's resources before MOOP fall below its threshold stay poor under every method, and the 'Under 1.0' row cannot change.
+Every method imputes MOOP of zero or more, so people whose unit's resources before MOOP fall below its threshold stay poor, and the 'Under 1.0' row cannot change.
 
-## Table 2. SPM-unit MOOP distribution (weighted by SPM unit) and gross flows
+## Table 2. MOOP distribution across SPM units (unit weights) and gross flows of people (person weights)
 
 | Statistic | Reported | (a) Logit + cell mean | (a) Logit + OLS mean | (b) Logit draw + donor | PMM | (c) QRF | (c) ZI-QRF |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -49,7 +49,7 @@ Every method imputes MOOP of zero or more, so people whose unit's resources befo
 | Mean, resources before MOOP 2.0 to 3.0 x threshold | $6,086 | $6,116 | $5,872 | $5,953 | $5,783 | $5,809 | $5,843 |
 | People newly poor (%) | 0.0 | 1.37 | 1.40 | 1.74 | 1.63 | 1.33 | 1.37 |
 | People newly not poor (%) | 0.0 | 1.07 | 1.06 | 1.36 | 1.31 | 1.40 | 1.41 |
-| Units where Census imputes no MOOP or Medicare premium: change in rate (pp) | 0.00 | +0.36 (0.11) | +0.26 (0.11) | +0.52 (0.09) | +0.48 (0.10) | +0.01 (0.09) | +0.07 (0.10) |
+| Change in rate among people in units where Census imputes no MOOP or Medicare premium (pp) | 0.00 | +0.36 (0.11) | +0.26 (0.11) | +0.52 (0.09) | +0.48 (0.10) | +0.01 (0.09) | +0.07 (0.10) |
 
 ## Table 3. How the participation and amount rules of the logit approach move the rate (all people)
 

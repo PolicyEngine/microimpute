@@ -136,7 +136,10 @@ def distribution_table(results: dict) -> list[str]:
             + " |"
         )
     subset = [
-        "Units where Census imputes no MOOP or Medicare premium: change in rate (pp)",
+        (
+            "Change in rate among people in units where Census imputes no "
+            "MOOP or Medicare premium (pp)"
+        ),
         "0.00",
     ] + [
         f"{signed(methods[m]['no_allocation_subset']['diff'])} "
@@ -347,11 +350,12 @@ def main() -> None:
         f"Source: {data['survey']} (calendar-year {data['reference_year']} "
         f"income), {data['n_persons']:,} people in {data['n_units']:,} SPM "
         f"units and {data['n_households']:,} households. We impute each "
-        f"unit's MOOP from models fit on the other {folds - 1} of {folds} "
-        "folds of whole households, and stochastic methods average "
-        f"{results['config']['draws']} draws. Rates use the ASEC person "
-        "weight. Standard errors in parentheses use the 160 replicate "
-        "weights and treat the fitted imputation models as fixed."
+        f"unit's MOOP from models we fit on the other {folds - 1} of {folds} "
+        "folds of whole households and average "
+        f"{results['config']['draws']} draws for each stochastic method. We "
+        "weight rates by the ASEC person weight and compute the standard "
+        "errors in parentheses from the 160 replicate weights, treating the "
+        "fitted imputation models as fixed."
     )
     table_1 = (
         "## Table 1. SPM poverty rate with reported MOOP (%), and the change "
@@ -359,11 +363,12 @@ def main() -> None:
     )
     table_1_note = (
         "Every method imputes MOOP of zero or more, so people whose unit's "
-        "resources before MOOP fall below its threshold stay poor under "
-        "every method, and the 'Under 1.0' row cannot change."
+        "resources before MOOP fall below its threshold stay poor, and the "
+        "'Under 1.0' row cannot change."
     )
     table_2 = (
-        "## Table 2. SPM-unit MOOP distribution (weighted by SPM unit) and gross flows"
+        "## Table 2. MOOP distribution across SPM units (unit weights) and "
+        "gross flows of people (person weights)"
     )
     table_3 = (
         "## Table 3. How the participation and amount rules of the logit "
