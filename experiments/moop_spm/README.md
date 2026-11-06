@@ -2,16 +2,18 @@
 
 How much does the method used to impute medical out-of-pocket spending
 (MOOP) change Supplemental Poverty Measure (SPM) poverty? This experiment
-answers that on data where MOOP is observed: the 2026 CPS ASEC public-use
-file, which reports SPM-unit MOOP for calendar year 2025.
+answers that on a file that carries MOOP: the 2026 CPS ASEC public-use
+file, which records SPM-unit MOOP for calendar year 2025.
 
-Census's ACS-based SPM and county-level SPM work impute MOOP into the
-American Community Survey from the CPS ASEC, because the ACS does not ask
-about medical spending. This test asks what each imputation method does
-to poverty when the true answer is known.
+The American Community Survey (ACS) does not ask about medical spending,
+so researchers who build an SPM on the ACS impute MOOP. Census
+researchers used predicted mean matching by insurance status
+([Fox, Pacas and Glassman, 2017](https://www.census.gov/content/dam/Census/library/working-papers/2017/demo/Fox-ACSSPM2014.pdf)).
+This test imputes MOOP within the CPS ASEC and checks each method against
+the file's own MOOP.
 
 `NOTE.md` summarizes the findings and `TABLE.md` has the full tables.
-Both are rendered from `results/results.json`.
+`render.py` writes both from `results/results.json`.
 
 ## Data
 
@@ -25,13 +27,18 @@ Both are rendered from `results/results.json`.
 - `check_spm_identity` confirms, on every record, that
   `SPM_RESOURCES` equals cash income plus SNAP, housing, school lunch,
   energy and WIC subsidies, less taxes, FICA, capped work and child care
-  expenses, MOOP and child support paid; and that `SPM_POOR` is exactly
+  expenses, MOOP and child support paid; and that `SPM_POOR` equals
   `SPM_RESOURCES < SPM_POVTHRESHOLD`. So an imputed MOOP `m'` changes a
   unit's resources to `SPM_RESOURCES + SPM_MEDXPNS - m'`.
 - Baseline: with reported MOOP and the ASEC person weight, the file
-  reproduces Census's published 2025 SPM rates (P60-290 Table 5) to
-  within 0.01 percentage point, and their replicate-weight margins of
-  error; `results.json` records both.
+  reproduces Census's published 2025 SPM rates (P60-290 Table 5) and
+  their margins of error, for all people and each age group, to within
+  0.01 percentage point. Its MOOP effects (the rise in the rate from
+  subtracting MOOP) fall 0.02 to 0.03 points short of Census's.
+  `results.json` records the published figures beside the computed ones.
+- Census imputes MOOP for 43% of the file's people (`I_MOOP` of 1, 2 or
+  3), so the robustness check below repeats the comparison on units with
+  no imputed MOOP.
 
 ## Predictors
 
@@ -51,7 +58,7 @@ level (`cps_asec.design_matrix`, 73 columns):
 ## Methods
 
 All methods fit on donor units and impute held-out recipient units
-(`methods.py`). Fits are unweighted.
+(`methods.py`). We fit every method without survey weights.
 
 | Name | Participation | Amount |
 |---|---|---|
@@ -68,13 +75,14 @@ to the threshold (under 1, 1-2, 2-4, 4+) and unit size (1, 2, 3+). A cell
 needs 30 donor spenders; otherwise the recipient falls back to coarser
 cells.
 
-PMM is in the spirit of the method Census described for its ACS-SPM
-research in 2017 (predicted mean matching by insurance group); it is not
-a replication.
+PMM follows the approach Census researchers described for their ACS-SPM
+research in 2017 (predicted mean matching by insurance group) without
+replicating it.
 
 Decomposition variants cross the participation rule (0.5 cutoff or a
-draw) with the amount rule (cell mean or a donor draw); two more assign
-`p x cell mean` to every unit or use coverage-group means only.
+draw) with the amount rule (cell mean or a donor draw). Two more assign
+`p x cell mean` to every unit, or give each unit at or above the 0.5
+cutoff its coverage group's mean (no age, income or size cells).
 
 ## Design
 
@@ -87,8 +95,8 @@ draw) with the amount rule (cell mean or a donor draw); two more assign
   imputation models as fixed.
 - Breakdowns: age, disability, current coverage, and the unit's resources
   before MOOP relative to its threshold.
-- Robustness: the same comparison among people in SPM units where no
-  member's MOOP was allocated by Census (`I_MOOP` of 0 or -1).
+- Robustness: the same comparison among people in SPM units where
+  Census imputed no member's MOOP (`I_MOOP` of 0 or -1).
 
 ## Running
 

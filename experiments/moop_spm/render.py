@@ -110,7 +110,7 @@ def distribution_table(results: dict) -> list[str]:
         ("75th percentile", lambda d: dollars(d["p75"])),
         ("90th percentile", lambda d: dollars(d["p90"])),
         ("99th percentile", lambda d: dollars(d["p99"])),
-        ("Aggregate ($ billions)", lambda d: f"{d['aggregate_billions']:,.0f}"),
+        ("Total ($ billions)", lambda d: f"{d['aggregate_billions']:,.0f}"),
     ]
     for b, label in BAND_ROWS:
         rows.append(
@@ -136,7 +136,7 @@ def distribution_table(results: dict) -> list[str]:
             + " |"
         )
     subset = [
-        "No allocated MOOP in unit: change in rate (pp)",
+        "Units where Census imputed no MOOP: change in rate (pp)",
         "0.00",
     ] + [
         f"{signed(methods[m]['no_allocation_subset']['diff'])} "
@@ -171,6 +171,71 @@ def decomposition_table(results: dict) -> list[str]:
     return lines
 
 
+def summary_table(results: dict) -> list[str]:
+    """Compact table for the note: headline rates, key groups, shape."""
+    methods = results["methods"]
+    keyed = {"::".join(g): i for i, g in enumerate(results["groups"])}
+    columns = ["reported"] + MAIN
+    header = [""] + [SHORT[m] for m in columns]
+    lines = [
+        "| " + " | ".join(header) + " |",
+        "|" + "|".join(["---"] + ["---:"] * len(columns)) + "|",
+    ]
+
+    def change(group: str, with_se: bool = False):
+        i = keyed[group]
+
+        def fmt(m: str) -> str:
+            if m == "reported":
+                return ""
+            entry = methods[m]
+            text = signed(entry["diff"][i])
+            if with_se:
+                text += f" ({100 * entry['diff_se'][i]:.2f})"
+            return text
+
+        return fmt
+
+    def dist(key: str, fmt):
+        return lambda m: fmt(methods[m]["distribution"][key])
+
+    def flows(m: str) -> str:
+        if m == "reported":
+            return ""
+        entry = methods[m]
+        return (
+            f"{100 * entry['newly_poor_share']:.2f} / "
+            f"{100 * entry['newly_nonpoor_share']:.2f}"
+        )
+
+    rows = [
+        (
+            "SPM rate, all people (%)",
+            lambda m: pct(methods[m]["rate"][keyed["all::All people"]], 2),
+        ),
+        ("Change, all people (pp, SE)", change("all::All people", with_se=True)),
+        ("Change, 65 and older (pp)", change("age::65 and older")),
+        ("Change, with a disability (pp)", change("disability::With a disability")),
+        ("Change, Medicare (pp)", change("coverage::Medicare")),
+        (
+            "Change, resources before MOOP 1.0 to 1.25 x threshold (pp)",
+            change("pre_moop_ratio::1.0 to 1.25"),
+        ),
+        (
+            "Mean MOOP, resources before MOOP 1.0 to 1.25 x threshold",
+            lambda m: dollars(methods[m]["distribution"]["band_means"][1]),
+        ),
+        ("Units with zero MOOP (%)", dist("share_zero", lambda x: f"{100 * x:.1f}")),
+        ("Median MOOP", dist("median", dollars)),
+        ("99th percentile MOOP", dist("p99", dollars)),
+        ("Total MOOP ($ billions)", dist("aggregate_billions", lambda x: f"{x:,.0f}")),
+        ("People newly poor / newly not poor (%)", flows),
+    ]
+    for name, fmt in rows:
+        lines.append("| " + " | ".join([name] + [fmt(m) for m in columns]) + " |")
+    return lines
+
+
 def placeholder_values(results: dict) -> dict[str, str]:
     """Flat name-to-string map the note template can reference."""
     methods = results["methods"]
@@ -188,6 +253,7 @@ def placeholder_values(results: dict) -> dict[str, str]:
         "share_persons_moop_allocated": f"{100 * data['share_persons_moop_allocated']:.0f}",
         "share_units_reported_zero": f"{100 * data['share_units_reported_zero']:.1f}",
         "published_rate": f"{published['spm_rate_percent']['All people']:.2f}",
+        "published_moe90": f"{published['spm_rate_moe90']['All people']:.2f}",
         "published_moop_effect": f"{published['medical_expenses_effect_pp']['All people']:.2f}",
         "published_poor_thousands": f"{published['number_in_poverty_thousands']:,}",
     }
@@ -217,6 +283,9 @@ def placeholder_values(results: dict) -> dict[str, str]:
             values[f"rate2_{name}_{method}"] = pct(entry["rate"][i], 2)
             values[f"diff_{name}_{method}"] = signed(entry["diff"][i])
             values[f"diff1_{name}_{method}"] = signed(entry["diff"][i], 1)
+            # Unsigned magnitudes for prose such as "raises the rate by X".
+            values[f"pp_{name}_{method}"] = f"{100 * abs(entry['diff'][i]):.2f}"
+            values[f"pp1_{name}_{method}"] = f"{100 * abs(entry['diff'][i]):.1f}"
             values[f"se_{name}_{method}"] = f"{100 * entry['diff_se'][i]:.2f}"
     rep = methods["reported"]
     values["reported_rate_se"] = f"{100 * rep['rate_se'][0]:.2f}"
@@ -226,8 +295,18 @@ def placeholder_values(results: dict) -> dict[str, str]:
     values["reported_poor_thousands"] = (
         f"{rep['rate'][0] * data['population_millions'] * 1000:,.0f}"
     )
+    values["summary_table"] = "\n".join(summary_table(results))
+    reported_total = rep["distribution"]["aggregate_billions"]
+    moop_effect = -methods["no_moop"]["diff"][0]
     for method, entry in methods.items():
         dist = entry["distribution"]
+        values[f"share_of_effect_{method}"] = (
+            f"{100 * entry['diff'][0] / moop_effect:.0f}"
+        )
+        values[f"agg_{method}"] = f"{dist['aggregate_billions']:,.0f}"
+        values[f"agg_gap_{method}"] = (
+            f"{100 * (1 - dist['aggregate_billions'] / reported_total):.1f}"
+        )
         values[f"mean_{method}"] = dollars(dist["mean"])
         values[f"median_{method}"] = dollars(dist["median"])
         values[f"p99_{method}"] = dollars(dist["p99"])
@@ -255,11 +334,11 @@ def main() -> None:
     source = (
         f"Source: {data['survey']} (calendar-year {data['reference_year']} "
         f"income), {data['n_persons']:,} people in {data['n_units']:,} SPM "
-        f"units and {data['n_households']:,} households. Each unit's MOOP is "
-        f"imputed from models fit on the other {folds - 1} of {folds} "
-        "household-grouped folds; stochastic methods average "
+        f"units and {data['n_households']:,} households. We impute each "
+        f"unit's MOOP from models fit on the other {folds - 1} of {folds} "
+        "folds of whole households, and stochastic methods average "
         f"{results['config']['draws']} draws. Rates use the ASEC person "
-        "weight; standard errors in parentheses use the 160 replicate "
+        "weight. Standard errors in parentheses use the 160 replicate "
         "weights and treat the fitted imputation models as fixed."
     )
     table_1 = (
@@ -267,16 +346,16 @@ def main() -> None:
         "under each imputation (percentage points, SE)"
     )
     table_1_note = (
-        "People whose unit is poor before MOOP is subtracted (resources "
-        "before MOOP under the threshold) stay poor under every method, so "
-        "their row changes by zero by construction."
+        "Every method imputes MOOP of zero or more, so people whose unit's "
+        "resources before MOOP fall below its threshold stay poor under "
+        "every method, and the 'Under 1.0' row cannot change."
     )
     table_2 = (
         "## Table 2. SPM-unit MOOP distribution (weighted by SPM unit) and gross flows"
     )
     table_3 = (
-        "## Table 3. Which part of the logit-plus-means approach moves the "
-        "rate (all people)"
+        "## Table 3. How the participation and amount rules of the logit "
+        "approach move the rate (all people)"
     )
     table = [
         "# MOOP imputation and SPM poverty: tables",
