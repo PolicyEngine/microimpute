@@ -223,18 +223,17 @@ def test_cell_pools_are_same_cell_donor_spenders(seed, min_donors):
     recipients = _cells(rng, 50)
     assignment = assign_cells(donors, moop, recipients, min_donors=min_donors)
     spender = moop > 0
+    donor_keys = [_key(donors.loc[spender], columns) for columns in CELL_LEVELS]
+    recipient_keys = [_key(recipients, columns) for columns in CELL_LEVELS]
     for i, (pool, level) in enumerate(zip(assignment.pools, assignment.levels)):
         assert len(pool) >= min_donors
         assert (pool > 0).all()
-        columns = CELL_LEVELS[level]
-        donor_key = _key(donors.loc[spender], columns)
-        recipient_key = _key(recipients.iloc[[i]], columns)[0]
-        expected = np.sort(moop[spender][donor_key == recipient_key])
+        in_cell = donor_keys[level] == recipient_keys[level][i]
+        expected = np.sort(moop[spender][in_cell])
         assert np.array_equal(np.sort(pool), expected)
         # No finer level had enough donor spenders.
-        for finer in CELL_LEVELS[:level]:
-            finer_key = _key(recipients.iloc[[i]], finer)[0]
-            assert (_key(donors.loc[spender], finer) == finer_key).sum() < min_donors
+        for finer in range(level):
+            assert (donor_keys[finer] == recipient_keys[finer][i]).sum() < min_donors
     assert np.allclose(assignment.means(), [p.mean() for p in assignment.pools])
 
 
