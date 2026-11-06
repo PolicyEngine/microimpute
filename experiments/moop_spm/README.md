@@ -13,18 +13,18 @@ status ([Fox, Pacas and Glassman, 2017](https://www.census.gov/content/dam/Censu
 We impute MOOP within the CPS ASEC and check each method against the
 file's own MOOP.
 
-`NOTE.md` summarizes the findings and `TABLE.md` has the full tables.
-`render.py` writes both from `results/results.json`.
+We summarize the findings in `NOTE.md` and give the full tables in
+`TABLE.md`. `render.py` writes both from `results/results.json`.
 
 ## Data
 
 - We use Census's CPS ASEC 2026 public-use CSV release
   (`asecpub26csv.zip`; `cps_asec.py` pins its SHA-256) and the 160 person
   replicate weights it ships.
-- We impute `SPM_MEDXPNS` for each SPM unit. Census's data dictionary
-  labels it "MOOP and Medicare Part B subsidy", and on every record it
-  equals the unit sum of person `MOOP` plus the unit sum of `PEMCPREM`
-  (edited Medicare premium).
+- We impute `SPM_MEDXPNS` for each SPM unit. Census labels the variable
+  "MOOP and Medicare Part B subsidy" in its data dictionary. On every
+  record, the variable equals the unit sum of person `MOOP` plus the unit
+  sum of `PEMCPREM` (edited Medicare premium).
 - `check_spm_identity` confirms that, on every record, `SPM_RESOURCES`
   equals cash income plus SNAP, housing, school lunch, energy and WIC
   subsidies, less taxes, FICA, capped work and child care expenses,
@@ -37,8 +37,8 @@ file's own MOOP.
   published 2025 SPM rates (P60-290 Table 5) and their margins of error,
   for all people and each age group, to within 0.01 percentage point.
   Subtracting MOOP raises our rates by 0.02 to 0.03 points less than it
-  raises Census's. `results.json` records the published figures beside
-  ours.
+  raises Census's. `run.py` writes the published figures beside ours
+  into `results.json`.
 - Census imputes MOOP for 43% of the file's people (`I_MOOP` of 1, 2 or
   3) and the Medicare premium for 13% (`I_MCPREM` of 2).
 
@@ -114,8 +114,8 @@ python -m experiments.moop_spm.render
 ```
 
 The first command downloads the 139 MB Census zip, checks its SHA-256,
-caches each fold's imputations in `results/cache/` (git-ignored) and
-writes `results/results.json`.
+caches each fold's imputations in `results/cache/`, which git ignores,
+and writes `results/results.json`.
 `run.py` refits every fold when any of these change:
 
 - the settings or the experiment's source files;
@@ -124,6 +124,6 @@ writes `results/results.json`.
   quantile-forest or microimpute;
 - the model inputs or their row keys.
 
-`results.json` records the run time of each method. The tests in
-`tests/test_moop_spm_experiment.py` check the experiment's invariants on
-synthetic data.
+`run.py` also records each method's run time in `results.json`. The
+tests in `tests/test_moop_spm_experiment.py` check the experiment's
+invariants on synthetic data.
