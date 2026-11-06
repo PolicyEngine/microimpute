@@ -13,7 +13,15 @@ the invariants the published comparison relies on:
 - Cell pools hold only same-cell donor spenders, and the nearest-donor
   search agrees with a brute-force search.
 - The logistic-participation variants follow their stated rules.
+- Census's MOOP and Medicare premium imputations both count as allocated.
+- Extracted CSVs that differ from the pinned zip are extracted again.
+- The fold cache misses whenever the environment, microimpute's source
+  or the model inputs change.
 """
+
+import argparse
+import os
+import zipfile
 
 import numpy as np
 import pandas as pd
@@ -21,6 +29,8 @@ import pytest
 from hypothesis import HealthCheck, given, settings
 from hypothesis import strategies as st
 
+from experiments.moop_spm import run as run_module
+from experiments.moop_spm.cps_asec import allocation_flags, extract_verified
 from experiments.moop_spm.evaluate import (
     RATIO_BANDS,
     evaluate,
@@ -41,7 +51,13 @@ from experiments.moop_spm.methods import (
     nearest_donors,
     participation_probability,
 )
-from experiments.moop_spm.run import assign_folds
+from experiments.moop_spm.run import (
+    assign_folds,
+    build_config,
+    collect_folds,
+    config_hash,
+    frame_sha256,
+)
 
 SETTINGS = settings(
     max_examples=40,
@@ -62,7 +78,7 @@ def synthetic_spm(seed: int, n_units: int = 60):
             "moop": moop,
             "unit_weight": rng.uniform(100, 3_000, n_units),
             "pre_moop_ratio": pre_moop / threshold,
-            "any_allocated_moop": rng.integers(0, 2, n_units),
+            "any_allocated": rng.integers(0, 2, n_units),
         },
         index=pd.Index(unit_ids, name="SPM_ID"),
     )
@@ -342,3 +358,121 @@ def test_ratio_band_index_matches_band_masks(ratios):
     for b, (low, high, _) in enumerate(RATIO_BANDS):
         mask = (ratios >= low) & (ratios < high)
         assert np.array_equal(index == b, mask)
+
+
+def test_allocation_flags_cover_moop_and_premium():
+    persons = pd.DataFrame(
+        {
+            "I_MOOP": [-1, 0, 1, 2, 3, 0, 0],
+            "I_MCPREM": [-1, -1, -1, 0, -1, 2, 0],
+        }
+    )
+    flags = allocation_flags(persons)
+    assert flags["allocated_moop"].tolist() == [0, 0, 1, 1, 1, 0, 0]
+    assert flags["allocated_premium"].tolist() == [0, 0, 0, 0, 0, 1, 0]
+
+
+def test_extract_verified_replaces_altered_copies(tmp_path):
+    zip_path = tmp_path / "release.zip"
+    with zipfile.ZipFile(zip_path, "w") as archive:
+        archive.writestr("a.csv", "x,y\n1,2\n")
+        archive.writestr("b.csv", "z\n3\n")
+    out = tmp_path / "data"
+    out.mkdir()
+    extract_verified(zip_path, out, ["a.csv", "b.csv"])
+    assert (out / "a.csv").read_text() == "x,y\n1,2\n"
+
+    # A matching copy stays in place.
+    os.utime(out / "b.csv", ns=(1, 1))
+    extract_verified(zip_path, out, ["b.csv"])
+    assert (out / "b.csv").stat().st_mtime_ns == 1
+
+    # Altered copies, of the same or a different size, come back.
+    (out / "a.csv").write_text("x,y\n9,2\n")
+    (out / "b.csv").write_text("z\n3\n4\n")
+    extract_verified(zip_path, out, ["a.csv", "b.csv"])
+    assert (out / "a.csv").read_text() == "x,y\n1,2\n"
+    assert (out / "b.csv").read_text() == "z\n3\n"
+
+
+def _cache_inputs(n_units: int = 12):
+    rng = np.random.default_rng(0)
+    index = pd.Index(np.arange(n_units) * 3 + 1, name="SPM_ID")
+    units = pd.DataFrame(
+        {
+            "moop": rng.gamma(1.0, 1_000, n_units),
+            "household": np.arange(n_units) // 2,
+        },
+        index=index,
+    )
+    X = pd.DataFrame({"x": rng.normal(size=n_units)}, index=index)
+    cells = pd.DataFrame({"group": ["employer"] * n_units}, index=index)
+    folds = assign_folds(units["household"], 3, 0)
+    args = argparse.Namespace(
+        folds=3, draws=2, seed=0, skip_forests=False, max_households=None
+    )
+    return args, units, X, cells, folds
+
+
+def _stub_fit(value: float, folds: np.ndarray, calls: list):
+    def fit(fold: int) -> dict[str, np.ndarray]:
+        calls.append(fold)
+        n = int((folds == fold).sum())
+        return {
+            "qrf": np.full((2, n), value),
+            "_timings": np.array([[0.0]]),
+            "_timing_names": np.array(["qrf"]),
+        }
+
+    return fit
+
+
+def test_cache_misses_when_environment_or_microimpute_changes(tmp_path, monkeypatch):
+    args, units, X, cells, folds = _cache_inputs()
+    base_env = run_module.environment()
+    monkeypatch.setattr(run_module, "environment", lambda: base_env)
+    tag = config_hash(build_config(args, units, X, cells, folds))
+
+    calls: list = []
+    first, _ = collect_folds(tmp_path, tag, folds, 3, 2, _stub_fit(17.0, folds, calls))
+    assert calls == [0, 1, 2]
+    assert (first["qrf"] == 17.0).all()
+
+    # Same fingerprint: every fold comes from the cache.
+    calls.clear()
+    again, _ = collect_folds(tmp_path, tag, folds, 3, 2, _stub_fit(99.0, folds, calls))
+    assert calls == []
+    assert (again["qrf"] == 17.0).all()
+
+    # A new microimpute version, or edited microimpute source, refits.
+    newer = {**base_env, "microimpute": base_env["microimpute"] + ".post1"}
+    monkeypatch.setattr(run_module, "environment", lambda: newer)
+    new_tag = config_hash(build_config(args, units, X, cells, folds))
+    assert new_tag != tag
+    fresh, _ = collect_folds(
+        tmp_path, new_tag, folds, 3, 2, _stub_fit(99.0, folds, calls)
+    )
+    assert calls == [0, 1, 2]
+    assert (fresh["qrf"] == 99.0).all()
+
+    monkeypatch.setattr(run_module, "environment", lambda: base_env)
+    monkeypatch.setattr(run_module, "package_sha256", lambda package: "edited")
+    assert config_hash(build_config(args, units, X, cells, folds)) != tag
+
+
+def test_cache_key_tracks_model_inputs_and_row_keys():
+    args, units, X, cells, folds = _cache_inputs()
+    tag = config_hash(build_config(args, units, X, cells, folds))
+    assert config_hash(build_config(args, units, X, cells, folds)) == tag
+
+    changed = units.copy()
+    changed.iloc[0, 0] += 1.0
+    assert config_hash(build_config(args, changed, X, cells, folds)) != tag
+
+    rekeyed = [frame.copy() for frame in (units, X, cells)]
+    for frame in rekeyed:
+        frame.index = frame.index + 1
+    assert config_hash(build_config(args, *rekeyed, folds)) != tag
+
+    assert config_hash(build_config(args, units, X, cells, folds[::-1])) != tag
+    assert frame_sha256(units) != frame_sha256(units.rename(columns={"moop": "m"}))

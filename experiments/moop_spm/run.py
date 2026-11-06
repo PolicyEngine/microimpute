@@ -11,16 +11,22 @@ Usage (from the repository root):
 
 The first run downloads the Census public-use zip (139 MB) into
 ``--data-dir`` and checks its SHA-256. Per-fold imputations are cached in
-``<output>/cache`` so an interrupted run resumes.
+``<output>/cache`` so an interrupted run resumes. The cache key covers the
+settings, the experiment's source files, every microimpute source file,
+the versions of Python and the numerical packages, and the model inputs
+with their row keys, so a change to any of them refits every fold.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib
 import json
 import platform
 import time
+from collections.abc import Callable
+from importlib.metadata import version
 from pathlib import Path
 
 import numpy as np
@@ -31,6 +37,7 @@ from .cps_asec import (
     SURVEY_YEAR,
     ZIP_SHA256,
     ZIP_URL,
+    allocation_flags,
     build_units,
     check_spm_identity,
     design_matrix,
@@ -54,6 +61,15 @@ from .methods import (
 
 HERE = Path(__file__).resolve().parent
 SOURCES = ["cps_asec.py", "methods.py", "evaluate.py", "run.py"]
+# Distributions whose versions can change fitted models or draws.
+PACKAGES = {
+    "numpy": "numpy",
+    "pandas": "pandas",
+    "scipy": "scipy",
+    "scikit_learn": "scikit-learn",
+    "quantile_forest": "quantile-forest",
+    "microimpute": "microimpute",
+}
 PUBLISHED = json.loads((HERE / "published_2025.json").read_text())
 
 
@@ -67,6 +83,101 @@ def assign_folds(households: pd.Series, n_folds: int, seed: int) -> np.ndarray:
 
 def config_hash(config: dict) -> str:
     return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def environment() -> dict[str, str]:
+    """Return the Python version and the versions in ``PACKAGES``."""
+    versions = {name: version(dist) for name, dist in PACKAGES.items()}
+    return {"python": platform.python_version(), **versions}
+
+
+def package_sha256(package: str) -> str:
+    """Hash every ``.py`` file of an imported package, in path order."""
+    module = importlib.import_module(package)
+    root = Path(module.__file__).resolve().parent
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*.py")):
+        digest.update(path.relative_to(root).as_posix().encode())
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()[:16]
+
+
+def frame_sha256(*frames: pd.DataFrame) -> str:
+    """Hash frames' column names, row keys and values."""
+    digest = hashlib.sha256()
+    for frame in frames:
+        digest.update(json.dumps([str(c) for c in frame.columns]).encode())
+        hashed = pd.util.hash_pandas_object(frame, index=True)
+        digest.update(hashed.to_numpy().tobytes())
+    return digest.hexdigest()[:16]
+
+
+def build_config(
+    args: argparse.Namespace,
+    units: pd.DataFrame,
+    X: pd.DataFrame,
+    cells: pd.DataFrame,
+    folds: np.ndarray,
+) -> dict:
+    """Collect everything that can change the fold imputations."""
+    fold_frame = pd.DataFrame({"fold": folds}, index=units.index)
+    return {
+        "zip_sha256": ZIP_SHA256,
+        "folds": args.folds,
+        "draws": args.draws,
+        "seed": args.seed,
+        "skip_forests": args.skip_forests,
+        "max_households": args.max_households,
+        "features": list(X.columns),
+        "min_cell_donors": MIN_CELL_DONORS,
+        "pmm_neighbors": PMM_NEIGHBORS,
+        "cutoff": PARTICIPATION_CUTOFF,
+        "cell_levels": [list(level) for level in CELL_LEVELS],
+        "source_sha256": {name: sha256_of(HERE / name)[:16] for name in SOURCES},
+        "microimpute_sha256": package_sha256("microimpute"),
+        "environment": environment(),
+        "input_sha256": frame_sha256(units, X, cells, fold_frame),
+    }
+
+
+def collect_folds(
+    cache: Path,
+    tag: str,
+    folds: np.ndarray,
+    n_folds: int,
+    n_draws: int,
+    fit_fold: Callable[[int], dict[str, np.ndarray]],
+) -> tuple[dict[str, np.ndarray], dict[str, float]]:
+    """Load each fold's imputations from the cache, or fit and store them.
+
+    Returns each method's draws for every unit, ``(n_draws, n_units)``,
+    and the fitting time of each method summed over folds.
+    """
+    imputations: dict[str, np.ndarray] = {}
+    timings: dict[str, float] = {}
+    for fold in range(n_folds):
+        path = cache / f"{tag}_fold{fold}.npz"
+        if path.exists():
+            stored = dict(np.load(path, allow_pickle=False))
+        else:
+            start = time.time()
+            stored = fit_fold(fold)
+            np.savez_compressed(path, **stored)
+            print(
+                f"fold {fold} done in {time.time() - start:.0f}s",
+                flush=True,
+            )
+        names = [str(n) for n in stored.pop("_timing_names")]
+        for name, seconds in zip(names, stored.pop("_timings")[0]):
+            timings[name] = timings.get(name, 0.0) + float(seconds)
+        recipient = folds == fold
+        for method, draws in stored.items():
+            if method not in imputations:
+                imputations[method] = np.full((n_draws, len(folds)), np.nan)
+            imputations[method][:, recipient] = draws
+    return imputations, timings
 
 
 def run_fold(
@@ -155,44 +266,17 @@ def main() -> None:
     cells = cell_keys(units)
     folds = assign_folds(units["household"], args.folds, args.seed)
 
-    config = {
-        "zip_sha256": ZIP_SHA256,
-        "folds": args.folds,
-        "draws": args.draws,
-        "seed": args.seed,
-        "skip_forests": args.skip_forests,
-        "max_households": args.max_households,
-        "features": list(X.columns),
-        "min_cell_donors": MIN_CELL_DONORS,
-        "pmm_neighbors": PMM_NEIGHBORS,
-        "cutoff": PARTICIPATION_CUTOFF,
-        "cell_levels": [list(level) for level in CELL_LEVELS],
-        "source_sha256": {name: sha256_of(HERE / name)[:16] for name in SOURCES},
-    }
+    config = build_config(args, units, X, cells, folds)
     tag = config_hash(config)
 
-    imputations: dict[str, np.ndarray] = {}
-    timings: dict[str, float] = {}
-    for fold in range(args.folds):
-        path = cache / f"{tag}_fold{fold}.npz"
-        if path.exists():
-            stored = dict(np.load(path, allow_pickle=False))
-        else:
-            start = time.time()
-            stored = run_fold(fold, folds, units, X, cells, args)
-            np.savez_compressed(path, **stored)
-            print(
-                f"fold {fold} done in {time.time() - start:.0f}s",
-                flush=True,
-            )
-        names = [str(n) for n in stored.pop("_timing_names")]
-        for name, seconds in zip(names, stored.pop("_timings")[0]):
-            timings[name] = timings.get(name, 0.0) + float(seconds)
-        recipient = folds == fold
-        for method, draws in stored.items():
-            if method not in imputations:
-                imputations[method] = np.full((args.draws, len(units)), np.nan)
-            imputations[method][:, recipient] = draws
+    imputations, timings = collect_folds(
+        cache,
+        tag,
+        folds,
+        args.folds,
+        args.draws,
+        lambda fold: run_fold(fold, folds, units, X, cells, args),
+    )
     for method, draws in imputations.items():
         if np.isnan(draws).any():
             raise ValueError(f"{method} left units without an imputation")
@@ -204,7 +288,7 @@ def main() -> None:
     imputations["no_moop"] = np.zeros((1, len(units)))
 
     results = evaluate(persons, units, imputations)
-    allocated = persons["I_MOOP"].isin([1, 2, 3])
+    allocated = allocation_flags(persons)
     results["data"] = {
         "survey": f"CPS ASEC {SURVEY_YEAR} public-use file",
         "reference_year": REFERENCE_YEAR,
@@ -216,31 +300,22 @@ def main() -> None:
         "population_millions": float(persons["weight"].sum() / 1e6),
         "n_units_by_fold": np.bincount(folds).tolist(),
         "unit_group_counts": units["group"].value_counts().to_dict(),
-        "share_persons_moop_allocated": float(allocated.mean()),
-        "share_units_any_allocated": float(units["any_allocated_moop"].mean()),
+        "share_persons_moop_allocated": float(allocated["allocated_moop"].mean()),
+        "share_persons_premium_allocated": float(allocated["allocated_premium"].mean()),
+        "share_persons_any_allocated": float(allocated.max(axis=1).mean()),
+        "share_units_any_allocated": float(units["any_allocated"].mean()),
         "share_units_reported_zero": float((units["moop"] == 0).mean()),
         "identity_checks": identity,
     }
     results["published"] = PUBLISHED
     results["config"] = {**config, "tag": tag, "n_jobs": args.n_jobs}
     results["timings_seconds"] = timings
-    results["environment"] = {
-        "python": platform.python_version(),
-        "numpy": np.__version__,
-        "pandas": pd.__version__,
-        "microimpute": _version("microimpute"),
-        "quantile_forest": _version("quantile-forest"),
-        "scikit_learn": _version("scikit-learn"),
-    }
+    # The cache tag covers this environment, so it describes the cached
+    # imputations as well as this run.
+    results["environment"] = config["environment"]
     output.mkdir(parents=True, exist_ok=True)
     (output / "results.json").write_text(json.dumps(results, indent=2) + "\n")
     print(f"wrote {output / 'results.json'}")
-
-
-def _version(package: str) -> str:
-    from importlib.metadata import version
-
-    return version(package)
 
 
 if __name__ == "__main__":

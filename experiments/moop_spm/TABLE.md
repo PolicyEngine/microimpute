@@ -49,7 +49,7 @@ Every method imputes MOOP of zero or more, so people whose unit's resources befo
 | Mean, resources before MOOP 2.0 to 3.0 x threshold | $6,086 | $6,116 | $5,872 | $5,953 | $5,783 | $5,809 | $5,843 |
 | People newly poor (%) | 0.0 | 1.37 | 1.40 | 1.74 | 1.63 | 1.33 | 1.37 |
 | People newly not poor (%) | 0.0 | 1.07 | 1.06 | 1.36 | 1.31 | 1.40 | 1.41 |
-| Units where Census imputed no MOOP: change in rate (pp) | 0.00 | +0.65 (0.10) | +0.57 (0.10) | +0.66 (0.09) | +0.56 (0.09) | +0.10 (0.08) | +0.13 (0.09) |
+| Units where Census imputes no MOOP or Medicare premium: change in rate (pp) | 0.00 | +0.36 (0.11) | +0.26 (0.11) | +0.52 (0.09) | +0.48 (0.10) | +0.01 (0.09) | +0.07 (0.10) |
 
 ## Table 3. How the participation and amount rules of the logit approach move the rate (all people)
 

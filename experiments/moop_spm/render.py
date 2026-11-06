@@ -136,7 +136,7 @@ def distribution_table(results: dict) -> list[str]:
             + " |"
         )
     subset = [
-        "Units where Census imputed no MOOP: change in rate (pp)",
+        "Units where Census imputes no MOOP or Medicare premium: change in rate (pp)",
         "0.00",
     ] + [
         f"{signed(methods[m]['no_allocation_subset']['diff'])} "
@@ -251,6 +251,8 @@ def placeholder_values(results: dict) -> dict[str, str]:
         "draws": str(results["config"]["draws"]),
         "share_units_any_allocated": f"{100 * data['share_units_any_allocated']:.0f}",
         "share_persons_moop_allocated": f"{100 * data['share_persons_moop_allocated']:.0f}",
+        "share_persons_premium_allocated": f"{100 * data['share_persons_premium_allocated']:.0f}",
+        "share_persons_any_allocated": f"{100 * data['share_persons_any_allocated']:.0f}",
         "share_units_reported_zero": f"{100 * data['share_units_reported_zero']:.1f}",
         "published_rate": f"{published['spm_rate_percent']['All people']:.2f}",
         "published_moe90": f"{published['spm_rate_moe90']['All people']:.2f}",
@@ -324,6 +326,16 @@ def placeholder_values(results: dict) -> dict[str, str]:
             sub = entry["no_allocation_subset"]
             values[f"subset_diff_{method}"] = signed(sub["diff"])
             values[f"subset_se_{method}"] = f"{100 * sub['diff_se']:.2f}"
+    values["share_units_no_allocation"] = (
+        f"{100 * (1 - data['share_units_any_allocated']):.0f}"
+    )
+    # The note says methods (a), (b) and PMM "raise" the subset's rate.
+    ab_pmm = ["logit_cell_mean", "logit_reg_mean", "logit_draw_hotdeck", "pmm"]
+    subset_ab_pmm = [methods[m]["no_allocation_subset"]["diff"] for m in ab_pmm]
+    if min(subset_ab_pmm) <= 0:
+        raise ValueError("A method (a), (b) or PMM no longer raises the subset rate.")
+    values["subset_pp_low_ab_pmm"] = f"{100 * min(subset_ab_pmm):.2f}"
+    values["subset_pp_high_ab_pmm"] = f"{100 * max(subset_ab_pmm):.2f}"
     return values
 
 

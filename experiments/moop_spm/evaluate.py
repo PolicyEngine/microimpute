@@ -217,9 +217,7 @@ def evaluate(
     near_line = (units["pre_moop_ratio"] >= 1.0) & (units["pre_moop_ratio"] < 2.0)
     near_line = near_line.to_numpy()
     band = ratio_band_index(units["pre_moop_ratio"].to_numpy())
-    no_allocation_person = (
-        persons["SPM_ID"].map(units["any_allocated_moop"]).to_numpy() == 0
-    )
+    no_allocation_person = persons["SPM_ID"].map(units["any_allocated"]).to_numpy() == 0
     subset_groups = np.column_stack(
         [np.ones(len(persons), dtype=bool), no_allocation_person]
     )

@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import urllib.request
 import zipfile
+import zlib
 from pathlib import Path
 
 import numpy as np
@@ -43,6 +44,7 @@ PERSON_COLUMNS = [
     "PRDISFLG",
     "MARSUPWT",
     "I_MOOP",
+    "I_MCPREM",
     "MOOP",
     "PEMCPREM",
     "NOW_COV",
@@ -110,11 +112,40 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
+def crc32_of(path: Path) -> int:
+    """Return the CRC-32 of a file, as a zip archive records it."""
+    crc = 0
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(1 << 20), b""):
+            crc = zlib.crc32(chunk, crc)
+    return crc
+
+
+def extract_verified(zip_path: Path, data_dir: Path, names: list[str]) -> None:
+    """Extract ``names`` from a zip unless matching copies already exist.
+
+    A copy matches when its size and CRC-32 equal the archive member's;
+    any other copy is replaced from the archive.
+    """
+    with zipfile.ZipFile(zip_path) as archive:
+        for name in names:
+            info = archive.getinfo(name)
+            target = data_dir / name
+            if (
+                target.exists()
+                and target.stat().st_size == info.file_size
+                and crc32_of(target) == info.CRC
+            ):
+                continue
+            archive.extract(name, data_dir)
+
+
 def ensure_raw(data_dir: Path) -> Path:
     """Download and unpack the ASEC CSV release into ``data_dir``.
 
-    The zip is fetched once, checked against the pinned SHA-256, and the
-    three CSVs this experiment reads are extracted next to it.
+    The zip is fetched once and checked against the pinned SHA-256. The
+    three CSVs this experiment reads are extracted next to it, and copies
+    that differ from the zip's members are extracted again.
 
     Args:
         data_dir: Directory that holds (or will hold) the raw files.
@@ -136,10 +167,7 @@ def ensure_raw(data_dir: Path) -> Path:
             f"{zip_path} has SHA-256 {digest}, expected {ZIP_SHA256}. "
             "Census may have replaced the file; check before rerunning."
         )
-    with zipfile.ZipFile(zip_path) as archive:
-        for name in (PERSON_CSV, HOUSEHOLD_CSV, REPWGT_CSV):
-            if not (data_dir / name).exists():
-                archive.extract(name, data_dir)
+    extract_verified(zip_path, data_dir, [PERSON_CSV, HOUSEHOLD_CSV, REPWGT_CSV])
     return data_dir
 
 
@@ -194,7 +222,7 @@ def load_persons(data_dir: Path) -> pd.DataFrame:
     )
     persons = persons.merge(
         replicates, on=["PH_SEQ", "PPPOS"], how="left", validate="one_to_one"
-    )
+    ).copy()
     if persons["repwgt_1"].isna().any():
         raise ValueError("Some persons have no replicate weights.")
 
@@ -208,8 +236,8 @@ def load_persons(data_dir: Path) -> pd.DataFrame:
 def check_spm_identity(persons: pd.DataFrame) -> dict[str, float]:
     """Check how SPM resources and MOOP are assembled in the file.
 
-    Returns the maximum absolute gap for two identities that must hold
-    for the imputation exercise to be valid:
+    Returns three checks that must come out zero for the imputation
+    exercise to be valid:
 
     - ``resources_gap``: SPM_RESOURCES against cash income plus noncash
       benefits less taxes, capped work and child care expenses, MOOP and
@@ -248,6 +276,23 @@ def check_spm_identity(persons: pd.DataFrame) -> dict[str, float]:
     }
 
 
+def allocation_flags(persons: pd.DataFrame) -> pd.DataFrame:
+    """Flag persons whose MOOP or Medicare premium Census imputed.
+
+    ``SPM_MEDXPNS`` sums members' ``MOOP`` and ``PEMCPREM``. ``I_MOOP``
+    codes 1 to 3 mark hot-deck, logical and whole-unit imputation of
+    ``MOOP``; ``I_MCPREM`` code 2 marks logical imputation of
+    ``PEMCPREM``.
+    """
+    return pd.DataFrame(
+        {
+            "allocated_moop": persons["I_MOOP"].isin([1, 2, 3]).astype(int),
+            "allocated_premium": (persons["I_MCPREM"] == 2).astype(int),
+        },
+        index=persons.index,
+    )
+
+
 def _signed_log1p(values: pd.Series) -> pd.Series:
     return np.sign(values) * np.log1p(values.abs())
 
@@ -261,12 +306,12 @@ def build_units(persons: pd.DataFrame) -> pd.DataFrame:
     age, sex, disability, current coverage, cash income, family size and
     type, tenure and state.
     """
-    persons = persons.copy()
+    persons = persons.loc[:, ~persons.columns.str.startswith("repwgt_")].copy()
+    persons = persons.join(allocation_flags(persons))
     persons["disabled"] = (persons["PRDISFLG"] == 1).astype(int)
     persons["female_adult"] = (
         (persons["A_SEX"] == 2) & (persons["A_AGE"] >= 18)
     ).astype(int)
-    persons["allocated_moop"] = persons["I_MOOP"].isin([1, 2, 3]).astype(int)
     for low, high in AGE_BANDS:
         name = f"n_age_{low}_{high}" if high < 200 else f"n_age_{low}_plus"
         persons[name] = persons["A_AGE"].between(low, high).astype(int)
@@ -291,13 +336,19 @@ def build_units(persons: pd.DataFrame) -> pd.DataFrame:
     count_columns = [
         c for c in persons.columns if c.startswith("n_age_") or c in any_coverage
     ]
-    count_columns += ["disabled", "female_adult", "allocated_moop"]
+    count_columns += [
+        "disabled",
+        "female_adult",
+        "allocated_moop",
+        "allocated_premium",
+    ]
     sums = persons.groupby("SPM_ID")[count_columns].sum()
     sums = sums.rename(
         columns={
             "disabled": "n_disabled",
             "female_adult": "n_female_adult",
             "allocated_moop": "n_allocated_moop",
+            "allocated_premium": "n_allocated_premium",
         }
     )
     heads = persons.loc[persons["SPM_HEAD"] == 1].set_index("SPM_ID")
@@ -325,7 +376,10 @@ def build_units(persons: pd.DataFrame) -> pd.DataFrame:
         -1.0, 10.0
     )
     units["group"] = unit_coverage_group(units)
-    units["any_allocated_moop"] = (units["n_allocated_moop"] > 0).astype(int)
+    # Units where Census imputed any part of SPM_MEDXPNS for any member.
+    units["any_allocated"] = (
+        units["n_allocated_moop"] + units["n_allocated_premium"] > 0
+    ).astype(int)
     return units.sort_index()
 
 
