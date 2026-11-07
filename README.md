@@ -45,4 +45,4 @@ Pull requests are welcome. If you find a bug or have a feature idea, open an iss
 
 ## License
 
-Code in this repository is released under the [MIT License](LICENSE). Original text and figures are released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) with attribution to PolicyEngine. Third-party data and materials keep their own terms.
+Code in this repository is released under the [MIT License](LICENSE). Original text and figures are released under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) with attribution to PolicyEngine. Third-party data and materials keep their own terms. The optional `matching` extra installs rpy2, which its authors license under GPL-2.0-or-later.
