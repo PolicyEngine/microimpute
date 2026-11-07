@@ -7,7 +7,7 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 - 📊 **Sample data**: Pre-loaded impuation results for immediate testing
 - 📁 **File upload**: Drag & drop CSV file support with comprehensive validation
 - 🌐 **URL loading**: Load CSV files from remote URLs with error handling
-- 🔗 **GitHub integration**: Load calibration data directly from GitHub Actions artifacts
+- **GitHub integration (retired)**: PolicyEngine archived microimpute, so the dashboard no longer loads results from GitHub Actions artifacts and reads no GitHub token
 - 📈 **Interactive visualizations**: Charts and metrics coming soon...
 
 ## Getting started
