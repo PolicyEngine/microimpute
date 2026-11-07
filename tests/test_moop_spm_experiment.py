@@ -19,11 +19,16 @@ the invariants the published comparison relies on:
   Microcosm's source or the model inputs change.
 - Microcosm's draws are zero or lie within the range of the spenders
   that carry weight, and they do not depend on the number of threads.
+- Microcosm's gate takes each donor's unit weight, in donor order, and
+  takes no weights when the fit is unweighted.
+- Distribution metadata that names no version raises rather than reading
+  as an absent package.
   These tests skip when Microcosm is not installed; it installs from git.
 """
 
 import argparse
 import dataclasses
+import importlib
 import os
 import re
 import zipfile
@@ -371,6 +376,42 @@ def test_microcosm_threads_sets_and_restores_widths(monkeypatch):
     assert os.environ[draw_name] == "7"
 
 
+def test_microcosm_gate_takes_donor_weights_in_order(monkeypatch):
+    pytest.importorskip("microcosm.fit")
+    from sklearn.ensemble import HistGradientBoostingClassifier
+
+    recorded = []
+    original = HistGradientBoostingClassifier.fit
+
+    def spy(self, X, y, sample_weight=None, **kwargs):
+        recorded.append(
+            None if sample_weight is None else np.array(sample_weight, dtype=float)
+        )
+        return original(self, X, y, sample_weight=sample_weight, **kwargs)
+
+    monkeypatch.setattr(HistGradientBoostingClassifier, "fit", spy)
+    fold = _fold(7)
+    microcosm_qrf(fold, 1, seed=7, weighted=True, n_jobs=1)
+    # One in-sample gate, fitted on every donor with that donor's weight.
+    assert len(recorded) == 1
+    weights = recorded[0]
+    assert weights is not None
+    assert weights.shape == fold.weight_donor.shape
+    assert np.allclose(
+        weights / weights.sum(), fold.weight_donor / fold.weight_donor.sum()
+    )
+    # A reversed donor order would fail the same check.
+    assert not np.allclose(
+        weights / weights.sum(),
+        fold.weight_donor[::-1] / fold.weight_donor.sum(),
+    )
+
+    recorded.clear()
+    microcosm_qrf(fold, 1, seed=7, weighted=False, n_jobs=1)
+    assert len(recorded) == 1
+    assert recorded[0] is None
+
+
 def test_installed_source_and_hash_tolerate_only_absent_packages(tmp_path, monkeypatch):
     assert installed_source("no-such-distribution-moop") is None
     assert installed_package_sha256("no_such_package_moop.sub") is None
@@ -378,9 +419,18 @@ def test_installed_source_and_hash_tolerate_only_absent_packages(tmp_path, monke
     broken = tmp_path / "broken_package_moop"
     broken.mkdir()
     (broken / "__init__.py").write_text("import no_such_dependency_moop\n")
+    # So does a distribution whose metadata names no version.
+    versionless = tmp_path / "versionless_moop-0.0.dist-info"
+    versionless.mkdir()
+    (versionless / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: versionless-moop\n"
+    )
     monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
     with pytest.raises(ModuleNotFoundError):
         installed_package_sha256("broken_package_moop")
+    with pytest.raises(RuntimeError, match="names no version"):
+        installed_source("versionless-moop")
     source = installed_source("microcosm-fit")
     if source is not None:
         # A git install records its commit.

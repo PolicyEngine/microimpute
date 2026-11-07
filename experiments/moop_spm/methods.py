@@ -23,8 +23,9 @@ Methods:
 - ``zi_qrf``: microimpute's ``ZeroInflatedImputer`` around ``QRF``.
 - ``microcosm_qrf``: Microcosm's ``RegimeGatedQRF``, the model that
   imputes PolicyEngine's microdata, fit with the donors' unit weights.
-  On Microcosm's own data frames, a fit uses the frame's weights unless
-  told not to.
+  Microcosm's ``fit`` asks for design weights by default and raises when a
+  frame carries another kind; a DataFrame fit must name its weights or
+  pass ``NO_WEIGHTS``.
 - ``microcosm_qrf_unweighted``: the same model fit without weights, like
   every other method here.
 

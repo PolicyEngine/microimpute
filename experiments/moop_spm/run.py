@@ -100,18 +100,25 @@ def installed_source(dist: str) -> str | None:
     """Return a distribution's version and source, or None if it is absent.
 
     For an install from git, the source is the commit that pip or uv
-    recorded in the distribution's ``direct_url.json`` (PEP 610).
+    recorded in the distribution's ``direct_url.json`` (PEP 610). Metadata
+    that names no version raises, so a damaged install never reads as an
+    absent one.
     """
     try:
         found = distribution(dist)
     except PackageNotFoundError:
         return None
+    # ``metadata.get`` reads a missing field as None without the warning,
+    # and later KeyError, that ``Distribution.version`` gives.
+    found_version = found.metadata.get("Version")
+    if not found_version:
+        raise RuntimeError(f"{dist}'s distribution metadata names no version.")
     text = found.read_text("direct_url.json")
     if not text:
-        return found.version
+        return found_version
     direct = json.loads(text)
     source = direct.get("vcs_info", {}).get("commit_id") or direct.get("url")
-    return f"{found.version} @ {source}"
+    return f"{found_version} @ {source}"
 
 
 def environment() -> dict[str, str | None]:

@@ -76,8 +76,8 @@ We fit every method on donor units and impute held-out recipient units
 
 Microcosm (`PolicyEngine/microcosm`) builds PolicyEngine's microdata,
 and its `microcosm-fit` package imputes with `RegimeGatedQRF`. We fit it
-with its defaults (100 trees, every leaf sample kept, no cross-fitting
-of the gate), once with each donor unit's SPM weight (`SPM_WEIGHT / 100`) and
+with its defaults (100 trees, `max_samples_leaf=None` and no
+cross-fitting of the gate), once with each donor unit's SPM weight (`SPM_WEIGHT / 100`) and
 once without weights. The weighted fit passes the weights to the gate as
 sample weights and grows the forest on spenders resampled in proportion
 to them. Both fits share a seed, so their draws use the same random
@@ -86,12 +86,15 @@ numbers. Beyond the weights, Microcosm's model differs from microimpute's
 
 - Its gate draws whether a unit spends. microimpute's `QRF` has no
   gate, and `ZeroInflatedImputer` adds one of its own.
-- It keeps every training sample in each leaf, where microimpute keeps
-  quantile-forest's default of at most one.
+- For a target with more than 32 distinct values, such as MOOP, it
+  keeps every training sample in each leaf; it caps leaves at 4,096
+  samples only when a target takes 2 to 32 distinct values. microimpute
+  keeps quantile-forest's default of at most one sample per leaf.
 - It reads each unit's draw at that unit's own quantile, interpolating
   a 203-point grid whose ends lie 0.000001 from 0 and 1. microimpute
-  rounds the quantile to the nearest of 101 points from 1/102 to
-  101/102.
+  rounds each unit's quantile q to the nearest hundredth, k/100, and
+  reads the forest's (k + 1)/102 quantile, so its draws come from 101
+  points that run from 1/102 to 101/102 (q = 0.01 reads 2/102).
 
 We form cells from the unit's coverage group (Medicare, employer, direct
 purchase, public, uninsured), the head's age band, cash income relative
