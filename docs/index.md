@@ -1,5 +1,7 @@
 # Microimpute
 
+> PolicyEngine has archived microimpute. [Microcosm](https://github.com/PolicyEngine/microcosm) builds PolicyEngine's microdata and fits its imputation models with the `microcosm-fit` package. You can still install released versions from [PyPI](https://pypi.org/project/microimpute/).
+
 Microimpute is a Python package for imputing variables from one survey dataset onto another. It wraps five imputation methods behind a common interface so you can benchmark them on your data and pick the one that works best: impute one or multiple variables with any of the available methods, and compare their performance using quantile loss and log loss.
 
 The package currently supports:
@@ -8,8 +10,6 @@ The package currently supports:
 - Quantile Regression Forests (QRF)
 - Quantile Regression
 - Mixture Density Networks (MDN)
-
-This is a work in progress and may evolve over time with new methods and features.
 
 ## Microimputation dashboard
 

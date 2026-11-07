@@ -1,5 +1,7 @@
 # Microimpute
 
+> PolicyEngine has archived microimpute. [Microcosm](https://github.com/PolicyEngine/microcosm) builds PolicyEngine's microdata and fits its imputation models with the `microcosm-fit` package. You can still install released versions from [PyPI](https://pypi.org/project/microimpute/).
+
 Microimpute is a Python package for imputing variables from one survey dataset onto another. It wraps five imputation methods behind a common interface so you can benchmark them on your data and pick the one that works best, rather than defaulting to a single approach.
 
 ## Methods
@@ -38,10 +40,6 @@ For image export (PNG/JPG):
 ```bash
 pip install microimpute[images]
 ```
-
-## Contributing
-
-Pull requests are welcome. If you find a bug or have a feature idea, open an issue or submit a PR.
 
 ## License
 
