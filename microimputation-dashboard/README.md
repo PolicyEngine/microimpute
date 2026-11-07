@@ -4,11 +4,11 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Features
 
-- 📊 **Sample data**: Pre-loaded impuation results for immediate testing
-- 📁 **File upload**: Drag & drop CSV file support with comprehensive validation
-- 🌐 **URL loading**: Load CSV files from remote URLs with error handling
+- **Sample data**: Pre-loaded imputation results for immediate testing
+- **File upload**: Drag & drop CSV file support with comprehensive validation
+- **URL loading**: Load CSV files from remote URLs with error handling
 - **GitHub integration (retired)**: PolicyEngine archived microimpute, so the dashboard no longer loads results from GitHub Actions artifacts and reads no GitHub token
-- 📈 **Interactive visualizations**: Charts and metrics coming soon...
+- **Interactive visualizations**: benchmark loss charts, per-variable charts, distribution overlays, a predictor correlation matrix and predictor-ordering robustness charts
 
 ## Getting started
 

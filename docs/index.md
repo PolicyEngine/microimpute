@@ -13,7 +13,7 @@ This is a work in progress and may evolve over time with new methods and feature
 
 ## Microimputation dashboard
 
-Users can visualize imputation and benchmarking results at https://microimpute-dashboard.vercel.app/.
+To visualize imputation and benchmarking results, run `make dashboard` from the root of the [microimpute repository](https://github.com/PolicyEngine/microimpute) with Node.js installed, and open http://localhost:3000.
 
 To use the dashboard, CSV files must contain the following columns in this exact order:
 - `type`: Type of metric (e.g., "benchmark_loss", "distribution_distance", "predictor_correlation")
