@@ -25,7 +25,7 @@ All models follow a `fit()` / `predict()` interface. The package supports sample
 
 ## Dashboard
 
-An interactive dashboard for exploring imputation results is available at https://microimpute-dashboard.vercel.app/. It supports file upload, URL loading, direct GitHub artifact integration, and sample data.
+With Node.js installed, run `make dashboard` from the repository root to start the interactive dashboard in `microimputation-dashboard`. Open http://localhost:3000 and upload a CSV file, load one from a URL or try the sample data to explore imputation results.
 
 ## Installation
 
