@@ -22,11 +22,11 @@ Methods:
   draw per recipient.
 - ``zi_qrf``: microimpute's ``ZeroInflatedImputer`` around ``QRF``.
 - ``microcosm_qrf``: Microcosm's ``RegimeGatedQRF``, the model that
-  imputes PolicyEngine's microdata, fit with the donors' unit weights.
+  imputes PolicyEngine's microdata, with the donors' unit weights.
   Microcosm's ``fit`` asks for design weights by default and raises when a
-  frame carries another kind; a DataFrame fit must name its weights or
-  pass ``NO_WEIGHTS``.
-- ``microcosm_qrf_unweighted``: the same model fit without weights, like
+  frame carries another kind; a caller fitting a DataFrame must pass a
+  weight column's name, a weight vector or ``NO_WEIGHTS``.
+- ``microcosm_qrf_unweighted``: the same model without weights, like
   every other method here.
 
 Decomposition variants cross the participation rule (threshold or
@@ -372,8 +372,8 @@ def microcosm_threads(n_jobs: int) -> Iterator[None]:
     """Cap Microcosm's threads at ``n_jobs``.
 
     Microcosm reads its forest-fitting and drawing widths from environment
-    variables that its ``qrf`` module names; when they are unset, it fits
-    and draws on every core. Its gate, a scikit-learn gradient-boosted
+    variables that its ``qrf`` module names, and without them it fits and
+    draws on every core. Its gate, a scikit-learn gradient-boosted
     classifier, runs on OpenMP threads, which ``threadpoolctl`` caps. The
     previous settings come back on exit.
     """
@@ -406,14 +406,14 @@ def microcosm_qrf(
 ) -> np.ndarray:
     """Microcosm's ``RegimeGatedQRF`` on all donors.
 
-    A gradient-boosted classifier gates zero against positive MOOP, and a
-    quantile regression forest grown on donor spenders gives each gated
-    spender the amount at a random quantile of its predicted distribution.
-    With ``weighted``, the gate takes the donors' unit weights as sample
-    weights and the forest grows on spenders resampled in proportion to
-    them; without it, both ignore the weights. Each draw calls ``predict``
-    again on the one fitted model, which advances the model's own random
-    stream.
+    A gradient-boosted classifier draws whether each recipient spends, and
+    a quantile regression forest that Microcosm grows on donor spenders
+    gives each spender the amount at a random quantile of its predicted
+    distribution. With ``weighted``, the gate takes the donors' unit
+    weights as sample weights, and Microcosm resamples spenders in
+    proportion to them before it grows the forest; without it, neither the
+    gate nor the forest uses the weights. Each draw calls ``predict`` again
+    on the one fitted model, which advances the model's own random stream.
     """
     from microcosm.fit import NO_WEIGHTS, RegimeGatedQRF
 

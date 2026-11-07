@@ -71,25 +71,28 @@ We fit every method on donor units and impute held-out recipient units
 | `pmm` | implicit | predictive mean matching on log(1 + MOOP) within five coverage groups, random one of 5 nearest donors |
 | (c) `qrf` | implicit | microimpute `QRF`, one random quantile per unit |
 | (c) `zi_qrf` | microimpute gate | microimpute `ZeroInflatedImputer` around `QRF` |
-| (c) `microcosm_qrf` | Microcosm gate, a gradient-boosted classifier | Microcosm `RegimeGatedQRF` forest grown on donor spenders, one random quantile per unit; gate and forest use the SPM unit weights |
+| (c) `microcosm_qrf` | Microcosm gate, a gradient-boosted classifier | Microcosm `RegimeGatedQRF` forest on donor spenders, one random quantile per unit; gate and forest use the SPM unit weights |
 | (c) `microcosm_qrf_unweighted` | same, without weights | same, without weights |
 
 Microcosm (`PolicyEngine/microcosm`) builds PolicyEngine's microdata,
 and its `microcosm-fit` package imputes with `RegimeGatedQRF`. We fit it
 with its defaults (100 trees, `max_samples_leaf=None` and no
-cross-fitting of the gate), once with each donor unit's SPM weight (`SPM_WEIGHT / 100`) and
-once without weights. The weighted fit passes the weights to the gate as
-sample weights and grows the forest on spenders resampled in proportion
-to them. Both fits share a seed, so their draws use the same random
-numbers. Beyond the weights, Microcosm's model differs from microimpute's
-`QRF` in three ways:
+cross-fitting of the gate), once with each donor unit's SPM weight
+(`SPM_WEIGHT / 100`) and once without weights. With the weights,
+Microcosm passes them to the gate as sample weights and resamples
+spenders in proportion to them before it grows the forest. Both fits
+share a seed, so their draws use the same random numbers. Beyond the
+weights, Microcosm's model differs from microimpute's `QRF` in three
+ways:
 
 - Its gate draws whether a unit spends. microimpute's `QRF` has no
   gate, and `ZeroInflatedImputer` adds one of its own.
-- For a target with more than 32 distinct values, such as MOOP, it
-  keeps every training sample in each leaf; it caps leaves at 4,096
-  samples only when a target takes 2 to 32 distinct values. microimpute
-  keeps quantile-forest's default of at most one sample per leaf.
+- It keeps every training sample in each leaf of its MOOP forest, where
+  microimpute keeps quantile-forest's default of at most one sample per
+  leaf. Microcosm caps a forest's leaves at 4,096 samples only when the
+  donors that forest trains on hold 2 to 32 distinct values. Its MOOP
+  forest trains on the donor spenders, whose amounts take 7,830 to 7,880
+  distinct values in each fold.
 - It reads each unit's draw at that unit's own quantile, interpolating
   a 203-point grid whose ends lie 0.000001 from 0 and 1. microimpute
   rounds each unit's quantile q to the nearest hundredth, k/100, and

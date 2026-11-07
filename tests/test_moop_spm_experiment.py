@@ -17,13 +17,17 @@ the invariants the published comparison relies on:
 - Extracted CSVs that differ from the pinned zip are extracted again.
 - The fold cache misses whenever the environment, microimpute's or
   Microcosm's source or the model inputs change.
+- ``installed_source`` raises, rather than reading a package as absent,
+  when its metadata names no version, and ``environment`` raises when a
+  Microcosm package imports without distribution metadata.
 - Microcosm's draws are zero or lie within the range of the spenders
   that carry weight, and they do not depend on the number of threads.
-- Microcosm's gate takes each donor's unit weight, in donor order, and
-  takes no weights when the fit is unweighted.
-- Distribution metadata that names no version raises rather than reading
-  as an absent package.
-  These tests skip when Microcosm is not installed; it installs from git.
+- Microcosm fits its gate on every donor's row: the donor's predictors
+  and whether it spends, with its unit weight in the weighted fit and no
+  weights in the unweighted fit.
+
+The tests of Microcosm's draws, threads and gate skip on a machine
+without Microcosm, which installs from git.
 """
 
 import argparse
@@ -384,17 +388,23 @@ def test_microcosm_gate_takes_donor_weights_in_order(monkeypatch):
     original = HistGradientBoostingClassifier.fit
 
     def spy(self, X, y, sample_weight=None, **kwargs):
-        recorded.append(
-            None if sample_weight is None else np.array(sample_weight, dtype=float)
-        )
+        weights = sample_weight
+        if weights is not None:
+            weights = np.array(weights, dtype=float)
+        recorded.append((np.array(X, dtype=float), np.array(y), weights))
         return original(self, X, y, sample_weight=sample_weight, **kwargs)
 
     monkeypatch.setattr(HistGradientBoostingClassifier, "fit", spy)
     fold = _fold(7)
+    donors = fold.X_donor.to_numpy(dtype=float)
+    spends = (fold.moop_donor > 0).astype(int)
     microcosm_qrf(fold, 1, seed=7, weighted=True, n_jobs=1)
-    # One in-sample gate, fitted on every donor with that donor's weight.
+    # Microcosm fits one in-sample gate on every donor's row: the donor's
+    # predictors and whether it spends, with that donor's weight.
     assert len(recorded) == 1
-    weights = recorded[0]
+    features, labels, weights = recorded[0]
+    assert np.array_equal(features, donors)
+    assert np.array_equal(labels, spends)
     assert weights is not None
     assert weights.shape == fold.weight_donor.shape
     assert np.allclose(
@@ -409,7 +419,10 @@ def test_microcosm_gate_takes_donor_weights_in_order(monkeypatch):
     recorded.clear()
     microcosm_qrf(fold, 1, seed=7, weighted=False, n_jobs=1)
     assert len(recorded) == 1
-    assert recorded[0] is None
+    features, labels, weights = recorded[0]
+    assert np.array_equal(features, donors)
+    assert np.array_equal(labels, spends)
+    assert weights is None
 
 
 def test_installed_source_and_hash_tolerate_only_absent_packages(tmp_path, monkeypatch):
@@ -435,6 +448,32 @@ def test_installed_source_and_hash_tolerate_only_absent_packages(tmp_path, monke
     if source is not None:
         # A git install records its commit.
         assert re.fullmatch(r"\S+ @ ([0-9a-f]{40}|\S+)", source)
+
+
+def test_environment_refuses_microcosm_imports_without_metadata(tmp_path, monkeypatch):
+    # Two packages import; only the first has distribution metadata.
+    for name in ("recorded_moop", "unrecorded_moop"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "__init__.py").write_text("")
+    recorded = tmp_path / "recorded_moop-1.0.dist-info"
+    recorded.mkdir()
+    (recorded / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: recorded-moop\nVersion: 1.0\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+    present = {
+        "recorded": ("recorded-moop", "recorded_moop"),
+        "absent": ("no-such-distribution-moop", "no_such_package_moop"),
+    }
+    monkeypatch.setattr(run_module, "MICROCOSM_PACKAGES", present)
+    found = run_module.environment()
+    assert found["recorded"] == "1.0"
+    assert found["absent"] is None
+    unrecorded = {"unrecorded": ("unrecorded-moop", "unrecorded_moop")}
+    monkeypatch.setattr(run_module, "MICROCOSM_PACKAGES", unrecorded)
+    with pytest.raises(RuntimeError, match="unrecorded_moop imports"):
+        run_module.environment()
 
 
 @settings(max_examples=10, deadline=None)

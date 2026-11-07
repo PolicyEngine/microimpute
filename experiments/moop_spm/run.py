@@ -99,10 +99,9 @@ def config_hash(config: dict) -> str:
 def installed_source(dist: str) -> str | None:
     """Return a distribution's version and source, or None if it is absent.
 
-    For an install from git, the source is the commit that pip or uv
-    recorded in the distribution's ``direct_url.json`` (PEP 610). Metadata
-    that names no version raises, so a damaged install never reads as an
-    absent one.
+    For an install from git, it reports the commit that pip or uv recorded
+    in the distribution's ``direct_url.json`` (PEP 610). It raises, rather
+    than returning None, when the metadata names no version.
     """
     try:
         found = distribution(dist)
@@ -124,14 +123,24 @@ def installed_source(dist: str) -> str | None:
 def environment() -> dict[str, str | None]:
     """Return the versions of Python, ``PACKAGES`` and Microcosm.
 
-    Microcosm's entries carry the commit it came from, and they are None
-    when it is not installed.
+    Microcosm's entries carry the commit each package came from, or None
+    for an absent package. It raises when a Microcosm package imports
+    without distribution metadata, since the run would then hash the
+    package's source into the cache key without recording where it came
+    from.
     """
     versions: dict[str, str | None] = {
         name: version(dist) for name, dist in PACKAGES.items()
     }
-    for name, (dist, _) in MICROCOSM_PACKAGES.items():
-        versions[name] = installed_source(dist)
+    for name, (dist, module) in MICROCOSM_PACKAGES.items():
+        source = installed_source(dist)
+        if source is None and installed_package_sha256(module) is not None:
+            raise RuntimeError(
+                f"{module} imports, but no {dist} distribution metadata "
+                "records its version or source; reinstall it from git "
+                "(see README.md)."
+            )
+        versions[name] = source
     return {"python": platform.python_version(), **versions}
 
 
@@ -149,9 +158,10 @@ def package_sha256(package: str) -> str:
 
 
 def installed_package_sha256(package: str) -> str | None:
-    """Return ``package_sha256``, or None when the package is not installed.
+    """Return ``package_sha256``, or None when Python finds no such package.
 
-    An installed package that fails to import raises as usual.
+    When the package exists but fails to import, the import error
+    propagates.
     """
     try:
         return package_sha256(package)

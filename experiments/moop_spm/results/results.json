@@ -1879,9 +1879,9 @@
     ],
     "source_sha256": {
       "cps_asec.py": "647857a0fa249c44",
-      "methods.py": "9fbe9b3acb046eb6",
+      "methods.py": "4a36486e83ad2f88",
       "evaluate.py": "09daf780b35188ad",
-      "run.py": "2a9465d844ddcb83"
+      "run.py": "87dbb0975d32e8de"
     },
     "microimpute_sha256": "e14c884a85e90486",
     "microcosm_sha256": {
@@ -1902,16 +1902,16 @@
       "microcosm_graph": "0.1.0 @ 7080ba8a3ff4ba498575ec1a624a9064a6f619c8"
     },
     "input_sha256": "5a129f5d767fff81",
-    "tag": "541e509d20712573",
+    "tag": "6ca09058c0101fce",
     "n_jobs": 4
   },
   "timings_seconds": {
-    "logit_family": 76.79685592651367,
-    "pmm": 2.1582870483398438,
-    "qrf": 310.7086248397827,
-    "zi_qrf": 693.6227560043335,
-    "microcosm_qrf": 346.5654013156891,
-    "microcosm_qrf_unweighted": 369.52848386764526
+    "logit_family": 39.928866147994995,
+    "pmm": 1.5424842834472656,
+    "qrf": 172.0643048286438,
+    "zi_qrf": 475.4314589500427,
+    "microcosm_qrf": 228.54575967788696,
+    "microcosm_qrf_unweighted": 284.83655405044556
   },
   "environment": {
     "python": "3.13.13",
