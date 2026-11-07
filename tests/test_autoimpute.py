@@ -7,11 +7,10 @@ from sklearn.datasets import load_diabetes
 
 from microimpute.comparisons.autoimpute import autoimpute, AutoImputeResult
 from microimpute.visualizations import *
-from microimpute.models import QRF, QuantReg, OLS
 
 # Check if Matching is available
 try:
-    from microimpute.models import Matching
+    from microimpute.models import Matching  # noqa: F401  (import is the probe)
 
     HAS_MATCHING = True
 except ImportError:
@@ -19,11 +18,26 @@ except ImportError:
 
 # Check if MDN is available
 try:
-    from microimpute.models import MDN
+    from microimpute.models import MDN  # noqa: F401  (import is the probe)
 
     HAS_MDN = True
 except ImportError:
     HAS_MDN = False
+
+
+def available_models():
+    """The models autoimpute should use in this environment.
+
+    Matching needs rpy2 and R's StatMatch, and MDN needs pytorch-tabular.
+    Naming a model that did not import raises NameError before the call under
+    test runs, which is how a missing optional dependency turned into eight
+    test errors rather than a skip.
+    """
+    # autoimpute's own default is already dependency-aware, building
+    # [QRF, OLS, QuantReg] plus Matching and MDN when they import. Passing None
+    # uses it, so the installed set is exercised whatever is present.
+    return None
+
 
 # === Fixtures ===
 
@@ -87,7 +101,7 @@ def test_autoimpute_basic_structure(
         receiver_data=diabetes_receiver,
         predictors=predictors,
         imputed_variables=imputed_variables,
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=available_models(),
         hyperparameters={
             "QRF": {"n_estimators": 50},
             "Matching": {"constrained": True},
@@ -137,7 +151,7 @@ def test_autoimpute_all_models(
         receiver_data=diabetes_receiver,
         predictors=predictors,
         imputed_variables=imputed_variables,
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=available_models(),
         impute_all=True,  # Return results for all models
         log_level="WARNING",
     )
@@ -202,7 +216,7 @@ def test_autoimpute_with_hyperparameters(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=available_models(),
         hyperparameters=hyperparameters,
         log_level="WARNING",
     )
@@ -224,7 +238,7 @@ def test_autoimpute_multiple_imputed_variables(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1", "y2"],  # Multiple variables
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=available_models(),
         log_level="WARNING",
     )
 
@@ -246,7 +260,7 @@ def test_autoimpute_large_receiver() -> None:
         receiver_data=receiver,
         predictors=["x"],
         imputed_variables=["y"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=available_models(),
         log_level="WARNING",
     )
 
@@ -267,7 +281,7 @@ def test_autoimpute_best_method_selection(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=available_models(),
         log_level="WARNING",
     )
 
@@ -326,7 +340,7 @@ def test_autoimpute_cv_results_structure(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=available_models(),
         log_level="WARNING",
     )
 
@@ -372,13 +386,13 @@ def test_autoimpute_missing_predictors() -> None:
         }
     )
 
-    with pytest.raises(Exception):
+    with pytest.raises(Exception, match=r"Missing columns in receiver data"):
         autoimpute(
             donor_data=donor,
             receiver_data=receiver,
             predictors=["x1", "x2"],  # x2 not in receiver
             imputed_variables=["y"],
-            models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+            models=available_models(),
             log_level="WARNING",
         )
 
@@ -392,7 +406,9 @@ def test_autoimpute_invalid_model_specification() -> None:
     receiver = pd.DataFrame({"x": np.random.randn(10)})
 
     # Invalid model type
-    with pytest.raises(Exception):
+    with pytest.raises(
+        Exception, match=r"(?s)validation error.*Input should be a type"
+    ):
         autoimpute(
             donor_data=donor,
             receiver_data=receiver,
@@ -461,7 +477,7 @@ def test_autoimpute_consistency(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=available_models(),
         log_level="WARNING",
     )
 
@@ -470,7 +486,7 @@ def test_autoimpute_consistency(simple_data: tuple) -> None:
         receiver_data=receiver,
         predictors=["x1", "x2"],
         imputed_variables=["y1"],
-        models=[QRF, Matching, QuantReg, OLS] if not HAS_MDN else None,
+        models=available_models(),
         log_level="WARNING",
     )
 
@@ -480,5 +496,6 @@ def test_autoimpute_consistency(simple_data: tuple) -> None:
         if model_name in results2.cv_results:
             loss1 = results1.cv_results[model_name]["quantile_loss"]["mean_test"]
             loss2 = results2.cv_results[model_name]["quantile_loss"]["mean_test"]
-            if not np.isnan(loss1) and not np.isnan(loss2):
-                np.testing.assert_allclose(loss1, loss2, rtol=0.10)
+            assert not np.isnan(loss1), f"{model_name} produced a NaN loss"
+            assert not np.isnan(loss2), f"{model_name} produced a NaN loss"
+            np.testing.assert_allclose(loss1, loss2, rtol=0.10)

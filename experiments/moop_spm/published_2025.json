@@ -1,0 +1,36 @@
+{
+  "source": "U.S. Census Bureau, Poverty in the United States: 2025 (P60-290), September 2026",
+  "report_url": "https://www.census.gov/library/publications/2026/demo/p60-290.html",
+  "tables": {
+    "table_4": "https://www2.census.gov/programs-surveys/demo/tables/p60/290/table_4_spm_person.xlsx",
+    "table_5": "https://www2.census.gov/programs-surveys/demo/tables/p60/290/table_5_spm_program_effect_rates.xlsx",
+    "table_8": "https://www2.census.gov/programs-surveys/demo/tables/p60/290/table_8_spm_hist.xlsx"
+  },
+  "accessed": "2026-11-05",
+  "spm_rate_percent": {
+    "All people": 13.11,
+    "Under 18": 13.4,
+    "18 to 64": 12.28,
+    "65 and older": 15.37
+  },
+  "spm_rate_moe90": {
+    "All people": 0.31,
+    "Under 18": 0.56,
+    "18 to 64": 0.34,
+    "65 and older": 0.53
+  },
+  "medical_expenses_effect_pp": {
+    "All people": 2.28,
+    "Under 18": 1.99,
+    "18 to 64": 1.88,
+    "65 and older": 3.83
+  },
+  "medical_expenses_effect_moe90": {
+    "All people": 0.13,
+    "Under 18": 0.21,
+    "18 to 64": 0.14,
+    "65 and older": 0.26
+  },
+  "number_in_poverty_thousands": 44390,
+  "population_thousands": 338600
+}

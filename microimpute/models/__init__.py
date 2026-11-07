@@ -11,6 +11,9 @@ Available models:
     - Matching: statistical matching/hot-deck imputation (optional, requires rpy2)
     - MDN: Mixture Density Network for probabilistic imputation
         (optional, requires pytorch-tabular)
+    - ZeroInflatedImputer: wrapper composing a model for the probability of a
+        zero with a model for the positive part, for variables such as asset
+        holdings where a large share of the population is at zero
 
 Base classes:
     - Imputer: abstract base class for all imputation models
@@ -34,3 +37,4 @@ except ImportError:
 from microimpute.models.ols import OLS
 from microimpute.models.qrf import QRF
 from microimpute.models.quantreg import QuantReg
+from microimpute.models.zero_inflated import ZeroInflatedImputer
