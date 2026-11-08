@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect, Suspense } from 'react';
+import { useState, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import FileUpload from '@/components/FileUpload';
 import VisualizationDashboard from '@/components/VisualizationDashboard';
 import { parseImputationCSV } from '@/utils/csvParser';
 import { ImputationDataPoint } from '@/types/imputation';
-import { parseDeeplinkParams, GitHubArtifactInfo } from '@/utils/deeplinks';
+import { isGitHubShareLink } from '@/utils/retirement';
 
 function PrivacyModal({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   if (!isOpen) return null;
@@ -60,18 +60,10 @@ function HomeContent() {
   const [data, setData] = useState<ImputationDataPoint[]>([]);
   const [fileName, setFileName] = useState<string>('');
   const [showDashboard, setShowDashboard] = useState(false);
-  const [isLoadingFromDeeplink, setIsLoadingFromDeeplink] = useState(false);
-  const [githubArtifactInfo, setGithubArtifactInfo] = useState<GitHubArtifactInfo | null>(null);
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
 
   const searchParams = useSearchParams();
-  const deeplinkParams = parseDeeplinkParams(searchParams);
-
-  useEffect(() => {
-    if (deeplinkParams) {
-      setIsLoadingFromDeeplink(true);
-    }
-  }, [deeplinkParams]);
+  const openedShareLink = isGitHubShareLink(searchParams);
 
   const handleFileLoad = (csvContent: string, filename: string) => {
     try {
@@ -94,21 +86,6 @@ function HomeContent() {
     setShowDashboard(false);
     setData([]);
     setFileName('');
-    setGithubArtifactInfo(null);
-  };
-
-  const handleDeeplinkLoadComplete = (primary: GitHubArtifactInfo | null) => {
-    setIsLoadingFromDeeplink(false);
-    if (primary) {
-      setGithubArtifactInfo(primary);
-      setShowDashboard(true);
-    }
-  };
-
-  const handleGithubLoad = (primary: GitHubArtifactInfo | null) => {
-    if (primary) {
-      setGithubArtifactInfo(primary);
-    }
   };
 
 
@@ -120,16 +97,12 @@ function HomeContent() {
           <FileUpload
             onFileLoad={handleFileLoad}
             onViewDashboard={handleViewDashboard}
-            deeplinkParams={deeplinkParams}
-            isLoadingFromDeeplink={isLoadingFromDeeplink}
-            onDeeplinkLoadComplete={handleDeeplinkLoadComplete}
-            onGithubLoad={handleGithubLoad}
+            openedShareLink={openedShareLink}
           />
         ) : (
           <VisualizationDashboard
             data={data}
             fileName={fileName}
-            githubArtifactInfo={githubArtifactInfo}
             onBackToUpload={handleBackToUpload}
           />
         )}
