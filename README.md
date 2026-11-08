@@ -25,7 +25,7 @@ All models follow a `fit()` / `predict()` interface. The package supports sample
 
 ## Dashboard
 
-Install Node.js, then run `make dashboard` from the repository root to start the interactive dashboard in `microimputation-dashboard`. Open http://localhost:3000 and upload a CSV file, load one from a URL or try the sample data to explore imputation results.
+Install Node.js, clone the [microimpute repository](https://github.com/PolicyEngine/microimpute) and run `make dashboard` from its root to start the interactive dashboard in `microimputation-dashboard`. Open http://localhost:3000 and upload a CSV file, load one from a URL or try the sample data to explore imputation results.
 
 ## Installation
 

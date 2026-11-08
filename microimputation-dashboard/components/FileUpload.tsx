@@ -26,7 +26,7 @@ export default function FileUpload({
   const [urlInput, setUrlInput] = useState('');
   const [activeTab, setActiveTab] = useState<'drop' | 'url' | 'sample'>('drop');
   const [loadedFile, setLoadedFile] = useState<string>('');
-  // A link that the retired GitHub loader shared can no longer load anything,
+  // A link that the old GitHub loader shared can no longer load anything,
   // so the page explains why instead.
   const [error, setError] = useState<string>(openedShareLink ? GITHUB_LOADER_RETIRED : '');
   const [previewData, setPreviewData] = useState<{

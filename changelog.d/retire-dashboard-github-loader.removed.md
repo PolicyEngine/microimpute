@@ -1,1 +1,1 @@
-Remove the dashboard's GitHub loader, with its GitHub tab, share button and loading from shared links. Its API routes now answer 410 and read no GITHUB_TOKEN, so the download route no longer forwards that token to whatever URL a caller names.
+Remove the dashboard's GitHub loader: its GitHub tab, its share button and the code that loaded the links it shared. Its API routes now answer 410 and read no GITHUB_TOKEN, so the download route no longer forwards that token to whatever URL a caller names.
