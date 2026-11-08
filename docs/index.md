@@ -1,15 +1,15 @@
 # Microimpute
 
+> PolicyEngine has archived microimpute. [Microcosm](https://github.com/PolicyEngine/microcosm) builds PolicyEngine's microdata and fits its imputation models with the `microcosm-fit` package. [PyPI](https://pypi.org/project/microimpute/) keeps the package's releases, so `pip install microimpute` still works. The [open issues](https://github.com/PolicyEngine/microimpute/issues) include correctness bugs that no release fixes, such as [the default QRF's miscalibrated quantiles](https://github.com/PolicyEngine/microimpute/issues/205).
+
 Microimpute is a Python package for imputing variables from one survey dataset onto another. It wraps five imputation methods behind a common interface so you can benchmark them on your data and pick the one that works best: impute one or multiple variables with any of the available methods, and compare their performance using quantile loss and log loss.
 
-The package currently supports:
+The package supports:
 - Hot Deck Matching
 - Ordinary Least Squares (OLS) Linear Regression
 - Quantile Regression Forests (QRF)
 - Quantile Regression
 - Mixture Density Networks (MDN)
-
-This is a work in progress and may evolve over time with new methods and features.
 
 ## Microimputation dashboard
 

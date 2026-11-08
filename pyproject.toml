@@ -19,6 +19,7 @@ authors = [
     { name = "Nikhil Woodruff", email = "nikhil.woodruff@outlook.com" }
 ]
 classifiers = [
+    "Development Status :: 7 - Inactive",
     "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.12",
