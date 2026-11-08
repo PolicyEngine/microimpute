@@ -25,7 +25,7 @@ All models follow a `fit()` / `predict()` interface. The package supports sample
 
 ## Dashboard
 
-An interactive dashboard for exploring imputation results is available at https://microimpute-dashboard.vercel.app/. It supports file upload, URL loading, direct GitHub artifact integration, and sample data.
+Install Node.js, clone the [microimpute repository](https://github.com/PolicyEngine/microimpute) and run `make dashboard` from its root to start the interactive dashboard in `microimputation-dashboard`. Open http://localhost:3000 and upload a CSV file, load one from a URL or try the sample data to explore imputation results.
 
 ## Installation
 

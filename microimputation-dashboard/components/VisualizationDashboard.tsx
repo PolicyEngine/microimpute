@@ -2,43 +2,25 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { ImputationDataPoint } from '@/types/imputation';
-import { GitHubArtifactInfo, createShareableUrl } from '@/utils/deeplinks';
 import BenchmarkLossCharts from './BenchmarkLossCharts';
 import PerVariableCharts from './PerVariableCharts';
 import VisualizationTabs from './VisualizationTabs';
 import PredictorCorrelationMatrix from './PredictorCorrelationMatrix';
 import PredictorOrderingRobustness from './PredictorOrderingRobustness';
 import ImputationResults from './ImputationResults';
-import { Share } from 'lucide-react';
 
 interface VisualizationDashboardProps {
   data: ImputationDataPoint[];
   fileName: string;
-  githubArtifactInfo?: GitHubArtifactInfo | null;
   onBackToUpload: () => void;
 }
 
 export default function VisualizationDashboard({
   data,
   fileName,
-  githubArtifactInfo,
   onBackToUpload,
 }: VisualizationDashboardProps) {
   const [activeTab, setActiveTab] = useState('overview');
-
-  // Handle sharing the dashboard via deeplink
-  const handleShare = async () => {
-    if (!githubArtifactInfo) return;
-
-    try {
-      const shareUrl = createShareableUrl(githubArtifactInfo);
-      await navigator.clipboard.writeText(shareUrl);
-      alert('Shareable URL copied to clipboard!');
-    } catch (err) {
-      console.error('Failed to copy URL:', err);
-      alert('Failed to copy URL to clipboard');
-    }
-  };
 
   // Analyze data structure and available visualizations
   const dataAnalysis = useMemo(() => {
@@ -417,15 +399,6 @@ export default function VisualizationDashboard({
               </p>
             </div>
             <div className="flex flex-wrap gap-3 flex-shrink-0">
-              {githubArtifactInfo && (
-                <button
-                  onClick={handleShare}
-                  className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md transition-colors flex items-center gap-2 whitespace-nowrap"
-                >
-                  <Share size={16} />
-                  Share Dashboard
-                </button>
-              )}
               <button
                 onClick={onBackToUpload}
                 className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors whitespace-nowrap"
@@ -459,15 +432,6 @@ export default function VisualizationDashboard({
             </p>
           </div>
           <div className="flex gap-3 flex-shrink-0">
-            {githubArtifactInfo && (
-              <button
-                onClick={handleShare}
-                className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md transition-colors flex items-center gap-2 whitespace-nowrap"
-              >
-                <Share size={16} />
-                Share Dashboard
-              </button>
-            )}
             <button
               onClick={onBackToUpload}
               className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-md transition-colors whitespace-nowrap"

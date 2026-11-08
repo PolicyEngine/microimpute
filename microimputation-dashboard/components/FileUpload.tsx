@@ -1,45 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Upload, File as FileIcon, Link, Database, GitBranch } from 'lucide-react';
-import JSZip from 'jszip';
+import { useState, useCallback } from 'react';
+import { Upload, File as FileIcon, Link, Database } from 'lucide-react';
 import Papa from 'papaparse';
-import { DeeplinkParams, GitHubArtifactInfo } from '@/utils/deeplinks';
+import { GITHUB_LOADER_RETIRED } from '@/utils/retirement';
 import { parseImputationCSV, getImputationMetrics } from '@/utils/csvParser';
 import { ImputationDataPoint } from '@/types/imputation';
 
 interface FileUploadProps {
   onFileLoad: (content: string, filename: string) => void;
   onViewDashboard: () => void;
-  deeplinkParams?: DeeplinkParams | null;
-  isLoadingFromDeeplink?: boolean;
-  onDeeplinkLoadComplete?: (primary: GitHubArtifactInfo | null) => void;
-  onGithubLoad?: (primary: GitHubArtifactInfo | null) => void;
-}
-
-interface GitHubCommit {
-  sha: string;
-  commit: {
-    message: string;
-    author: {
-      date: string;
-    };
-  };
-}
-
-interface GitHubBranch {
-  name: string;
-  commit: {
-    sha: string;
-  };
-}
-
-interface GitHubArtifact {
-  id: number;
-  name: string;
-  archive_download_url: string;
-  size_in_bytes: number;
-  created_at: string;
+  openedShareLink?: boolean;
 }
 
 // Known imputation methods supported by microimpute.
@@ -48,17 +19,16 @@ const KNOWN_METHODS = ['QRF', 'QuantReg', 'OLS', 'Matching', 'MDN'];
 export default function FileUpload({
   onFileLoad,
   onViewDashboard,
-  deeplinkParams,
-  isLoadingFromDeeplink,
-  onDeeplinkLoadComplete,
-  onGithubLoad
+  openedShareLink
 }: FileUploadProps) {
   const [isDragOver, setIsDragOver] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [urlInput, setUrlInput] = useState('');
-  const [activeTab, setActiveTab] = useState<'drop' | 'url' | 'sample' | 'github'>('drop');
+  const [activeTab, setActiveTab] = useState<'drop' | 'url' | 'sample'>('drop');
   const [loadedFile, setLoadedFile] = useState<string>('');
-  const [error, setError] = useState<string>('');
+  // A link that the old GitHub loader shared can no longer load anything,
+  // so the page explains why instead.
+  const [error, setError] = useState<string>(openedShareLink ? GITHUB_LOADER_RETIRED : '');
   const [previewData, setPreviewData] = useState<{
     totalRecords: number;
     variables: string[];
@@ -66,16 +36,6 @@ export default function FileUpload({
     types: string[];
     sampleRows: ImputationDataPoint[];
   } | null>(null);
-
-  // GitHub-specific state
-  const [githubRepo, setGithubRepo] = useState('');
-  const [githubBranches, setGithubBranches] = useState<GitHubBranch[]>([]);
-  const [selectedBranch, setSelectedBranch] = useState('');
-  const [githubCommits, setGithubCommits] = useState<GitHubCommit[]>([]);
-  const [selectedCommit, setSelectedCommit] = useState('');
-  const [availableArtifacts, setAvailableArtifacts] = useState<GitHubArtifact[]>([]);
-  const [selectedArtifact, setSelectedArtifact] = useState('');
-  const [isLoadingGithubData, setIsLoadingGithubData] = useState(false);
 
   // Generate a preview summary from raw CSV content
   const generatePreview = useCallback((csvContent: string) => {
@@ -96,103 +56,6 @@ export default function FileUpload({
       setPreviewData(null);
     }
   }, []);
-
-  // Helper function to load a single artifact from deeplink parameters
-  const loadArtifactFromDeeplink = useCallback(async (artifactInfo: GitHubArtifactInfo): Promise<string> => {
-    // Get artifacts for the specific commit using API route
-    const artifactsResponse = await fetch(
-      `/api/github/artifacts?repo=${encodeURIComponent(artifactInfo.repo)}&commit=${encodeURIComponent(artifactInfo.commit)}`
-    );
-
-    if (!artifactsResponse.ok) {
-      throw new Error(`Failed to fetch artifacts: ${artifactsResponse.status}`);
-    }
-
-    const artifacts = await artifactsResponse.json();
-
-    // Find the artifact by name
-    const targetArtifact = artifacts.find((artifact: { name: string }) => artifact.name === artifactInfo.artifact);
-
-    if (!targetArtifact) {
-      throw new Error(`Artifact "${artifactInfo.artifact}" not found for commit ${artifactInfo.commit}`);
-    }
-
-    // Download and extract the artifact using API route
-    const downloadResponse = await fetch(
-      `/api/github/download?url=${encodeURIComponent(targetArtifact.archive_download_url)}`
-    );
-
-    if (!downloadResponse.ok) {
-      throw new Error(`Failed to download artifact: ${downloadResponse.status}`);
-    }
-
-    const zipBuffer = await downloadResponse.arrayBuffer();
-    const zip = new JSZip();
-    const zipContents = await zip.loadAsync(zipBuffer);
-
-    // Find CSV files in the zip
-    const csvFiles = Object.keys(zipContents.files).filter(filename => filename.endsWith('.csv'));
-
-    if (csvFiles.length === 0) {
-      throw new Error('No CSV files found in the artifact');
-    }
-
-    // Use the first CSV file found
-    const csvFile = zipContents.files[csvFiles[0]];
-    const csvContent = await csvFile.async('text');
-
-    // Validate CSV format
-    validateCSVFormat(csvContent);
-
-    return csvContent;
-  }, []);
-
-  // Load GitHub artifacts directly from deeplink parameters
-  const loadDeeplinkArtifacts = useCallback(async (primary: GitHubArtifactInfo) => {
-    setIsLoading(true);
-    setError('');
-
-    try {
-      setError('🔄 Loading data from GitHub artifacts...');
-
-      // Load primary artifact
-      const primaryData = await loadArtifactFromDeeplink(primary);
-
-      // Single artifact load
-      const displayName = `${primary.repo}@${primary.branch} (${primary.commit.substring(0, 7)}) - ${primary.artifact}`;
-      onFileLoad(primaryData, displayName);
-      setLoadedFile(displayName);
-      generatePreview(primaryData);
-
-      // Notify parent component that deeplink loading is complete
-      if (onDeeplinkLoadComplete) {
-        onDeeplinkLoadComplete(primary);
-      }
-
-      setError('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load artifacts from deeplink');
-      if (onDeeplinkLoadComplete) {
-        onDeeplinkLoadComplete(null);
-      }
-    } finally {
-      setIsLoading(false);
-    }
-  }, [onFileLoad, onDeeplinkLoadComplete, loadArtifactFromDeeplink, generatePreview]);
-
-  // Handle deeplink loading on mount
-  useEffect(() => {
-    if (deeplinkParams && isLoadingFromDeeplink && deeplinkParams.primary) {
-      setActiveTab('github');
-      setGithubRepo(deeplinkParams.primary.repo);
-      setSelectedBranch(deeplinkParams.primary.branch);
-      setSelectedCommit(deeplinkParams.primary.commit);
-      setSelectedArtifact(deeplinkParams.primary.artifact);
-
-      // Auto-load artifact data
-      loadDeeplinkArtifacts(deeplinkParams.primary);
-    }
-  }, [deeplinkParams, isLoadingFromDeeplink, loadDeeplinkArtifacts]);
 
   function validateCSVFormat(content: string): void {
     // Expected column names for microimputation dashboard
@@ -544,224 +407,6 @@ export default function FileUpload({
     }
   }
 
-  async function fetchGithubBranches() {
-    if (!githubRepo.trim()) {
-      setError('Please enter a GitHub repository (e.g., owner/repo)');
-      return;
-    }
-
-    const repoMatch = githubRepo.trim().match(/^([^/]+)\/([^/]+)$/);
-    if (!repoMatch) {
-      setError('Invalid repository format. Use "owner/repo" format (e.g., "PolicyEngine/microimpute")');
-      return;
-    }
-
-    setIsLoadingGithubData(true);
-    setError('');
-
-    try {
-      const response = await fetch(`/api/github/branches?repo=${encodeURIComponent(githubRepo)}`);
-
-        if (!response.ok) {
-          if (response.status === 404) {
-            throw new Error('Repository not found. Please check the repository name and ensure it is publicly accessible.');
-          } else if (response.status === 403) {
-            throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
-          }
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch branches: ${response.status}`);
-        }
-
-      const allBranches: GitHubBranch[] = await response.json();
-      setGithubBranches(allBranches);
-
-      // Auto-select main/master branch if available
-      const defaultBranch = allBranches.find(b => b.name === 'main' || b.name === 'master');
-      if (defaultBranch) {
-        setSelectedBranch(defaultBranch.name);
-        await fetchGithubCommits(defaultBranch.name);
-      }
-    } catch (err) {
-      setError(`GitHub API error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsLoadingGithubData(false);
-    }
-  }
-
-  async function fetchGithubCommits(branch: string) {
-    if (!githubRepo.trim() || !branch) return;
-
-    setIsLoadingGithubData(true);
-    try {
-      const response = await fetch(
-        `/api/github/commits?repo=${encodeURIComponent(githubRepo)}&branch=${encodeURIComponent(branch)}`
-      );
-
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Branch not found or repository is private.');
-        } else if (response.status === 403) {
-          throw new Error('Access forbidden. Please check your GitHub token permissions or repository access.');
-        }
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch commits: ${response.status}`);
-      }
-
-      const commits: GitHubCommit[] = await response.json();
-      setGithubCommits(commits);
-
-      // Auto-select latest commit and fetch its artifacts
-      if (commits.length > 0) {
-        setSelectedCommit(commits[0].sha);
-        await fetchGithubArtifacts(commits[0].sha);
-      }
-    } catch (err) {
-      setError(`GitHub API error: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsLoadingGithubData(false);
-    }
-  }
-
-  async function fetchGithubArtifacts(commitSha: string) {
-    if (!githubRepo.trim() || !commitSha) return;
-
-    setIsLoadingGithubData(true);
-    setAvailableArtifacts([]);
-    setSelectedArtifact('');
-
-    try {
-      const response = await fetch(
-        `/api/github/artifacts?repo=${encodeURIComponent(githubRepo)}&commit=${encodeURIComponent(commitSha)}`
-      );
-
-      if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error(`GitHub API rate limit exceeded or token permissions insufficient (403). Please try again later or check your token permissions.`);
-        } else if (response.status === 404) {
-          throw new Error(`Repository or commit not found (404). Please check the repository name and commit SHA.`);
-        }
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Failed to fetch artifacts: ${response.status}`);
-      }
-
-      const uniqueArtifacts: GitHubArtifact[] = await response.json();
-
-      if (uniqueArtifacts.length === 0) {
-        setError('No imputation artifacts found for this commit.');
-        return;
-      }
-
-      setAvailableArtifacts(uniqueArtifacts);
-
-      // Auto-select the first artifact
-      if (uniqueArtifacts.length > 0) {
-        setSelectedArtifact(uniqueArtifacts[0].id.toString());
-      }
-
-    } catch (err) {
-      setError(`Failed to fetch artifacts: ${err instanceof Error ? err.message : 'Unknown error'}`);
-    } finally {
-      setIsLoadingGithubData(false);
-    }
-  }
-
-  async function loadGithubArtifact() {
-    if (!selectedArtifact) {
-      setError('Please select an artifact to load');
-      return;
-    }
-
-    const artifact = availableArtifacts.find(a => a.id.toString() === selectedArtifact);
-    if (!artifact) {
-      setError('Selected artifact not found');
-      return;
-    }
-
-    setIsLoading(true);
-    setError('');
-
-    try {
-      setError('🔄 Downloading and extracting CSV from artifact...');
-
-      const downloadResponse = await fetch(
-        `/api/github/download?url=${encodeURIComponent(artifact.archive_download_url)}`
-      );
-
-      if (!downloadResponse.ok) {
-        throw new Error(`Failed to download artifact: ${downloadResponse.status}`);
-      }
-
-      const zipBuffer = await downloadResponse.arrayBuffer();
-      const zip = new JSZip();
-      const zipContent = await zip.loadAsync(zipBuffer);
-
-      // Find CSV files in the ZIP
-      const csvFiles = Object.keys(zipContent.files).filter(filename =>
-        filename.toLowerCase().endsWith('.csv') && !zipContent.files[filename].dir
-      );
-
-      if (csvFiles.length === 0) {
-        throw new Error('No CSV files found in the artifact ZIP');
-      }
-
-      // Use the first CSV file found
-      const csvFilename = csvFiles[0];
-      const csvFile = zipContent.files[csvFilename];
-      const csvContent = await csvFile.async('text');
-
-      // Validate the CSV content
-      if (!csvContent.trim()) {
-        throw new Error('The extracted CSV file is empty');
-      }
-
-      // Check for basic CSV structure
-      const lines = csvContent.trim().split('\n');
-      if (lines.length < 2) {
-        throw new Error('The CSV must contain at least a header row and one data row');
-      }
-
-      // Validate CSV format (columns and JSON)
-      validateCSVFormat(csvContent);
-
-      // Success! Load the CSV into the dashboard with commit info
-      const commitShort = selectedCommit.slice(0, 8);
-      const branchInfo = selectedBranch ? ` (${selectedBranch})` : '';
-      const displayName = `${csvFilename} @ ${commitShort}${branchInfo}`;
-
-      onFileLoad(csvContent, displayName);
-      setLoadedFile(displayName);
-      generatePreview(csvContent);
-      setError('');
-
-      // Notify parent component about GitHub artifact info for sharing
-      if (onGithubLoad) {
-        const artifactInfo: GitHubArtifactInfo = {
-          repo: githubRepo,
-          branch: selectedBranch,
-          commit: selectedCommit,
-          artifact: artifact.name
-        };
-        onGithubLoad(artifactInfo);
-      }
-
-      // Clear the GitHub state since we successfully loaded the file
-      setGithubRepo('');
-      setGithubBranches([]);
-      setSelectedBranch('');
-      setGithubCommits([]);
-      setSelectedCommit('');
-      setAvailableArtifacts([]);
-      setSelectedArtifact('');
-
-    } catch (extractError) {
-      console.error('CSV extraction error:', extractError);
-      setError(`❌ Failed to extract CSV: ${extractError instanceof Error ? extractError.message : 'Unknown error'}. Try using the URL tab with a direct CSV link.`);
-    } finally {
-      setIsLoading(false);
-    }
-  }
-
-
   return (
     <div className="space-y-8">
       {/* Page Title */}
@@ -792,14 +437,8 @@ export default function FileUpload({
         </div>
 
       {error && (
-        <div className={`mb-4 rounded-md p-3 ${
-          error.startsWith('🔄')
-            ? 'bg-blue-50 border border-blue-200'
-            : 'bg-red-50 border border-red-200'
-        }`}>
-          <p className={`text-sm whitespace-pre-line ${
-            error.startsWith('🔄') ? 'text-blue-700' : 'text-red-700'
-          }`}>{error}</p>
+        <div className="mb-4 rounded-md p-3 bg-red-50 border border-red-200">
+          <p className="text-sm whitespace-pre-line text-red-700">{error}</p>
         </div>
       )}
 
@@ -842,22 +481,6 @@ export default function FileUpload({
         >
           <Link className="w-4 h-4 inline mr-2" />
           URL
-        </button>
-        <button
-          onClick={() => {
-            setActiveTab('github');
-            setError('');
-            setLoadedFile('');
-            setPreviewData(null);
-          }}
-          className={`px-4 py-2 text-sm font-medium border-b-2 ${
-            activeTab === 'github'
-              ? 'border-blue-500 text-blue-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          <GitBranch className="w-4 h-4 inline mr-2" />
-          GitHub
         </button>
         <button
           onClick={() => {
@@ -964,156 +587,6 @@ export default function FileUpload({
         </div>
       )}
 
-      {activeTab === 'github' && (
-        <div className="space-y-6">
-          <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-            <div className="flex items-start space-x-3">
-              <GitBranch className="w-6 h-6 text-gray-600 mt-1" />
-              <div className="flex-1">
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  Load from GitHub repository
-                </h3>
-                <p className="text-gray-700 mb-4">
-                  Load imputation data from GitHub Actions artifacts in public repositories.
-                </p>
-
-                {/* Repository Input */}
-                <div className="mb-4">
-                  <label htmlFor="github-repo" className="block text-sm font-medium text-gray-700 mb-2">
-                    Repository (owner/repo)
-                  </label>
-                  <div className="flex space-x-2">
-                    <input
-                      id="github-repo"
-                      type="text"
-                      value={githubRepo}
-                      onChange={(e) => setGithubRepo(e.target.value)}
-                      placeholder="policyengine/microimpute"
-                      className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    />
-                    <button
-                      onClick={fetchGithubBranches}
-                      disabled={isLoadingGithubData || !githubRepo.trim()}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50"
-                    >
-                      {isLoadingGithubData ? 'Loading...' : 'Fetch'}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Branch Selection */}
-                {githubBranches.length > 0 && (
-                  <div className="mb-4">
-                    <label htmlFor="github-branch" className="block text-sm font-medium text-gray-700 mb-2">
-                      Branch
-                    </label>
-                    <select
-                      id="github-branch"
-                      value={selectedBranch}
-                      onChange={(e) => {
-                        setSelectedBranch(e.target.value);
-                        fetchGithubCommits(e.target.value);
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    >
-                      <option value="">Select a branch</option>
-                      {githubBranches.map((branch) => (
-                        <option key={branch.name} value={branch.name}>
-                          {branch.name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-
-                {/* Commit Selection */}
-                {githubCommits.length > 0 && (
-                  <div className="mb-4">
-                    <label htmlFor="github-commit" className="block text-sm font-medium text-gray-700 mb-2">
-                      Commit
-                    </label>
-                    <select
-                      id="github-commit"
-                      value={selectedCommit}
-                      onChange={(e) => {
-                        setSelectedCommit(e.target.value);
-                        fetchGithubArtifacts(e.target.value);
-                      }}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    >
-                      <option value="">Select a commit</option>
-                      {githubCommits.map((commit) => (
-                        <option key={commit.sha} value={commit.sha}>
-                          {commit.sha.slice(0, 8)} - {commit.commit.message.slice(0, 60)}
-                          {commit.commit.message.length > 60 ? '...' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    {selectedCommit && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        {githubCommits.find(c => c.sha === selectedCommit)?.commit.author.date &&
-                          new Date(githubCommits.find(c => c.sha === selectedCommit)!.commit.author.date).toLocaleString()
-                        }
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Artifact Selection */}
-                {availableArtifacts.length > 0 && (
-                  <div className="mb-4">
-                    <label htmlFor="github-artifact" className="block text-sm font-medium text-gray-700 mb-2">
-                      Artifact ({availableArtifacts.length} available)
-                    </label>
-                    <select
-                      id="github-artifact"
-                      value={selectedArtifact}
-                      onChange={(e) => setSelectedArtifact(e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
-                    >
-                      <option value="">Select an artifact</option>
-                      {availableArtifacts.map((artifact) => (
-                        <option key={artifact.id} value={artifact.id.toString()}>
-                          {artifact.name} ({(artifact.size_in_bytes / 1024).toFixed(1)} KB)
-                        </option>
-                      ))}
-                    </select>
-                    {selectedArtifact && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        {availableArtifacts.find(a => a.id.toString() === selectedArtifact)?.created_at &&
-                          `Created: ${new Date(availableArtifacts.find(a => a.id.toString() === selectedArtifact)!.created_at).toLocaleString()}`
-                        }
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {/* Load Button */}
-                {selectedArtifact && (
-                  <button
-                    onClick={loadGithubArtifact}
-                    disabled={isLoading}
-                    className="bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md disabled:opacity-50"
-                  >
-                    {isLoading ? 'Loading artifact...' : 'Load imputation data'}
-                  </button>
-                )}
-
-                <div className="mt-4 text-sm text-gray-600">
-                  <p className="mb-2">📌 <strong>Note:</strong> This feature finds imputation CSV files in GitHub Actions artifacts.</p>
-                  <ul className="space-y-1 text-xs">
-                    <li>• ✅ Works with PolicyEngine public repositories</li>
-                    <li>• ✅ Authenticated access to download artifacts</li>
-                    <li>• ✅ Automatically finds imputation results from CI/CD runs</li>
-                    <li>• ✅ Full CSV extraction from ZIP artifacts</li>
-                  </ul>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Data Preview */}
       {loadedFile && previewData && (
         <div className="mt-6 pt-6 border-t border-gray-200">
@@ -1199,12 +672,10 @@ export default function FileUpload({
       )}
 
         {/* Global loading indicator */}
-        {(isLoading || isLoadingGithubData) && (
+        {isLoading && (
           <div className="mt-4 text-center">
             <div className="inline-block animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
-            <p className="text-sm text-gray-600 mt-2">
-              {isLoadingGithubData ? 'Loading GitHub data...' : 'Loading file...'}
-            </p>
+            <p className="text-sm text-gray-600 mt-2">Loading file...</p>
           </div>
         )}
       </div>
