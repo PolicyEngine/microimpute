@@ -1,3 +1,10 @@
+## [3.2.1] - 2026-11-08
+
+### Changed
+
+- Add Microcosm's regime-gated QRF to the MOOP imputation experiment (`experiments/moop_spm`), which fits it with and without the ASEC unit weights.
+
+
 ## [3.2.0] - 2026-11-06
 
 ### Added
