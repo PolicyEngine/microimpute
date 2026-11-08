@@ -4,12 +4,17 @@
 which is the regression this guards against.
 """
 
+import subprocess
+import sys
+import textwrap
 from importlib.metadata import version
+from pathlib import Path
 
-import pytest
 from packaging.version import Version
 
 import microimpute
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_version_matches_installed_distribution():
@@ -22,21 +27,37 @@ def test_version_is_pep440_parseable():
     Version("0.0.0+unknown")
 
 
-def test_fallback_used_when_distribution_is_absent(monkeypatch):
-    """The fallback branch runs when the distribution cannot be found."""
-    import importlib.metadata
+def test_fallback_used_when_distribution_is_absent():
+    """Without a distribution to read, the package reports 0.0.0+unknown."""
+    # A fresh interpreter makes the metadata lookup for microimpute fail and
+    # then imports the package from this source tree, so the import runs the
+    # fallback branch in microimpute/__init__.py itself.
+    code = textwrap.dedent(
+        """
+        import importlib.metadata as metadata
+        import sys
 
-    def _raise(_name):
-        raise importlib.metadata.PackageNotFoundError(_name)
+        real_version = metadata.version
 
-    monkeypatch.setattr(importlib.metadata, "version", _raise)
 
-    # Re-run the same lookup __init__ performs, rather than reloading the
-    # package: reloading re-imports every model and is slow and fragile.
-    try:
-        resolved = importlib.metadata.version("microimpute")
-    except importlib.metadata.PackageNotFoundError:
-        resolved = "0.0.0+unknown"
+        def missing(name):
+            if name == "microimpute":
+                raise metadata.PackageNotFoundError(name)
+            return real_version(name)
 
-    assert resolved == "0.0.0+unknown"
-    Version(resolved)
+
+        metadata.version = missing
+        sys.path.insert(0, sys.argv[1])
+        import microimpute
+
+        print(microimpute.__version__)
+        """
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code, str(REPO_ROOT)],
+        capture_output=True,
+        text=True,
+        timeout=300,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip().splitlines()[-1] == "0.0.0+unknown"
