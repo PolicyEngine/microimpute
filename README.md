@@ -1,6 +1,6 @@
 # Microimpute
 
-> PolicyEngine has archived microimpute. [Microcosm](https://github.com/PolicyEngine/microcosm) builds PolicyEngine's microdata and fits its imputation models with the `microcosm-fit` package. [PyPI](https://pypi.org/project/microimpute/) keeps every release, so `pip install microimpute` still works. The [open issues](https://github.com/PolicyEngine/microimpute/issues) include correctness bugs that no release fixes, such as [the default QRF's miscalibrated quantiles](https://github.com/PolicyEngine/microimpute/issues/205).
+> PolicyEngine has archived microimpute. [Microcosm](https://github.com/PolicyEngine/microcosm) builds PolicyEngine's microdata and fits its imputation models with the `microcosm-fit` package. [PyPI](https://pypi.org/project/microimpute/) keeps the package's releases, so `pip install microimpute` still works. The [open issues](https://github.com/PolicyEngine/microimpute/issues) include correctness bugs that no release fixes, such as [the default QRF's miscalibrated quantiles](https://github.com/PolicyEngine/microimpute/issues/205).
 
 Microimpute is a Python package for imputing variables from one survey dataset onto another. It wraps five imputation methods behind a common interface so you can benchmark them on your data and pick the one that works best, rather than defaulting to a single approach.
 

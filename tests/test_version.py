@@ -1,7 +1,7 @@
 """The reported version must match the installed distribution.
 
-`__version__` was hardcoded and drifted to 1.1.2 while the package was 3.1.1,
-which is the regression this guards against.
+`__init__.py` used to hard-code `__version__` as 1.1.2, which fell behind the
+package's own version (3.1.1 by September 2026). These tests catch that drift.
 """
 
 import subprocess
