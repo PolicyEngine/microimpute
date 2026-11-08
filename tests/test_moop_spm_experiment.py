@@ -355,16 +355,24 @@ def test_microcosm_draws_stay_within_weighted_spenders(seed, cap_quantile):
     assert np.array_equal(again, unweighted)
 
     # Donors without weight shape no draw: with zero weight on every
-    # spender above the cap, no weighted draw exceeds it.
+    # spender above the cap, a weighted draw is zero or lies between the
+    # smallest and largest spender that keeps its weight.
     cap = float(np.quantile(spent, cap_quantile))
     capped = dataclasses.replace(
         fold,
         weight_donor=np.where(fold.moop_donor > cap, 0.0, fold.weight_donor),
     )
+    kept = capped.moop_donor[(capped.moop_donor > 0) & (capped.weight_donor > 0)]
     weighted = microcosm_qrf(capped, 3, seed=seed, weighted=True, n_jobs=1)
     assert weighted.shape == (3, n_recipients)
-    assert (weighted >= 0).all()
+    assert np.isfinite(weighted).all()
+    drawn = weighted[weighted != 0]
+    assert (drawn >= kept.min()).all()
+    assert (drawn <= kept.max()).all()
     assert weighted.max() <= cap
+    # The thread count changes no weighted draw either.
+    again = microcosm_qrf(capped, 3, seed=seed, weighted=True, n_jobs=2)
+    assert np.array_equal(again, weighted)
 
 
 def test_microcosm_threads_sets_and_restores_widths(monkeypatch):

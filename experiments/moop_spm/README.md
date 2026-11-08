@@ -90,10 +90,9 @@ ways:
 - It keeps every training sample in each leaf of its MOOP forest, where
   microimpute keeps quantile-forest's default of at most one sample per
   leaf. Microcosm caps a forest's leaves at 4,096 samples only when the
-  donors it hands that forest hold 2 to 32 distinct values, which it
-  counts before any weighted resample. Its MOOP forest trains on the
-  donor spenders, whose amounts take 7,830 to 7,880 distinct values in
-  each fold.
+  donors it hands that forest hold 2 to 32 distinct values before any
+  weighted resample. Its MOOP forest trains on the donor spenders, whose
+  amounts take 7,830 to 7,880 distinct values in each fold.
 - It reads each unit's draw at that unit's own quantile, interpolating
   a 203-point grid whose ends lie 0.000001 from 0 and 1. microimpute
   rounds each unit's quantile q to the nearest hundredth, k/100, and
