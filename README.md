@@ -42,3 +42,7 @@ pip install microimpute[images]
 ## Contributing
 
 Pull requests are welcome. If you find a bug or have a feature idea, open an issue or submit a PR.
+
+## License
+
+PolicyEngine releases the code in this repository under the [MIT License](https://github.com/PolicyEngine/microimpute/blob/main/LICENSE), and its original text and figures under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) with attribution to PolicyEngine. Third-party data and materials keep their own terms. The optional `matching` extra installs rpy2, which its authors license under GPL-2.0-or-later. The paper notebook `paper/imputing-from-scf-to-cps.ipynb` imports policyengine-us and policyengine-core, which carry AGPL-3.0.
