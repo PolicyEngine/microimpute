@@ -15,12 +15,26 @@ the invariants the published comparison relies on:
 - The logistic-participation variants follow their stated rules.
 - Census's MOOP and Medicare premium imputations both count as allocated.
 - Extracted CSVs that differ from the pinned zip are extracted again.
-- The fold cache misses whenever the environment, microimpute's source
-  or the model inputs change.
+- The fold cache misses whenever the environment, microimpute's or
+  Microcosm's source or the model inputs change.
+- ``installed_source`` raises, rather than reading a package as absent,
+  when its metadata names no version, and ``environment`` raises when a
+  Microcosm package imports without distribution metadata.
+- Microcosm's draws are zero or lie within the range of the spenders
+  that carry weight, and they do not depend on the number of threads.
+- Microcosm fits its gate on every donor's row: the donor's predictors
+  and whether it spends, with its unit weight in the weighted fit and no
+  weights in the unweighted fit.
+
+The tests of Microcosm's draws, threads and gate skip on a machine
+without Microcosm, which installs from git.
 """
 
 import argparse
+import dataclasses
+import importlib
 import os
+import re
 import zipfile
 
 import numpy as np
@@ -48,6 +62,8 @@ from experiments.moop_spm.methods import (
     assign_cells,
     fit_participation,
     logit_family,
+    microcosm_qrf,
+    microcosm_threads,
     nearest_donors,
     participation_probability,
 )
@@ -57,6 +73,8 @@ from experiments.moop_spm.run import (
     collect_folds,
     config_hash,
     frame_sha256,
+    installed_package_sha256,
+    installed_source,
 )
 
 SETTINGS = settings(
@@ -280,6 +298,7 @@ def _fold(seed: int) -> FoldData:
     return FoldData(
         X_donor=X_donor,
         moop_donor=moop,
+        weight_donor=rng.uniform(100, 3_000, n_donor),
         cells_donor=cells_donor,
         group_donor=cells_donor["group"].to_numpy(),
         X_recipient=features(n_recipient),
@@ -313,6 +332,156 @@ def test_logit_family_rules(seed):
             assert np.isin(positive, pool).all()
         drawn = out["logit_draw_cell_mean"][:, i]
         assert np.all((drawn == 0) | np.isclose(drawn, means[i]))
+
+
+@settings(max_examples=3, deadline=None)
+@given(seed=st.integers(0, 2**31), cap_quantile=st.floats(0.3, 0.9))
+def test_microcosm_draws_stay_within_weighted_spenders(seed, cap_quantile):
+    pytest.importorskip("microcosm.fit")
+    fold = _fold(seed)
+    n_recipients = len(fold.X_recipient)
+    spent = fold.moop_donor[fold.moop_donor > 0]
+
+    unweighted = microcosm_qrf(fold, 3, seed=seed, weighted=False, n_jobs=1)
+    assert unweighted.shape == (3, n_recipients)
+    assert np.isfinite(unweighted).all()
+    # A draw is zero or lies between the smallest and largest spender.
+    drawn = unweighted[unweighted != 0]
+    assert (drawn >= spent.min()).all()
+    assert (drawn <= spent.max()).all()
+    assert not np.array_equal(unweighted[0], unweighted[1])
+    # The thread count changes no draw.
+    again = microcosm_qrf(fold, 3, seed=seed, weighted=False, n_jobs=2)
+    assert np.array_equal(again, unweighted)
+
+    # Donors without weight shape no draw: with zero weight on every
+    # spender above the cap, a weighted draw is zero or lies between the
+    # smallest and largest spender that keeps its weight.
+    cap = float(np.quantile(spent, cap_quantile))
+    capped = dataclasses.replace(
+        fold,
+        weight_donor=np.where(fold.moop_donor > cap, 0.0, fold.weight_donor),
+    )
+    kept = capped.moop_donor[(capped.moop_donor > 0) & (capped.weight_donor > 0)]
+    weighted = microcosm_qrf(capped, 3, seed=seed, weighted=True, n_jobs=1)
+    assert weighted.shape == (3, n_recipients)
+    assert np.isfinite(weighted).all()
+    drawn = weighted[weighted != 0]
+    assert (drawn >= kept.min()).all()
+    assert (drawn <= kept.max()).all()
+    assert weighted.max() <= cap
+    # The thread count changes no weighted draw either.
+    again = microcosm_qrf(capped, 3, seed=seed, weighted=True, n_jobs=2)
+    assert np.array_equal(again, weighted)
+
+
+def test_microcosm_threads_sets_and_restores_widths(monkeypatch):
+    qrf_module = pytest.importorskip("microcosm.fit.qrf")
+    fit_name, draw_name = qrf_module._N_JOBS_ENV, qrf_module._PREDICT_WORKERS_ENV
+    monkeypatch.delenv(fit_name, raising=False)
+    monkeypatch.setenv(draw_name, "7")
+    with microcosm_threads(3):
+        # Microcosm's own resolvers read the cap.
+        assert qrf_module._fit_n_jobs() == 3
+        assert qrf_module._predict_workers() == 3
+    assert fit_name not in os.environ
+    assert os.environ[draw_name] == "7"
+
+
+def test_microcosm_gate_takes_donor_weights_in_order(monkeypatch):
+    pytest.importorskip("microcosm.fit")
+    from sklearn.ensemble import HistGradientBoostingClassifier
+
+    recorded = []
+    original = HistGradientBoostingClassifier.fit
+
+    def spy(self, X, y, sample_weight=None, **kwargs):
+        weights = sample_weight
+        if weights is not None:
+            weights = np.array(weights, dtype=float)
+        recorded.append((np.array(X, dtype=float), np.array(y), weights))
+        return original(self, X, y, sample_weight=sample_weight, **kwargs)
+
+    monkeypatch.setattr(HistGradientBoostingClassifier, "fit", spy)
+    fold = _fold(7)
+    donors = fold.X_donor.to_numpy(dtype=float)
+    spends = (fold.moop_donor > 0).astype(int)
+    microcosm_qrf(fold, 1, seed=7, weighted=True, n_jobs=1)
+    # Microcosm fits one in-sample gate on every donor's row: the donor's
+    # predictors and whether it spends, with that donor's weight.
+    assert len(recorded) == 1
+    features, labels, weights = recorded[0]
+    assert np.array_equal(features, donors)
+    assert np.array_equal(labels, spends)
+    assert weights is not None
+    assert weights.shape == fold.weight_donor.shape
+    assert np.allclose(
+        weights / weights.sum(), fold.weight_donor / fold.weight_donor.sum()
+    )
+    # A reversed donor order would fail the same check.
+    assert not np.allclose(
+        weights / weights.sum(),
+        fold.weight_donor[::-1] / fold.weight_donor.sum(),
+    )
+
+    recorded.clear()
+    microcosm_qrf(fold, 1, seed=7, weighted=False, n_jobs=1)
+    assert len(recorded) == 1
+    features, labels, weights = recorded[0]
+    assert np.array_equal(features, donors)
+    assert np.array_equal(labels, spends)
+    assert weights is None
+
+
+def test_installed_source_and_hash_tolerate_only_absent_packages(tmp_path, monkeypatch):
+    assert installed_source("no-such-distribution-moop") is None
+    assert installed_package_sha256("no_such_package_moop.sub") is None
+    # A package that is present but fails to import still raises.
+    broken = tmp_path / "broken_package_moop"
+    broken.mkdir()
+    (broken / "__init__.py").write_text("import no_such_dependency_moop\n")
+    # So does a distribution whose metadata names no version.
+    versionless = tmp_path / "versionless_moop-0.0.dist-info"
+    versionless.mkdir()
+    (versionless / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: versionless-moop\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+    with pytest.raises(ModuleNotFoundError):
+        installed_package_sha256("broken_package_moop")
+    with pytest.raises(RuntimeError, match="names no version"):
+        installed_source("versionless-moop")
+    source = installed_source("microcosm-fit")
+    if source is not None:
+        # A git install records its commit.
+        assert re.fullmatch(r"\S+ @ ([0-9a-f]{40}|\S+)", source)
+
+
+def test_environment_refuses_microcosm_imports_without_metadata(tmp_path, monkeypatch):
+    # Two packages import; only the first has distribution metadata.
+    for name in ("recorded_moop", "unrecorded_moop"):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "__init__.py").write_text("")
+    recorded = tmp_path / "recorded_moop-1.0.dist-info"
+    recorded.mkdir()
+    (recorded / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: recorded-moop\nVersion: 1.0\n"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+    present = {
+        "recorded": ("recorded-moop", "recorded_moop"),
+        "absent": ("no-such-distribution-moop", "no_such_package_moop"),
+    }
+    monkeypatch.setattr(run_module, "MICROCOSM_PACKAGES", present)
+    found = run_module.environment()
+    assert found["recorded"] == "1.0"
+    assert found["absent"] is None
+    unrecorded = {"unrecorded": ("unrecorded-moop", "unrecorded_moop")}
+    monkeypatch.setattr(run_module, "MICROCOSM_PACKAGES", unrecorded)
+    with pytest.raises(RuntimeError, match="unrecorded_moop imports"):
+        run_module.environment()
 
 
 @settings(max_examples=10, deadline=None)
@@ -426,7 +595,7 @@ def _stub_fit(value: float, folds: np.ndarray, calls: list):
     return fit
 
 
-def test_cache_misses_when_environment_or_microimpute_changes(tmp_path, monkeypatch):
+def test_cache_misses_when_environment_or_model_source_changes(tmp_path, monkeypatch):
     args, units, X, cells, folds = _cache_inputs()
     base_env = run_module.environment()
     monkeypatch.setattr(run_module, "environment", lambda: base_env)
@@ -454,7 +623,21 @@ def test_cache_misses_when_environment_or_microimpute_changes(tmp_path, monkeypa
     assert calls == [0, 1, 2]
     assert (fresh["qrf"] == 99.0).all()
 
+    # Microcosm from another commit refits.
+    moved = {**base_env, "microcosm_fit": "0.1.0 @ another-commit"}
+    monkeypatch.setattr(run_module, "environment", lambda: moved)
+    assert config_hash(build_config(args, units, X, cells, folds)) != tag
+
     monkeypatch.setattr(run_module, "environment", lambda: base_env)
+    assert config_hash(build_config(args, units, X, cells, folds)) == tag
+    # Edited Microcosm source refits, and so does edited microimpute source.
+    original = run_module.installed_package_sha256
+    monkeypatch.setattr(
+        run_module, "installed_package_sha256", lambda package: "edited"
+    )
+    assert config_hash(build_config(args, units, X, cells, folds)) != tag
+    monkeypatch.setattr(run_module, "installed_package_sha256", original)
+    assert config_hash(build_config(args, units, X, cells, folds)) == tag
     monkeypatch.setattr(run_module, "package_sha256", lambda package: "edited")
     assert config_hash(build_config(args, units, X, cells, folds)) != tag
 

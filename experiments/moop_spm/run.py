@@ -12,9 +12,11 @@ Usage (from the repository root):
 The first run downloads the Census public-use zip (139 MB) into
 ``--data-dir`` and checks its SHA-256. Per-fold imputations are cached in
 ``<output>/cache`` so an interrupted run resumes. The cache key covers the
-settings, the experiment's source files, every microimpute source file,
-the versions of Python and the numerical packages, and the model inputs
-with their row keys, so a change to any of them refits every fold.
+settings, the experiment's source files, every source file of microimpute
+and of Microcosm's ``fit``, ``frame`` and ``graph`` packages, the versions
+of Python and the numerical packages, the commit Microcosm came from, and
+the model inputs with their row keys, so a change to any of them refits
+every fold.
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ import json
 import platform
 import time
 from collections.abc import Callable
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, distribution, version
 from pathlib import Path
 
 import numpy as np
@@ -54,6 +56,7 @@ from .methods import (
     FoldData,
     cell_keys,
     logit_family,
+    microcosm_qrf,
     pmm,
     qrf,
     zi_qrf,
@@ -70,6 +73,14 @@ PACKAGES = {
     "quantile_forest": "quantile-forest",
     "microimpute": "microimpute",
 }
+# Microcosm's distributions and the packages they install. They install
+# from git, and their version numbers do not change from commit to
+# commit, so we record the commit and hash the source.
+MICROCOSM_PACKAGES = {
+    "microcosm_fit": ("microcosm-fit", "microcosm.fit"),
+    "microcosm_frame": ("microcosm-frame", "microcosm.frame"),
+    "microcosm_graph": ("microcosm-graph", "microcosm.graph"),
+}
 PUBLISHED = json.loads((HERE / "published_2025.json").read_text())
 
 
@@ -85,9 +96,51 @@ def config_hash(config: dict) -> str:
     return hashlib.sha256(json.dumps(config, sort_keys=True).encode()).hexdigest()[:16]
 
 
-def environment() -> dict[str, str]:
-    """Return the Python version and the versions in ``PACKAGES``."""
-    versions = {name: version(dist) for name, dist in PACKAGES.items()}
+def installed_source(dist: str) -> str | None:
+    """Return a distribution's version and source, or None if it is absent.
+
+    For an install from git, it reports the commit that pip or uv recorded
+    in the distribution's ``direct_url.json`` (PEP 610). It raises, rather
+    than returning None, when the metadata names no version.
+    """
+    try:
+        found = distribution(dist)
+    except PackageNotFoundError:
+        return None
+    # ``metadata.get`` reads a missing field as None without the warning,
+    # and later KeyError, that ``Distribution.version`` gives.
+    found_version = found.metadata.get("Version")
+    if not found_version:
+        raise RuntimeError(f"{dist}'s distribution metadata names no version.")
+    text = found.read_text("direct_url.json")
+    if not text:
+        return found_version
+    direct = json.loads(text)
+    source = direct.get("vcs_info", {}).get("commit_id") or direct.get("url")
+    return f"{found_version} @ {source}"
+
+
+def environment() -> dict[str, str | None]:
+    """Return the versions of Python, ``PACKAGES`` and Microcosm.
+
+    Microcosm's entries carry the commit each package came from, or None
+    for an absent package. It raises when a Microcosm package imports
+    without distribution metadata, since the run would then hash the
+    package's source into the cache key without recording where it came
+    from.
+    """
+    versions: dict[str, str | None] = {
+        name: version(dist) for name, dist in PACKAGES.items()
+    }
+    for name, (dist, module) in MICROCOSM_PACKAGES.items():
+        source = installed_source(dist)
+        if source is None and installed_package_sha256(module) is not None:
+            raise RuntimeError(
+                f"{module} imports, but no {dist} distribution metadata "
+                "records its version or source; reinstall it from git "
+                "(see README.md)."
+            )
+        versions[name] = source
     return {"python": platform.python_version(), **versions}
 
 
@@ -102,6 +155,32 @@ def package_sha256(package: str) -> str:
         digest.update(path.read_bytes())
         digest.update(b"\0")
     return digest.hexdigest()[:16]
+
+
+def installed_package_sha256(package: str) -> str | None:
+    """Return ``package_sha256``, or None when Python finds no such package.
+
+    When the package exists but fails to import, the import error
+    propagates.
+    """
+    try:
+        return package_sha256(package)
+    except ModuleNotFoundError as error:
+        parts = package.split(".")
+        parents = {".".join(parts[:i]) for i in range(1, len(parts) + 1)}
+        if error.name in parents:
+            return None
+        raise
+
+
+def require_microcosm() -> None:
+    """Fail before any fitting when Microcosm's ``fit`` package is absent."""
+    if installed_source("microcosm-fit") is None:
+        raise SystemExit(
+            "The Microcosm methods need microcosm-fit, which installs from "
+            "git (see README.md). Pass --skip-forests to run without the "
+            "forest methods."
+        )
 
 
 def frame_sha256(*frames: pd.DataFrame) -> str:
@@ -137,6 +216,10 @@ def build_config(
         "cell_levels": [list(level) for level in CELL_LEVELS],
         "source_sha256": {name: sha256_of(HERE / name)[:16] for name in SOURCES},
         "microimpute_sha256": package_sha256("microimpute"),
+        "microcosm_sha256": {
+            module: installed_package_sha256(module)
+            for _, module in MICROCOSM_PACKAGES.values()
+        },
         "environment": environment(),
         "input_sha256": frame_sha256(units, X, cells, fold_frame),
     }
@@ -194,6 +277,7 @@ def run_fold(
     data = FoldData(
         X_donor=X.loc[donor],
         moop_donor=units["moop"].to_numpy()[donor],
+        weight_donor=units["unit_weight"].to_numpy()[donor],
         cells_donor=cells.loc[donor],
         group_donor=units["group"].to_numpy()[donor],
         X_recipient=X.loc[recipient],
@@ -220,6 +304,22 @@ def run_fold(
         start = time.time()
         out["zi_qrf"] = zi_qrf(data, args.draws, seed=args.seed + fold)
         timings["zi_qrf"] = time.time() - start
+
+        # Both Microcosm fits share a seed, so their draws use the same
+        # uniforms and differ only through the weights.
+        for method, weighted in (
+            ("microcosm_qrf", True),
+            ("microcosm_qrf_unweighted", False),
+        ):
+            start = time.time()
+            out[method] = microcosm_qrf(
+                data,
+                args.draws,
+                seed=args.seed + fold,
+                weighted=weighted,
+                n_jobs=args.n_jobs,
+            )
+            timings[method] = time.time() - start
     out["_timings"] = np.array([list(timings.values())])
     out["_timing_names"] = np.array(list(timings.keys()))
     return out
@@ -236,7 +336,8 @@ def main() -> None:
     parser.add_argument(
         "--skip-forests",
         action="store_true",
-        help="Skip QRF and ZI-QRF (for quick checks).",
+        help="Skip the forest methods, microimpute's and Microcosm's "
+        "(for quick checks).",
     )
     parser.add_argument(
         "--max-households",
@@ -245,6 +346,8 @@ def main() -> None:
         help="Subsample households (for quick checks).",
     )
     args = parser.parse_args()
+    if not args.skip_forests:
+        require_microcosm()
 
     output = args.output
     cache = output / "cache"
